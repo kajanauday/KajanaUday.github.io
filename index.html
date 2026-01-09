@@ -238,7 +238,7 @@
       const password = passwordInput.value;
       if (!username || !password) { showError('Please enter username & password'); return; }
 
-      const emailForFirebase = `${username.trim()}@${(firebaseConfig.authDomain||'example.firebaseapp.com')}`;
+      const emailForFirebase = `${username.trim()}@kajanaudaynotes.firebaseapp.com`;
       try {
         isAdminLoginAttempt = true;
         await signInWithEmailAndPassword(auth, emailForFirebase, password);
