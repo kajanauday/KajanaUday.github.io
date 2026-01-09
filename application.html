@@ -1,0 +1,3536 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Log</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+    <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-database.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Ensure ALL Quill editors take 100% height */
+        .ql-container,
+        .ql-editor {
+            height: 100% !important;
+        }
+
+        /* Increase Quill editor text size by 20% */
+        .ql-editor {
+            font-size: 1.2em !important;
+        }
+
+        /* Add extra scrollable space at bottom for comfortable typing */
+        .ql-editor {
+            padding-bottom: 30vh !important;
+            box-sizing: content-box !important;
+        }
+
+        .full-height-editor {
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .full-height-editor .ql-toolbar {
+            flex-shrink: 0 !important;
+        }
+
+        .full-height-editor .ql-container {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .full-height-editor .ql-editor {
+            flex: 1 !important;
+            min-height: 100% !important;
+            height: 100% !important;
+        }
+
+        .editor-container {
+            height: calc(100vh - 2rem) !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .editor-container {
+            height: calc(100vh - 120px) !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        /* Right panel full height */
+        .flex-1.overflow-y-auto {
+            height: calc(100vh - 40px) !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        /* Custom toolbar layout */
+        .ql-toolbar .ql-formats {
+            margin-right: 0.5rem;
+        }
+
+        .ql-container,
+        .ql-editor {
+            height: 100% !important;
+        }
+
+
+        #edit-description-container.full-height-editor {
+            height: 400px;
+            max-height: 50vh;
+            height: 100% !important;
+            max-height: none !important;
+        }
+
+        /* Child editor specific container */
+        #add-child-description-container.full-height-editor {
+            height: 100%;
+            min-height: 300px;
+            height: 100% !important;
+            min-height: 100% !important;
+        }
+
+        .ql-toolbar .custom-toolbar-section {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+            padding-left: 1rem;
+            border-left: 1px solid #e2e8f0;
+        }
+
+        .ql-toolbar .element-name-input {
+            width: 200px;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+        }
+
+        .ql-toolbar .toolbar-btn {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.25rem;
+            background: white;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .ql-toolbar .toolbar-btn:hover {
+            background: #f1f5f9;
+        }
+
+        .ql-toolbar .toolbar-btn.primary {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .ql-toolbar .toolbar-btn.primary:hover {
+            background: #1d4ed8;
+        }
+
+        .ql-toolbar .toolbar-btn.secondary {
+            background: #f1f5f9;
+            color: #334155;
+        }
+
+        .ql-toolbar .toolbar-btn.secondary:hover {
+            background: #e2e8f0;
+        }
+
+        /* Content panel adjustments */
+        #content-panel {
+            padding: 0;
+            height: 100%;
+        }
+
+        .editor-container {
+            height: 100vh;
+            padding: 0;
+            margin: 0;
+            box-shadow: none;
+            border-radius: 0;
+        }
+
+        .formatted-content .code-block-container pre.ql-syntax {
+            margin-left: 0 !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Fix: Remove internal code indentation when container is already indented */
+        .formatted-content .code-block-container pre.ql-syntax code {
+            background: none !important;
+            color: inherit !important;
+            font-size: 1.32em !important;
+            /* 20% increase for reading mode */
+            font-family: inherit !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block;
+            white-space: pre !important;
+            text-indent: 0 !important;
+            padding-left: 0 !important;
+            margin-left: 0 !important;
+            position: relative;
+            left: 0 !important;
+        }
+
+        /* Override pre element indentation when inside wrapper - for display mode */
+        .formatted-content .code-block-container pre.ql-syntax {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Handle indented code blocks in wrapper */
+        .formatted-content .code-block-container.ql-indent-1 {
+            margin-left: 2em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 2em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-2 {
+            margin-left: 4em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 4em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-3 {
+            margin-left: 6em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 6em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-4 {
+            margin-left: 8em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 8em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-5 {
+            margin-left: 10em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 10em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-6 {
+            margin-left: 12em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 12em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-7 {
+            margin-left: 14em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 14em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-8 {
+            margin-left: 16em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 16em) !important;
+        }
+
+        .formatted-content .code-block-container.ql-indent-9 {
+            margin-left: 18em !important;
+            padding-left: 0 !important;
+            width: calc(100% - 18em) !important;
+        }
+
+        /* Ensure pre inside wrapper doesn't add extra indentation */
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-1,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-2,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-3,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-4,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-5,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-6,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-7,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-8,
+        .formatted-content .code-block-container pre.ql-syntax.ql-indent-9 {
+            margin-left: 0 !important;
+            width: 100% !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-1 {
+            margin-left: 2em !important;
+            width: calc(100% - 2em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-2 {
+            margin-left: 4em !important;
+            width: calc(100% - 4em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-3 {
+            margin-left: 6em !important;
+            width: calc(100% - 6em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-4 {
+            margin-left: 8em !important;
+            width: calc(100% - 8em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-5 {
+            margin-left: 10em !important;
+            width: calc(100% - 10em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-6 {
+            margin-left: 12em !important;
+            width: calc(100% - 12em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-7 {
+            margin-left: 14em !important;
+            width: calc(100% - 14em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-8 {
+            margin-left: 16em !important;
+            width: calc(100% - 16em) !important;
+        }
+
+        .ql-editor pre.ql-syntax.ql-indent-9 {
+            margin-left: 18em !important;
+            width: calc(100% - 18em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-1 {
+            margin-left: 2em !important;
+            width: calc(100% - 2em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-2 {
+            margin-left: 4em !important;
+            width: calc(100% - 4em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-3 {
+            margin-left: 6em !important;
+            width: calc(100% - 6em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-4 {
+            margin-left: 8em !important;
+            width: calc(100% - 8em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-5 {
+            margin-left: 10em !important;
+            width: calc(100% - 10em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-6 {
+            margin-left: 12em !important;
+            width: calc(100% - 12em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-7 {
+            margin-left: 14em !important;
+            width: calc(100% - 14em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-8 {
+            margin-left: 16em !important;
+            width: calc(100% - 16em) !important;
+        }
+
+        .formatted-content div.code-block-container.ql-indent-9 {
+            margin-left: 18em !important;
+            width: calc(100% - 18em) !important;
+        }
+
+        /* Ensure pre elements inside don't override */
+        .formatted-content .code-block-container pre.ql-syntax {
+            margin-left: 0 !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        .formatted-content .ql-indent-1>.code-block-container,
+        .formatted-content .ql-indent-2>.code-block-container,
+        .formatted-content .ql-indent-3>.code-block-container,
+        .formatted-content .ql-indent-4>.code-block-container,
+        .formatted-content .ql-indent-5>.code-block-container,
+        .formatted-content .ql-indent-6>.code-block-container,
+        .formatted-content .ql-indent-7>.code-block-container,
+        .formatted-content .ql-indent-8>.code-block-container,
+        .formatted-content .ql-indent-9>.code-block-container {
+            margin-left: 0 !important;
+            width: 100% !important;
+        }
+
+        .formatted-content .ql-indent-1>.code-block-container.ql-indent-1,
+        .formatted-content .ql-indent-2>.code-block-container.ql-indent-2,
+        .formatted-content .ql-indent-3>.code-block-container.ql-indent-3,
+        .formatted-content .ql-indent-4>.code-block-container.ql-indent-4,
+        .formatted-content .ql-indent-5>.code-block-container.ql-indent-5,
+        .formatted-content .ql-indent-6>.code-block-container.ql-indent-6,
+        .formatted-content .ql-indent-7>.code-block-container.ql-indent-7,
+        .formatted-content .ql-indent-8>.code-block-container.ql-indent-8,
+        .formatted-content .ql-indent-9>.code-block-container.ql-indent-9 {
+            margin-left: 0 !important;
+            width: 100% !important;
+            /* Takes full width of parent's content box */
+        }
+
+        /* Text Indentation */
+        .formatted-content .ql-indent-1 {
+            padding-left: 2em !important;
+        }
+
+        .formatted-content .ql-indent-2 {
+            padding-left: 4em !important;
+        }
+
+        .formatted-content .ql-indent-3 {
+            padding-left: 6em !important;
+        }
+
+        .formatted-content .ql-indent-4 {
+            padding-left: 8em !important;
+        }
+
+        .formatted-content .ql-indent-5 {
+            padding-left: 10em !important;
+        }
+
+        .formatted-content .ql-indent-6 {
+            padding-left: 12em !important;
+        }
+
+        .formatted-content .ql-indent-7 {
+            padding-left: 14em !important;
+        }
+
+        .formatted-content .ql-indent-8 {
+            padding-left: 16em !important;
+        }
+
+        .formatted-content .ql-indent-9 {
+            padding-left: 18em !important;
+        }
+
+        /* Code Block Container */
+        .formatted-content .code-block-container {
+            border-radius: 0.375rem;
+            overflow: hidden;
+            background-color: #1e293b !important;
+        }
+
+        .formatted-content .code-block-container pre.ql-syntax {
+            margin: 0 !important;
+            padding: 0.75rem !important;
+            background-color: #1e293b !important;
+            color: #e2e8f0 !important;
+            font-family: 'Fira Code', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+            font-size: 0.875rem !important;
+            line-height: 1.5 !important;
+            overflow-x: auto;
+            white-space: pre;
+            width: 100% !important;
+            border: none;
+            border-radius: 0;
+        }
+
+        .formatted-content .code-block-container pre.ql-syntax {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .formatted-content .code-block-container pre.ql-syntax code,
+        .formatted-content pre.ql-syntax code {
+            background: none !important;
+            color: inherit !important;
+            font-size: inherit !important;
+            font-family: inherit !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block;
+            white-space: pre !important;
+            text-indent: 0 !important;
+            padding-left: 0 !important;
+            margin-left: 0 !important;
+            position: relative;
+            left: 0 !important;
+        }
+
+        /* List Indentation */
+        .formatted-content ul .ql-syntax,
+        .formatted-content ol .ql-syntax {
+            margin-left: 1.5em;
+        }
+
+        .formatted-content ul ul .ql-syntax,
+        .formatted-content ol ol .ql-syntax {
+            margin-left: 3em;
+        }
+
+        /* Font Sizes */
+        .formatted-content .ql-size-small,
+        .ql-editor .ql-size-small {
+            font-size: 0.75em;
+        }
+
+        .formatted-content .ql-size-normal,
+        .ql-editor .ql-size-normal {
+            font-size: 1em;
+        }
+
+        .formatted-content .ql-size-large,
+        .ql-editor .ql-size-large {
+            font-size: 1.5em;
+        }
+
+        .formatted-content .ql-size-huge,
+        .ql-editor .ql-size-huge {
+            font-size: 2em;
+        }
+
+        /* Formatted Content Base Styles */
+        .formatted-content {
+            white-space: normal;
+            line-height: 1.5;
+            color: #333333;
+            font-size: 0.88rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #ffffff;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+
+        .formatted-content p {
+            margin-top: 0.6rem;
+            margin-bottom: 0.6rem;
+            color: #333333;
+            font-size: 0.88rem;
+        }
+
+        .formatted-content strong,
+        .formatted-content b {
+            font-weight: 700;
+            color: #000;
+        }
+
+        .formatted-content i,
+        .formatted-content em {
+            font-style: italic;
+        }
+
+        /* Headings */
+        .formatted-content h1,
+        .formatted-content h2,
+        .formatted-content h3,
+        .formatted-content h4,
+        .formatted-content h5,
+        .formatted-content h6 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            line-height: 1.3;
+            color: #111;
+            font-weight: 600;
+            display: block;
+        }
+
+        .formatted-content h1 {
+            font-size: 1.5rem;
+        }
+
+        .formatted-content h2 {
+            font-size: 1.3rem;
+        }
+
+        .formatted-content h3 {
+            font-size: 1.1rem;
+        }
+
+        .formatted-content h4 {
+            font-size: 1rem;
+        }
+
+        /* Lists */
+        .formatted-content ul,
+        .formatted-content ol {
+            margin-left: 0;
+            margin-top: 0.4rem;
+            margin-bottom: 0.4rem;
+            padding-left: 2rem;
+            list-style-position: inside;
+            display: block;
+        }
+
+        .formatted-content ul {
+            list-style-type: disc;
+        }
+
+        .formatted-content ol {
+            list-style-type: decimal;
+        }
+
+        .formatted-content li {
+            margin-bottom: 0.3rem;
+            padding-left: 0.25rem;
+            display: list-item;
+            color: #333333;
+            font-size: 0.88rem;
+        }
+
+        .formatted-content li>ul,
+        .formatted-content li>ol {
+            margin-top: 0.3rem;
+            margin-bottom: 0.3rem;
+            margin-left: 0;
+            padding-left: 1.5rem;
+        }
+
+        .formatted-content ul ul,
+        .formatted-content ol ol,
+        .formatted-content ul ol,
+        .formatted-content ol ul {
+            margin-left: 0;
+            padding-left: 1.5rem;
+        }
+
+        /* List Indentation */
+        .formatted-content .ql-indent-1 ul,
+        .formatted-content .ql-indent-1 ol {
+            margin-left: 3em;
+        }
+
+        .formatted-content .ql-indent-2 ul,
+        .formatted-content .ql-indent-2 ol {
+            margin-left: 6em;
+        }
+
+        .formatted-content .ql-indent-3 ul,
+        .formatted-content .ql-indent-3 ol {
+            margin-left: 9em;
+        }
+
+        .formatted-content .ql-indent-4 ul,
+        .formatted-content .ql-indent-4 ol {
+            margin-left: 12em;
+        }
+
+        .formatted-content .ql-indent-5 ul,
+        .formatted-content .ql-indent-5 ol {
+            margin-left: 15em;
+        }
+
+        .formatted-content .ql-indent-6 ul,
+        .formatted-content .ql-indent-6 ol {
+            margin-left: 18em;
+        }
+
+        .formatted-content .ql-indent-7 ul,
+        .formatted-content .ql-indent-7 ol {
+            margin-left: 21em;
+        }
+
+        .formatted-content .ql-indent-8 ul,
+        .formatted-content .ql-indent-8 ol {
+            margin-left: 24em;
+        }
+
+        .formatted-content .ql-indent-9 ul,
+        .formatted-content .ql-indent-9 ol {
+            margin-left: 27em;
+        }
+
+        /* Text Alignment */
+        .formatted-content .ql-align-center,
+        .formatted-content [style*="text-align: center"] {
+            text-align: center !important;
+            display: block;
+        }
+
+        .formatted-content .ql-align-right,
+        .formatted-content [style*="text-align: right"] {
+            text-align: right !important;
+            display: block;
+        }
+
+        .formatted-content .ql-align-justify,
+        .formatted-content [style*="text-align: justify"] {
+            text-align: justify !important;
+            display: block;
+        }
+
+        /* Code Elements */
+        .formatted-content pre,
+        .formatted-content code {
+            background-color: #f1f5f9;
+            border-radius: 0.25rem;
+            padding: 0.1rem 0.3rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8em;
+        }
+
+        .formatted-content .ql-syntax {
+            display: block;
+            margin-left: 0;
+            margin-right: 0;
+            width: auto;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Make code blocks shrink to their content width while still
+           allowing wrapping on small lines and never exceeding the
+           available container width. Keep padding consistent. */
+        .formatted-content .code-block-container pre.ql-syntax,
+        .ql-editor pre.ql-syntax,
+        .formatted-content pre.ql-syntax,
+        .ql-container .ql-editor pre.ql-syntax {
+            display: inline-block !important;
+            width: auto !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            white-space: pre-wrap !important; /* preserve whitespace but wrap long lines */
+            overflow-wrap: anywhere !important; /* break very long tokens if needed */
+            padding: 0.75rem !important; /* ensure padding is always present */
+            margin: 0.5rem 0 !important; /* small vertical spacing */
+            border-radius: 0.375rem !important;
+        }
+
+        /* Ensure the inner <code> respects wrapping too */
+        .formatted-content .code-block-container pre.ql-syntax code,
+        .formatted-content pre.ql-syntax code,
+        .ql-editor pre.ql-syntax code {
+            display: block !important;
+            white-space: pre-wrap !important;
+            overflow-wrap: anywhere !important;
+        }
+
+        /* Override container width rules that set full-width via !important
+           for indented variants. Make container shrink-to-fit its content
+           while never exceeding the parent's width. This rule comes after
+           earlier width:100% rules and is intentionally specific. */
+        .formatted-content .code-block-container,
+        .formatted-content div.code-block-container,
+        .formatted-content .ql-indent-1>.code-block-container,
+        .formatted-content .ql-indent-2>.code-block-container,
+        .formatted-content .ql-indent-3>.code-block-container,
+        .formatted-content .ql-indent-4>.code-block-container,
+        .formatted-content .ql-indent-5>.code-block-container,
+        .formatted-content .ql-indent-6>.code-block-container,
+        .formatted-content .ql-indent-7>.code-block-container,
+        .formatted-content .ql-indent-8>.code-block-container,
+        .formatted-content .ql-indent-9>.code-block-container,
+        .formatted-content .code-block-container.ql-indent-1,
+        .formatted-content .code-block-container.ql-indent-2,
+        .formatted-content .code-block-container.ql-indent-3,
+        .formatted-content .code-block-container.ql-indent-4,
+        .formatted-content .code-block-container.ql-indent-5,
+        .formatted-content .code-block-container.ql-indent-6,
+        .formatted-content .code-block-container.ql-indent-7,
+        .formatted-content .code-block-container.ql-indent-8,
+        .formatted-content .code-block-container.ql-indent-9 {
+            display: inline-block !important;
+            width: auto !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            vertical-align: top !important;
+            overflow: visible !important;
+            background-color: inherit !important;
+        }
+
+
+        .formatted-content pre.ql-syntax {
+            margin-left: 0 !important;
+            padding-left: 0 !important;
+        }
+
+        .formatted-content pre.ql-syntax,
+        .formatted-content pre.ql-syntax code {
+            color: #1e293b !important;
+            font-family: 'Fira Code', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+        }
+
+        /* ULTIMATE OVERRIDE: Fix white text on white background issue in code blocks */
+        .ql-container .ql-editor pre.ql-syntax,
+        .full-height-editor .ql-editor pre.ql-syntax,
+        .ql-editor pre.ql-syntax,
+        #modal-description .ql-editor pre.ql-syntax,
+        #add-child-description-container .ql-editor pre.ql-syntax,
+        .ql-container .ql-editor .ql-syntax,
+        .full-height-editor .ql-editor .ql-syntax,
+        .ql-editor .ql-syntax,
+        #modal-description .ql-editor .ql-syntax,
+        #add-child-description-container .ql-editor .ql-syntax {
+            background-color: #2d3748 !important;
+            background: #2d3748 !important;
+            color: #f7fafc !important;
+            padding: 1rem !important;
+            border-radius: 0.375rem !important;
+            margin: 0.5rem 0 !important;
+            overflow-x: auto !important;
+            font-family: 'Fira Code', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+            font-size: 0.875rem !important;
+            line-height: 1.5 !important;
+            border: none !important;
+        }
+
+        /* Override any inherited white colors from parent elements */
+        .ql-container .ql-editor pre.ql-syntax *,
+        .full-height-editor .ql-editor pre.ql-syntax *,
+        .ql-editor pre.ql-syntax *,
+        #modal-description .ql-editor pre.ql-syntax *,
+        #add-child-description-container .ql-editor pre.ql-syntax *,
+        .ql-container .ql-editor .ql-syntax *,
+        .full-height-editor .ql-editor .ql-syntax *,
+        .ql-editor .ql-syntax *,
+        #modal-description .ql-editor .ql-syntax *,
+        #add-child-description-container .ql-editor .ql-syntax * {
+            color: #f7fafc !important;
+            background-color: transparent !important;
+        }
+
+        /* Syntax highlighting token colors for edit mode - HIGH PRIORITY */
+        .ql-container .ql-editor .ql-syntax .token.comment,
+        .full-height-editor .ql-editor .ql-syntax .token.comment,
+        .ql-editor .ql-syntax .token.comment,
+        #modal-description .ql-editor .ql-syntax .token.comment,
+        #add-child-description-container .ql-editor .ql-syntax .token.comment,
+        .ql-container .ql-editor .ql-syntax .token.prolog,
+        .full-height-editor .ql-editor .ql-syntax .token.prolog,
+        .ql-editor .ql-syntax .token.prolog,
+        #modal-description .ql-editor .ql-syntax .token.prolog,
+        #add-child-description-container .ql-editor .ql-syntax .token.prolog,
+        .ql-container .ql-editor .ql-syntax .token.doctype,
+        .full-height-editor .ql-editor .ql-syntax .token.doctype,
+        .ql-editor .ql-syntax .token.doctype,
+        #modal-description .ql-editor .ql-syntax .token.doctype,
+        #add-child-description-container .ql-editor .ql-syntax .token.doctype,
+        .ql-container .ql-editor .ql-syntax .token.cdata,
+        .full-height-editor .ql-editor .ql-syntax .token.cdata,
+        .ql-editor .ql-syntax .token.cdata,
+        #modal-description .ql-editor .ql-syntax .token.cdata,
+        #add-child-description-container .ql-editor .ql-syntax .token.cdata {
+            color: #64748b !important;
+        }
+
+        /* All token styles with high specificity */
+        .ql-container .ql-editor .ql-syntax .token.punctuation,
+        .full-height-editor .ql-editor .ql-syntax .token.punctuation,
+        .ql-editor .ql-syntax .token.punctuation,
+        #modal-description .ql-editor .ql-syntax .token.punctuation,
+        #add-child-description-container .ql-editor .ql-syntax .token.punctuation {
+            color: #e2e8f0 !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.property,
+        .full-height-editor .ql-editor .ql-syntax .token.property,
+        .ql-editor .ql-syntax .token.property,
+        #modal-description .ql-editor .ql-syntax .token.property,
+        #add-child-description-container .ql-editor .ql-syntax .token.property,
+        .ql-container .ql-editor .ql-syntax .token.tag,
+        .full-height-editor .ql-editor .ql-syntax .token.tag,
+        .ql-editor .ql-syntax .token.tag,
+        #modal-description .ql-editor .ql-syntax .token.tag,
+        #add-child-description-container .ql-editor .ql-syntax .token.tag,
+        .ql-container .ql-editor .ql-syntax .token.constant,
+        .full-height-editor .ql-editor .ql-syntax .token.constant,
+        .ql-editor .ql-syntax .token.constant,
+        #modal-description .ql-editor .ql-syntax .token.constant,
+        #add-child-description-container .ql-editor .ql-syntax .token.constant,
+        .ql-container .ql-editor .ql-syntax .token.symbol,
+        .full-height-editor .ql-editor .ql-syntax .token.symbol,
+        .ql-editor .ql-syntax .token.symbol,
+        #modal-description .ql-editor .ql-syntax .token.symbol,
+        #add-child-description-container .ql-editor .ql-syntax .token.symbol,
+        .ql-container .ql-editor .ql-syntax .token.deleted,
+        .full-height-editor .ql-editor .ql-syntax .token.deleted,
+        .ql-editor .ql-syntax .token.deleted,
+        #modal-description .ql-editor .ql-syntax .token.deleted,
+        #add-child-description-container .ql-editor .ql-syntax .token.deleted {
+            color: #f472b6 !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.boolean,
+        .full-height-editor .ql-editor .ql-syntax .token.boolean,
+        .ql-editor .ql-syntax .token.boolean,
+        #modal-description .ql-editor .ql-syntax .token.boolean,
+        #add-child-description-container .ql-editor .ql-syntax .token.boolean,
+        .ql-container .ql-editor .ql-syntax .token.number,
+        .full-height-editor .ql-editor .ql-syntax .token.number,
+        .ql-editor .ql-syntax .token.number,
+        #modal-description .ql-editor .ql-syntax .token.number,
+        #add-child-description-container .ql-editor .ql-syntax .token.number {
+            color: #fb923c !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.selector,
+        .full-height-editor .ql-editor .ql-syntax .token.selector,
+        .ql-editor .ql-syntax .token.selector,
+        #modal-description .ql-editor .ql-syntax .token.selector,
+        #add-child-description-container .ql-editor .ql-syntax .token.selector,
+        .ql-container .ql-editor .ql-syntax .token.attr-name,
+        .full-height-editor .ql-editor .ql-syntax .token.attr-name,
+        .ql-editor .ql-syntax .token.attr-name,
+        #modal-description .ql-editor .ql-syntax .token.attr-name,
+        #add-child-description-container .ql-editor .ql-syntax .token.attr-name,
+        .ql-container .ql-editor .ql-syntax .token.string,
+        .full-height-editor .ql-editor .ql-syntax .token.string,
+        .ql-editor .ql-syntax .token.string,
+        #modal-description .ql-editor .ql-syntax .token.string,
+        #add-child-description-container .ql-editor .ql-syntax .token.string,
+        .ql-container .ql-editor .ql-syntax .token.char,
+        .full-height-editor .ql-editor .ql-syntax .token.char,
+        .ql-editor .ql-syntax .token.char,
+        #modal-description .ql-editor .ql-syntax .token.char,
+        #add-child-description-container .ql-editor .ql-syntax .token.char,
+        .ql-container .ql-editor .ql-syntax .token.builtin,
+        .full-height-editor .ql-editor .ql-syntax .token.builtin,
+        .ql-editor .ql-syntax .token.builtin,
+        #modal-description .ql-editor .ql-syntax .token.builtin,
+        #add-child-description-container .ql-editor .ql-syntax .token.builtin,
+        .ql-container .ql-editor .ql-syntax .token.inserted,
+        .full-height-editor .ql-editor .ql-syntax .token.inserted,
+        .ql-editor .ql-syntax .token.inserted,
+        #modal-description .ql-editor .ql-syntax .token.inserted,
+        #add-child-description-container .ql-editor .ql-syntax .token.inserted {
+            color: #22d3ee !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.operator,
+        .full-height-editor .ql-editor .ql-syntax .token.operator,
+        .ql-editor .ql-syntax .token.operator,
+        #modal-description .ql-editor .ql-syntax .token.operator,
+        #add-child-description-container .ql-editor .ql-syntax .token.operator,
+        .ql-container .ql-editor .ql-syntax .token.entity,
+        .full-height-editor .ql-editor .ql-syntax .token.entity,
+        .ql-editor .ql-syntax .token.entity,
+        #modal-description .ql-editor .ql-syntax .token.entity,
+        #add-child-description-container .ql-editor .ql-syntax .token.entity,
+        .ql-container .ql-editor .ql-syntax .token.url,
+        .full-height-editor .ql-editor .ql-syntax .token.url,
+        .ql-editor .ql-syntax .token.url,
+        #modal-description .ql-editor .ql-syntax .token.url,
+        #add-child-description-container .ql-editor .ql-syntax .token.url,
+        .ql-container .ql-editor .ql-syntax .token.variable,
+        .full-height-editor .ql-editor .ql-syntax .token.variable,
+        .ql-editor .ql-syntax .token.variable,
+        #modal-description .ql-editor .ql-syntax .token.variable,
+        #add-child-description-container .ql-editor .ql-syntax .token.variable {
+            color: #e2e8f0 !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.atrule,
+        .full-height-editor .ql-editor .ql-syntax .token.atrule,
+        .ql-editor .ql-syntax .token.atrule,
+        #modal-description .ql-editor .ql-syntax .token.atrule,
+        #add-child-description-container .ql-editor .ql-syntax .token.atrule,
+        .ql-container .ql-editor .ql-syntax .token.attr-value,
+        .full-height-editor .ql-editor .ql-syntax .token.attr-value,
+        .ql-editor .ql-syntax .token.attr-value,
+        #modal-description .ql-editor .ql-syntax .token.attr-value,
+        #add-child-description-container .ql-editor .ql-syntax .token.attr-value,
+        .ql-container .ql-editor .ql-syntax .token.function,
+        .full-height-editor .ql-editor .ql-syntax .token.function,
+        .ql-editor .ql-syntax .token.function,
+        #modal-description .ql-editor .ql-syntax .token.function,
+        #add-child-description-container .ql-editor .ql-syntax .token.function,
+        .ql-container .ql-editor .ql-syntax .token.class-name,
+        .full-height-editor .ql-editor .ql-syntax .token.class-name,
+        .ql-editor .ql-syntax .token.class-name,
+        #modal-description .ql-editor .ql-syntax .token.class-name,
+        #add-child-description-container .ql-editor .ql-syntax .token.class-name {
+            color: #fbbf24 !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.keyword,
+        .full-height-editor .ql-editor .ql-syntax .token.keyword,
+        .ql-editor .ql-syntax .token.keyword,
+        #modal-description .ql-editor .ql-syntax .token.keyword,
+        #add-child-description-container .ql-editor .ql-syntax .token.keyword {
+            color: #c084fc !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.regex,
+        .full-height-editor .ql-editor .ql-syntax .token.regex,
+        .ql-editor .ql-syntax .token.regex,
+        #modal-description .ql-editor .ql-syntax .token.regex,
+        #add-child-description-container .ql-editor .ql-syntax .token.regex,
+        .ql-container .ql-editor .ql-syntax .token.important,
+        .full-height-editor .ql-editor .ql-syntax .token.important,
+        .ql-editor .ql-syntax .token.important,
+        #modal-description .ql-editor .ql-syntax .token.important,
+        #add-child-description-container .ql-editor .ql-syntax .token.important {
+            color: #fb923c !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.important,
+        .full-height-editor .ql-editor .ql-syntax .token.important,
+        .ql-editor .ql-syntax .token.important,
+        #modal-description .ql-editor .ql-syntax .token.important,
+        #add-child-description-container .ql-editor .ql-syntax .token.important,
+        .ql-container .ql-editor .ql-syntax .token.bold,
+        .full-height-editor .ql-editor .ql-syntax .token.bold,
+        .ql-editor .ql-syntax .token.bold,
+        #modal-description .ql-editor .ql-syntax .token.bold,
+        #add-child-description-container .ql-editor .ql-syntax .token.bold {
+            font-weight: bold !important;
+        }
+
+        .ql-container .ql-editor .ql-syntax .token.italic,
+        .full-height-editor .ql-editor .ql-syntax .token.italic,
+        .ql-editor .ql-syntax .token.italic,
+        #modal-description .ql-editor .ql-syntax .token.italic,
+        #add-child-description-container .ql-editor .ql-syntax .token.italic {
+            font-style: italic !important;
+        }
+
+        .formatted-content [class*="ql-indent"] pre.ql-syntax {
+            box-sizing: border-box;
+        }
+
+        .formatted-content [class*="ql-indent"] pre.ql-syntax code {
+            display: block;
+            width: 100%;
+            padding: 0 !important;
+            margin: 0 !important;
+            text-align: left;
+            white-space: pre;
+            overflow-x: auto;
+            padding-left: 0 !important;
+            margin-left: 0 !important;
+            text-indent: 0 !important;
+            position: relative;
+            left: 0 !important;
+        }
+
+        /* Blockquotes */
+        .formatted-content blockquote {
+            border-left: 3px solid #cbd5e1;
+            padding-left: 0.75rem;
+            margin-left: 0;
+            margin-right: 0;
+            color: #475569;
+            font-style: italic;
+        }
+
+        /* Quill Editor */
+        .formatted-content .ql-editor {
+            padding: 0;
+            min-height: 150px;
+            overflow: visible;
+        }
+
+        .ql-editor {
+            min-height: 150px;
+        }
+
+        .ql-toolbar.ql-snow {
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0.25rem;
+        }
+
+        .ql-container.ql-snow {
+            border-bottom-left-radius: 0.25rem;
+            border-bottom-right-radius: 0.25rem;
+        }
+
+        /* Layout Panels */
+        #left-panel {
+            width: 25%;
+            min-width: 100px;
+            transition: all 0.3s ease;
+            position: relative;
+            height: 100%;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        #left-panel.collapsed {
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        #left-panel.collapsed+.flex-1 {
+            width: 100%;
+        }
+
+        #left-panel-collapsed-indicator {
+            position: absolute;
+            top: 50%;
+            right: -0.5rem;
+            width: 0.5rem;
+            height: 0.5rem;
+            background-color: #cbd5e1;
+            border-radius: 50%;
+            display: none;
+            transform: translateY(-50%);
+        }
+
+        #left-panel.collapsed+#left-panel-collapsed-indicator {
+            display: block;
+        }
+
+        .flex-1.p-4 {
+            overflow-y: auto;
+            flex: 1;
+            width: 70%;
+        }
+
+        .content-section {
+            padding: 1rem;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+        }
+
+        .content-section p {
+            margin-top: 0.4rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .content-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            width: fit-content;
+            max-width: 100%;
+        }
+
+        .view-counter {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+        }
+
+        .view-counter svg {
+            width: 0.800rem;
+            height: 0.800rem;
+        }
+
+        /* Code Blocks */
+        .code-block {
+            margin: 0;
+            padding: 0;
+            background: #000000;
+            border-radius: 0 0 4px 4px;
+            overflow-x: auto;
+        }
+
+        .code-block code {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            color: #e2e8f0;
+            padding: 0;
+            display: block;
+            white-space: pre;
+            margin: 0;
+        }
+
+        .code-block textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 0.5rem 0.25rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            color: #1e293b;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0 0 0.375rem 0.375rem;
+            resize: vertical;
+            margin: 0;
+            white-space: pre;
+        }
+
+        /* Code Editor */
+        .code-editor-container {
+            border: 1px solid #e2e8f0;
+            border-radius: 0.375rem;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .code-tabs-container {
+            display: flex;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .code-editor {
+            width: 100%;
+            min-height: 200px;
+            padding: 0.75rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.800rem;
+            line-height: 1.5;
+            color: #1e293b;
+            background: #f8fafc;
+            border: none;
+            resize: vertical;
+            outline: none;
+            white-space: pre;
+            overflow-x: auto;
+        }
+
+        .code-editor:focus {
+            box-shadow: none;
+        }
+
+        .code-tab {
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #64748b;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 32px;
+        }
+
+        .code-tab:hover {
+            color: #334155;
+        }
+
+        .code-tab.active {
+            color: #2563eb;
+            border-bottom-color: #2563eb;
+        }
+
+        /* Editor Components */
+        .editor-container {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+        }
+
+        .editor-header {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .editor-grid {
+            display: grid;
+            gap: 1.25rem;
+        }
+
+        .editor-input {
+            width: 100%;
+            padding: 0.625rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.375rem;
+            font-size: 0.800rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .editor-input:focus {
+            outline: none;
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 3px rgba(56, 182, 255, 0.1);
+        }
+
+        #add-child-description-container .ql-editor {
+            flex: 1 1 0%;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .editor-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+
+        .editor-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .editor-toolbar button {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.25rem;
+            background-color: #f9fafb;
+            cursor: pointer;
+        }
+
+        .editor-textarea {
+            width: 100%;
+            height: 200px;
+            padding: 0.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.25rem;
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-size: 0.800rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 32px;
+        }
+
+        .btn-primary {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background-color: #f1f5f9;
+            color: #334155;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background-color: #e2e8f0;
+        }
+
+        /* JSON Tree */
+        .json-children {
+            margin-left: 10px;
+            border-left: 1px dashed #94a3b8;
+            display: none;
+            padding-left: 8px;
+        }
+
+        .json-children.expanded {
+            display: block;
+        }
+
+        .json-key {
+            position: relative;
+            padding: 3px 6px 3px 20px;
+            margin: 1px 0;
+            cursor: pointer;
+            font-size: 0.75rem;
+            border-radius: 3px;
+            transition: all 0.15s ease;
+            min-height: 32px;
+        }
+
+        .json-key:hover {
+            background-color: #f1f5f9;
+            color: #0ea5e9;
+        }
+
+        .json-key.active {
+            background-color: #bae6fd;
+        }
+
+        .expandable {
+            position: relative;
+        }
+
+        .expandable::before {
+            content: '▸';
+            position: absolute;
+            left: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 9px;
+            color: #64748b;
+            transition: transform 0.15s;
+        }
+
+        .expandable.expanded::before {
+            transform: translateY(-50%) rotate(90deg);
+        }
+
+        /* Search Input */
+        .search-input {
+            transition: all 0.2s ease;
+        }
+
+        .search-input:focus {
+            box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+        }
+
+        /* Modal */
+        .modal {
+            /* Hidden by default to avoid showing a blank white popup on initial load. */
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+
+        /* Use this class when you want to show the modal (keeps centering styles scoped to visible state) */
+        .modal.open {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            width: 80%;
+            max-width: 800px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Formatting */
+        [contenteditable="true"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .formatting-toolbar {
+            border: 1px solid #e2e8f0;
+            border-bottom: none;
+            border-top-left-radius: 0.25rem;
+            border-top-right-radius: 0.25rem;
+        }
+
+        .format-btn {
+            padding: 0.25rem;
+            border-radius: 0.25rem;
+            transition: background-color 0.15s;
+        }
+
+        .format-btn:hover {
+            background-color: #e2e8f0;
+        }
+
+        .format-btn.active {
+            background-color: #cbd5e1;
+        }
+
+        /* Tokens */
+        .token {
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        /* Content Panel */
+        #content-panel {
+            width: 100%;
+            max-width: none;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Media Queries */
+        @media (max-width: 1024px) {
+            #left-panel {
+                width: 35%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            #left-panel {
+                width: 40%;
+                min-width: 180px;
+            }
+
+            .editor-container {
+                padding: 0.1rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .flex-1.flex {
+                flex-direction: column;
+            }
+
+            #left-panel {
+                width: 100%;
+                min-width: 0;
+                max-height: 40vh;
+                border-right: none;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            #left-panel.collapsed {
+                max-height: 40px;
+                overflow: hidden;
+            }
+
+            #panel-collapse-toggle svg {
+                transform: rotate(90deg);
+            }
+
+            #panel-collapse-toggle.collapsed svg {
+                transform: rotate(-90deg);
+            }
+
+            .code-tab,
+            .btn {
+                padding: 0.5rem 0.75rem;
+                min-height: 40px;
+            }
+
+            .modal-content {
+                width: 95%;
+                max-width: none;
+                padding: 0.75rem;
+            }
+
+            .flex-1.p-4 {
+                width: 100%;
+                flex: 1;
+            }
+        }
+    </style>
+
+</head>
+
+<body class="bg-slate-50">
+    <div class="h-screen flex flex-col" id="app-container">
+        <div class="h-11 bg-slate-900 flex items-center px-2 gap-2 border-b border-slate-800 justify-between">
+            <div class="flex items-center gap-2">
+                <button id="panel-collapse-toggle" class="p-1 text-slate-400 hover:text-slate-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+                <div class="relative flex items-center gap-2">
+                    <input id="search-input" type="text" placeholder="Search..." class="search-input bg-slate-800 text-slate-200 px-2 py-1 rounded text-sm w-48 
+            focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="header-save-btn"
+                        class="hidden px-2 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors">
+                        Save
+                    </button>
+                    <button id="header-cancel-btn"
+                        class="hidden px-2 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition-colors">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 text-center px-4 overflow-hidden">
+                <div id="header-title" class="text-slate-300 text-sm font-medium truncate uppercase"></div>
+                <div id="header-path" class="text-slate-500 truncate" style="font-size: 0.6rem; line-height: 0.8rem;"></div>
+            </div>
+            <div class="flex items-center ml-4">
+                <div class="hidden flex items-center gap-1 mr-3" id="header-action-buttons">
+                    <button id="header-add-child-btn" class="p-2 text-green-500 hover:text-green-400 transition-colors"
+                        title="Add child to this element">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <button id="header-edit-btn" class="p-2 text-blue-500 hover:text-blue-400 transition-colors"
+                        title="Edit this element">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                        </svg>
+                    </button>
+                    <button id="header-delete-btn" class="p-2 text-red-500 hover:text-red-400 transition-colors"
+                        title="Delete this element">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+                <button id="header-popout-btn" class="p-2 text-purple-500 hover:text-purple-400 transition-colors hidden"
+                    title="Open in Picture-in-Picture" onclick="openInPictureInPicture()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.37 3.63L20.37 5.63" /><path d="M21 3h-5v5" />
+                    </svg>
+                </button>
+                <button onclick="handleLogout()" class="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex-1 flex overflow-hidden">
+            <div id="left-panel" class="w-72 border-r border-slate-200 bg-white transition-all duration-300 
+                shadow-sm overflow-hidden flex-shrink-0">
+                <div class="p-3 overflow-y-auto h-full">
+                    <div id="json-tree" class="space-y-1"></div>
+                </div>
+            </div>
+            <div id="left-panel-collapsed-indicator"></div>
+            <div class="flex-1 overflow-y-auto bg-slate-50">
+                <div id="content-panel" class="space-y-4 p-4">
+                    <div id="content-section" class="max-w-4xl"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="editor-modal" class="modal">
+        <div class="modal-content max-w-4xl p-0 bg-white rounded-lg shadow-lg h-[95vh] flex flex-col">
+            <div class="flex-shrink-0 border-b border-slate-200">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <button class="text-slate-500 hover:text-slate-700 close-modal">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex gap-4 p-4">
+                    <div class="w-1/2">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Parent Location</label>
+                        <select id="parentSelect"
+                            class="w-full p-2 border border-slate-300 rounded-md text-sm shadow-sm focus:ring-blue-500 focus:border-blue-500"></select>
+                    </div>
+                    <div id="elementSelectContainer" class="w-1/2 hidden">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Select Element</label>
+                        <select id="elementSelect"
+                            class="w-full p-2 border border-slate-300 rounded-md text-sm shadow-sm focus:ring-blue-500 focus:border-blue-500"></select>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 min-h-0 overflow-y-auto">
+                <div id="modal-description" class="full-height-editor h-full"></div>
+            </div>
+        </div>
+    </div>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
+        import { getDatabase, ref, get, set, push, update } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+        import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
+        const firebaseConfig = {
+            apiKey: "AIzaSyCBH192yfKBuy_9P3NcqLtvQMt5XN7Fofk",
+            authDomain: "udaykajananotes.firebaseapp.com",
+            databaseURL: "https://udaykajananotes-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "udaykajananotes",
+            storageBucket: "udaykajananotes.firebasestorage.app",
+            messagingSenderId: "128489649264",
+            appId: "1:128489649264:web:4a4c704c746ffa5500b0b5",
+            measurementId: "G-L313DMGD6Z"
+        };
+        let app = initializeApp(firebaseConfig);
+
+        // Make this function globally available for the onclick attribute
+        window.openInPictureInPicture = async function () {
+            if (!('documentPictureInPicture' in window)) {
+                showNotification('Picture-in-Picture is not supported by your browser.', 'error');
+                return;
+            }
+
+            // Determine if we are in edit mode by checking for a visible Quill editor instance
+            const editorContainer = document.querySelector('.editor-container');
+            let isEditor = false;
+            let mainQuillInstance = null;
+
+            if (editorContainer && editorContainer.offsetParent !== null) {
+                const quillElement = editorContainer.querySelector('.ql-container');
+                if (quillElement && quillElement.__quill) {
+                    mainQuillInstance = quillElement.__quill;
+                }
+                isEditor = true;
+            }
+
+            const contentSource = document.querySelector('#content-panel .content-section');
+
+            try {
+                const pipWindow = await window.documentPictureInPicture.requestWindow({
+                    width: Math.max(400, window.innerWidth * (isEditor ? 0.5 : 0.25)),
+                    height: Math.max(300, window.innerHeight * (isEditor ? 0.6 : 0.25)),
+                });
+                
+                // Copy all stylesheets and scripts to the new window to ensure functionality
+                [...document.styleSheets].forEach((styleSheet) => {
+                    try {
+                        if (styleSheet.href) {
+                            const link = document.createElement('link');
+                            link.rel = 'stylesheet';
+                            link.href = styleSheet.href;
+                            pipWindow.document.head.appendChild(link);
+                        } else {
+                            const style = document.createElement('style');
+                            style.textContent = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+                            pipWindow.document.head.appendChild(style);
+                        }
+                    } catch (e) {
+                        console.warn('Could not copy a stylesheet to PiP window.', e);
+                    }
+                });
+
+                // Add Quill.js script to the PiP window
+                const quillScript = document.createElement('script');
+                quillScript.src = 'https://cdn.quilljs.com/1.3.7/quill.min.js';
+                pipWindow.document.head.appendChild(quillScript);
+
+                pipWindow.document.body.style.backgroundColor = '#f8fafc';
+                pipWindow.document.body.style.margin = '0';
+                pipWindow.document.body.style.padding = '0';
+
+                if (isEditor && mainQuillInstance) {
+                    // We are in edit mode, so create a new Quill editor in the PiP window
+                    const editorContent = mainQuillInstance.root.innerHTML;
+
+                    // Wait for the Quill script to load before initializing
+                    quillScript.onload = () => {
+                        const pipEditorContainer = document.createElement('div');
+                        pipEditorContainer.id = 'pip-editor';
+                        pipEditorContainer.style.height = '100vh';
+                        pipEditorContainer.style.display = 'flex';
+                        pipEditorContainer.style.flexDirection = 'column';
+                        pipWindow.document.body.appendChild(pipEditorContainer);
+
+                        const pipQuill = new pipWindow.Quill('#pip-editor', {
+                            theme: 'snow',
+                            modules: mainQuillInstance.options.modules
+                        });
+                        pipQuill.clipboard.dangerouslyPasteHTML(editorContent);
+                        // Ensure toolbar stays fixed at the top in PiP window
+                        try {
+                            // Add a small style block to enforce sticky toolbar and make editor scrollable
+                            const style = pipWindow.document.createElement('style');
+                            style.type = 'text/css';
+                            style.appendChild(pipWindow.document.createTextNode(`
+                                /* Make toolbar stick to top of PiP editor */
+                                .ql-toolbar { position: sticky !important; top: 0; z-index: 20; background: white !important; }
+                                /* Ensure the editor area grows and becomes scrollable */
+                                #pip-editor .ql-container { flex: 1 1 auto !important; overflow: auto !important; height: auto !important; }
+                                /* Ensure the editor container uses column layout */
+                                #pip-editor { display: flex !important; flex-direction: column !important; }
+                            `));
+                            pipWindow.document.head.appendChild(style);
+
+                            // Make sure the generated elements respect flex sizing
+                            const qlContainer = pipWindow.document.querySelector('#pip-editor .ql-container');
+                            if (qlContainer) {
+                                qlContainer.style.flex = '1';
+                                qlContainer.style.overflow = 'auto';
+                                qlContainer.style.height = 'auto';
+                            }
+                            const qlToolbar = pipWindow.document.querySelector('.ql-toolbar');
+                            if (qlToolbar) {
+                                qlToolbar.style.position = 'sticky';
+                                qlToolbar.style.top = '0';
+                                qlToolbar.style.zIndex = '20';
+                                qlToolbar.style.background = '#fff';
+                            }
+                        } catch (e) {
+                            console.warn('Could not apply PiP toolbar fixes', e);
+                        }
+
+                        // Set up an interval to sync content from PiP to main editor every 30 seconds
+                        const syncInterval = setInterval(() => {
+                            const pipContent = pipQuill.root.innerHTML;
+                            mainQuillInstance.clipboard.dangerouslyPasteHTML(pipContent);
+                            console.log('Auto-synced PiP content to main editor.');
+                        }, 30000);
+
+                        // When the PiP window closes, clear the interval and do a final sync.
+                        pipWindow.addEventListener('pagehide', () => {
+                            clearInterval(syncInterval);
+                            const pipContent = pipQuill.root.innerHTML;
+                            mainQuillInstance.clipboard.dangerouslyPasteHTML(pipContent);
+                            console.log('Final sync on PiP window close.');
+                        });
+                    };
+                } else if (contentSource) {
+                    // We are in view mode, just clone the content
+                    const contentClone = contentSource.cloneNode(true);
+                    pipWindow.document.body.style.padding = '1rem';
+                    pipWindow.document.body.appendChild(contentClone);
+
+                    // Add Prism.js for syntax highlighting in view mode
+                    const prismScript = document.createElement('script');
+                    prismScript.src = "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js";
+                    pipWindow.document.head.appendChild(prismScript);
+
+                    prismScript.onload = () => {
+                        // Load required language components
+                        ['java', 'python', 'sql'].forEach(lang => {
+                            const langScript = document.createElement('script');
+                            langScript.src = `https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-${lang}.min.js`;
+                            pipWindow.document.head.appendChild(langScript);
+                        });
+                        // Highlight all code blocks after a short delay for languages to load
+                        setTimeout(() => pipWindow.Prism.highlightAll(), 200);
+                    };
+                } else {
+                    showNotification('No content to display in Picture-in-Picture.', 'error');
+                }
+
+            } catch (error) {
+                console.error("Error opening Picture-in-Picture window:", error);
+                showNotification('Could not open Picture-in-Picture window.', 'error');
+            }
+        }
+        let database = getDatabase(app);
+        let currentlySelectedNode = null;
+        let isTreeView = true;
+        const ADMIN_EMAIL = "kajanauday@gmail.com";
+        const leftPanel = document.getElementById('left-panel');
+        const jsonTree = document.getElementById('json-tree');
+        const contentPanel = document.getElementById('content-panel');
+        const searchInput = document.getElementById('search-input');
+        const descriptionSection = document.getElementById('content-section');
+        const editorModal = document.getElementById('editor-modal');
+        const editorTitle = document.getElementById('editor-title');
+        const elementNameInput = document.getElementById('element-name');
+        const cancelButton = document.getElementById('cancel-button');
+        const saveButton = document.getElementById('save-button');
+        const parentSelect = document.getElementById('parentSelect');
+        const elementSelectContainer = document.getElementById('elementSelectContainer');
+        const elementSelect = document.getElementById('elementSelect');
+        const elementName = document.getElementById('elementName');
+        const description = document.getElementById('description');
+        async function renderTree(container, parentPath = 'tree') {
+            try {
+                const dbRef = ref(database, parentPath);
+                const snapshot = await get(dbRef);
+                if (!snapshot.exists()) {
+                    container.innerHTML = '<div class="error">No data found</div>';
+                    return;
+                }
+                const data = snapshot.val();
+                for (const [key, value] of Object.entries(data)) {
+                    const node = document.createElement('div');
+                    const currentPath = `${parentPath}/${key}`;
+                    const hasChildren = value && typeof value === 'object' && value.hasOwnProperty('children') &&
+                        Object.keys(value.children).length > 0;
+                    node.className = `json-key ${hasChildren ? 'expandable' : ''}`;
+                    node.innerHTML = `<span class="truncate">${key}</span>`;
+                    node.dataset.nodePath = currentPath;
+                    if (hasChildren) {
+                        const childContainer = document.createElement('div');
+                        childContainer.className = 'json-children';
+                        node.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            selectTreeNode(node.dataset.nodePath);
+                            node.classList.toggle('expanded');
+                            childContainer.classList.toggle('expanded');
+                            const nodeRef = ref(database, currentPath);
+                            const nodeSnapshot = await get(nodeRef);
+                            if (nodeSnapshot.exists()) {
+                                clearRightPanel();
+                                showContent(nodeSnapshot.val(), key, currentPath);
+                            }
+                        });
+                        container.appendChild(node);
+                        container.appendChild(childContainer);
+                        await renderTree(childContainer, `${currentPath}/children`);
+                    } else {
+                        node.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            selectTreeNode(node.dataset.nodePath);
+                            const nodeRef = ref(database, currentPath);
+                            const nodeSnapshot = await get(nodeRef);
+                            if (nodeSnapshot.exists()) {
+                                clearRightPanel();
+                                showContent(nodeSnapshot.val(), key, currentPath);
+                            }
+                        });
+                        container.appendChild(node);
+                    }
+                }
+            } catch (error) {
+                console.error("Error rendering tree:", error);
+                container.innerHTML = `<div class="error">Error loading data: ${error.message}</div>`;
+            }
+        }
+
+        async function trackUserLogin(user) {
+            try {
+                const db = getDatabase();
+                const now = new Date();
+                const timestamp = now.toISOString();
+                const date = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+                // 1. Log individual login entry
+                const loginsRef = ref(db, `userLogins/${user.uid}`);
+                await push(loginsRef, {
+                    email: user.email,
+                    timestamp: timestamp,
+                    date: date,
+                    userAgent: navigator.userAgent,
+                    ip: null // Would need server-side for real IP
+                });
+
+                // 2. Update user profile with login count and last login
+                const userRef = ref(db, `users/${user.uid}`);
+                const userSnapshot = await get(userRef);
+
+                let userData = {
+                    email: user.email,
+                    uid: user.uid,
+                    lastLogin: timestamp,
+                    lastLoginDate: date
+                };
+
+                if (userSnapshot.exists()) {
+                    const existingData = userSnapshot.val();
+                    userData = {
+                        ...existingData,
+                        email: user.email, // Update in case email changed
+                        lastLogin: timestamp,
+                        lastLoginDate: date,
+                        totalLogins: (existingData.totalLogins || 0) + 1
+                    };
+                } else {
+                    userData.totalLogins = 1;
+                    userData.firstLogin = timestamp;
+                }
+
+                await set(userRef, userData);
+
+                // 3. Track daily login stats
+                const dailyStatsRef = ref(db, `loginStats/daily/${date}`);
+                const dailySnapshot = await get(dailyStatsRef);
+
+                if (dailySnapshot.exists()) {
+                    const stats = dailySnapshot.val();
+                    await update(dailyStatsRef, {
+                        totalLogins: (stats.totalLogins || 0) + 1,
+                        uniqueUsers: stats.uniqueUsers || new Set([user.uid]).size,
+                        lastUpdated: timestamp
+                    });
+
+                    // Add user to unique users list
+                    const uniqueUsersRef = ref(db, `loginStats/daily/${date}/uniqueUsersList/${user.uid}`);
+                    await set(uniqueUsersRef, true);
+                } else {
+                    await set(dailyStatsRef, {
+                        date: date,
+                        totalLogins: 1,
+                        uniqueUsers: 1,
+                        lastUpdated: timestamp,
+                        uniqueUsersList: {
+                            [user.uid]: true
+                        }
+                    });
+                }
+
+                // 4. Track overall system stats
+                const systemStatsRef = ref(db, 'loginStats/overall');
+                const systemSnapshot = await get(systemStatsRef);
+
+                if (systemSnapshot.exists()) {
+                    const stats = systemSnapshot.val();
+                    await update(systemStatsRef, {
+                        totalLogins: (stats.totalLogins || 0) + 1,
+                        lastLogin: timestamp,
+                        lastUser: user.email
+                    });
+                } else {
+                    await set(systemStatsRef, {
+                        totalLogins: 1,
+                        lastLogin: timestamp,
+                        lastUser: user.email,
+                        systemStarted: timestamp
+                    });
+                }
+
+                console.log('Login tracking completed successfully');
+            } catch (error) {
+                console.error('Error tracking user login:', error);
+            }
+        }
+
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Retrieve and print logs from the login page
+            const loginLogsJSON = sessionStorage.getItem('loginDebugLogs');
+            if (loginLogsJSON) {
+                try {
+                    const logs = JSON.parse(loginLogsJSON);
+                    console.groupCollapsed("--- Logs from Login Page ---");
+                    logs.forEach(log => console.log(log));
+                    console.groupEnd();
+                } catch (e) {
+                    console.error("Could not parse login logs:", e);
+                } finally {
+                    // Clean up the logs from session storage so they don't get printed again
+                    sessionStorage.removeItem('loginDebugLogs');
+                }
+            }
+
+            const auth = getAuth();
+
+            // This is the main authentication guard for the application page.
+            onAuthStateChanged(auth, async (user) => {
+                if (!user) {
+                    // If no user is logged in, redirect to the login page.
+                    localStorage.removeItem('userRole');
+                    window.location.href = 'index.html';
+                } else {
+                    // If a user is logged in, ensure their role and login are tracked.
+                    // User is logged in. Track the login.
+                    await trackUserLogin(user);
+
+                    // Check if a role is already in localStorage from the login page.
+                    // If not, fetch it from the database as a fallback.
+                    if (!localStorage.getItem('userRole')) {
+                        console.log("[Auth] userRole not in localStorage. Fetching from DB as a fallback.");
+                        // The database variable might not be initialized if the other DOMContentLoaded hasn't run.
+                        // It's safer to get it directly here.
+                        if (!database) {
+                            database = getDatabase(app);
+                        }
+                        const userRoleRef = ref(database, `userRoles/${user.uid}`);
+                        const userRoleSnapshot = await get(userRoleRef);
+                        if (userRoleSnapshot.exists()) {
+                            localStorage.setItem('userRole', userRoleSnapshot.val());
+                        } else {
+                            // This case is unlikely but good to have.
+                            localStorage.setItem('userRole', 'reader');
+                        }
+                    }
+
+                    // Now that auth is confirmed, initialize the rest of the app.
+                    const userRole = localStorage.getItem('userRole');
+                    console.log(`[Auth] User role confirmed as: '${userRole}'`);
+
+                    console.log("[Init] Auth confirmed. Initializing application UI.");
+                    await loadParentOptions();
+                    await renderTree(jsonTree);
+                    initializeEventListeners();
+                }
+            });
+
+            window.handleLogout = function () {
+                const auth = getAuth();
+                signOut(auth).then(() => {
+                    localStorage.removeItem('userRole'); // Clear role on logout
+                    window.location.href = 'index.html';
+                }).catch((error) => {
+                    console.error("Error signing out:", error);
+                });
+            };
+        });
+
+        function initializeEventListeners() {
+            const panelCollapseToggle = document.getElementById('panel-collapse-toggle');
+            panelCollapseToggle.addEventListener('click', () => {
+                leftPanel.classList.toggle('collapsed');
+                panelCollapseToggle.classList.toggle('collapsed');
+                const toggleIcon = panelCollapseToggle.querySelector('svg');
+                if (leftPanel.classList.contains('collapsed')) {
+                    if (window.innerWidth <= 640) {
+                        toggleIcon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+                    } else {
+                        toggleIcon.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+                    }
+                } else {
+                    if (window.innerWidth <= 640) {
+                        toggleIcon.innerHTML = '<polyline points="18 15 12 9 6 15"></polyline>';
+                    } else {
+                        toggleIcon.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+                    }
+                }
+            });
+            searchInput.addEventListener('input', debounce((e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                filterItems(searchTerm);
+            }, 300));
+        }
+        window.addEventListener('resize', () => {
+            const panelCollapseToggle = document.getElementById('panel-collapse-toggle');
+            if (panelCollapseToggle) {
+                const toggleIcon = panelCollapseToggle.querySelector('svg');
+                if (window.innerWidth <= 640) {
+                    if (leftPanel.classList.contains('collapsed')) {
+                        toggleIcon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+                    } else {
+                        toggleIcon.innerHTML = '<polyline points="18 15 12 9 6 15"></polyline>';
+                    }
+                } else {
+                    if (leftPanel.classList.contains('collapsed')) {
+                        toggleIcon.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+                    } else {
+                        toggleIcon.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+                    }
+                }
+            }
+        });
+        let lastTap = 0;
+        document.addEventListener('touchend', function (event) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < 500 && tapLength > 0) {
+                if (event.target.closest('.json-key')) {
+                    event.preventDefault();
+                    const node = event.target.closest('.json-key');
+                    if (node.classList.contains('expandable')) {
+                        node.classList.toggle('expanded');
+                        node.nextElementSibling.classList.toggle('expanded');
+                    }
+                }
+            }
+            lastTap = currentTime;
+        });
+        function selectTreeNode(nodePath) {
+            document.querySelectorAll('.json-key').forEach(el => el.classList.remove('active'));
+            const nodeElements = document.querySelectorAll('.json-key');
+            nodeElements.forEach(nodeElement => {
+                if (nodeElement.dataset.nodePath === nodePath) {
+                    nodeElement.classList.add('active');
+                }
+            });
+        }
+        function processCodeBlocks(container) {
+            // console.log('Processing code blocks in HTML:', container.querySelector('.formatted-content')?.innerHTML);
+
+            container.querySelectorAll('pre.ql-syntax').forEach(pre => {
+                // Check if already wrapped
+                let wrapper = pre.parentElement;
+                const isAlreadyWrapped = wrapper && wrapper.classList.contains('code-block-container');
+
+                // Create wrapper if needed
+                if (!isAlreadyWrapped) {
+                    const newWrapper = document.createElement('div');
+                    newWrapper.className = 'code-block-container';
+                    pre.parentNode.insertBefore(newWrapper, pre);
+                    newWrapper.appendChild(pre);
+                    wrapper = newWrapper;
+                }
+
+                // Look for indentation in the pre element itself
+                let indentLevel = 0;
+                const preIndentMatch = pre.className.match(/ql-indent-(\d+)/);
+                if (preIndentMatch) {
+                    indentLevel = parseInt(preIndentMatch[1]);
+
+                    // Apply indentation to wrapper instead of removing from pre
+                    wrapper.classList.add(`ql-indent-${indentLevel}`);
+
+                    // Keep the indent class on pre for Quill editor compatibility
+                    // but override its styling through CSS
+                }
+
+                // Method 2: Check parent elements for indent classes
+                if (indentLevel === 0) {
+                    let parent = wrapper.parentElement;
+                    while (parent && parent !== container) {
+                        const parentIndentMatch = parent.className.match(/ql-indent-(\d+)/);
+                        if (parentIndentMatch) {
+                            indentLevel = parseInt(parentIndentMatch[1]);
+                            wrapper.classList.add(`ql-indent-${indentLevel}`);
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                }
+
+                // Method 3: Check the original HTML for patterns
+                if (indentLevel === 0) {
+                    const containerHTML = container.innerHTML;
+                    const preHTML = pre.outerHTML;
+                    const preIndex = containerHTML.indexOf(preHTML);
+                    if (preIndex > -1) {
+                        const beforePre = containerHTML.substring(Math.max(0, preIndex - 200), preIndex);
+                        const indentMatch = beforePre.match(/ql-indent-(\d+)/g);
+                        if (indentMatch) {
+                            const lastIndent = indentMatch[indentMatch.length - 1];
+                            const levelMatch = lastIndent.match(/ql-indent-(\d+)/);
+                            if (levelMatch) {
+                                indentLevel = parseInt(levelMatch[1]);
+                                wrapper.classList.add(`ql-indent-${indentLevel}`);
+                            }
+                        }
+                    }
+                }
+
+                // Clean up code content - remove any internal indentation since container handles it
+                const code = pre.querySelector('code');
+                if (code) {
+                    let codeText = code.textContent || code.innerText;
+                    // Only remove leading whitespace, don't add any indentation
+                    codeText = removeLeadingWhitespace(codeText);
+                    code.textContent = codeText;
+
+                    // Ensure code element has no margin/padding that could cause issues
+                    code.style.margin = '0';
+                    code.style.padding = '0';
+                    code.style.textIndent = '0';
+                }
+
+                // Ensure pre element itself has no conflicting styles but keep indent classes
+                pre.style.margin = '0';
+                pre.style.textIndent = '0';
+            });
+        }
+
+
+        function clearRightPanel() {
+            const contentPanel = document.getElementById('content-panel');
+            contentPanel.innerHTML = ``;
+            document.getElementById('header-title').textContent = '';
+            document.getElementById('header-path').textContent = '';
+            hideHeaderActionButtons();
+        }
+
+        function closeEditorModal() {
+            if (!editorModal) return;
+            editorModal.classList.remove('open');
+            // Hide element select container (if visible) and reset selection
+            try {
+                if (elementSelectContainer) elementSelectContainer.classList.add('hidden');
+                if (elementSelect) elementSelect.value = '';
+                const modalDesc = document.getElementById('modal-description');
+                if (modalDesc) modalDesc.innerHTML = '';
+            } catch (e) {
+                console.warn('Error cleaning up modal on close', e);
+            }
+        }
+
+        // Make modal closable via close buttons, backdrop click, and Escape key
+        document.addEventListener('DOMContentLoaded', () => {
+            // Close buttons inside modal
+            document.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', closeEditorModal);
+            });
+
+            // Click on backdrop closes modal
+            if (editorModal) {
+                editorModal.addEventListener('click', (e) => {
+                    if (e.target === editorModal) closeEditorModal();
+                });
+            }
+
+            // ESC key closes modal
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeEditorModal();
+            });
+        });
+        function filterItems(searchTerm) {
+            if (!searchTerm) {
+                renderNavigation();
+                return;
+            }
+            searchDatabase(searchTerm);
+        }
+        function filterTree(data, term) {
+            const filtered = {};
+            Object.entries(data).forEach(([key, value]) => {
+                if (key.toLowerCase().includes(term) ||
+                    (value.description && value.description.toLowerCase().includes(term))) {
+                    filtered[key] = { ...value };
+                } else if (value.children) {
+                    const filteredChildren = filterTree(value.children, term);
+                    if (Object.keys(filteredChildren).length > 0) {
+                        filtered[key] = {
+                            ...value,
+                            children: filteredChildren
+                        };
+                    }
+                }
+            });
+            return filtered;
+        }
+        async function searchDatabase(term) {
+            try {
+                term = term.toLowerCase();
+                const treeRef = ref(database, 'tree');
+                const snapshot = await get(treeRef);
+                if (!snapshot.exists()) {
+                    jsonTree.innerHTML = '<div class="error">No data found</div>';
+                    return;
+                }
+                const data = snapshot.val();
+                jsonTree.innerHTML = '';
+                if (isTreeView) {
+                    const filteredData = filterTree(data, term);
+                    renderFilteredTree(filteredData, jsonTree);
+                }
+            } catch (error) {
+                console.error("Error searching database:", error);
+                jsonTree.innerHTML = `<div class="error">Error searching: ${error.message}</div>`;
+            }
+        }
+        function renderFilteredTree(data, container) {
+            for (const [key, value] of Object.entries(data)) {
+                const node = document.createElement('div');
+                const hasChildren = value && typeof value === 'object' && value.hasOwnProperty('children') &&
+                    Object.keys(value.children).length > 0;
+                node.className = `json-key ${hasChildren ? 'expandable' : ''}`;
+                node.innerHTML = `<span class="truncate">${key}</span>`;
+                const path = `tree/${key}`;
+                node.dataset.nodePath = path;
+                if (hasChildren) {
+                    const childContainer = document.createElement('div');
+                    childContainer.className = 'json-children';
+                    node.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        selectTreeNode(node.dataset.nodePath);
+                        node.classList.toggle('expanded');
+                        childContainer.classList.toggle('expanded');
+                        clearRightPanel();
+                        showContent(value, key, path);
+                    });
+                    container.appendChild(node);
+                    container.appendChild(childContainer);
+                    renderFilteredTree(value.children, childContainer);
+                } else {
+                    node.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        selectTreeNode(node.dataset.nodePath);
+                        clearRightPanel();
+                        showContent(value, key, path);
+                    });
+                    container.appendChild(node);
+                }
+            }
+        }
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        function updateTreeSelection(path) {
+            document.querySelectorAll('.json-key').forEach(el => el.classList.remove('active'));
+            if (!path) return;
+            const pathParts = path.split('/');
+            let currentPath = '';
+            let currentNode = jsonTree;
+            pathParts.forEach(part => {
+                currentPath = currentPath ? `${currentPath}/${part}` : part;
+                const node = document.querySelector(`.json-key[data-node-path="${currentPath}"]`);
+                if (node) {
+                    const parent = node.closest('.json-children')?.previousElementSibling;
+                    if (parent && parent.classList.contains('expandable')) {
+                        parent.classList.add('expanded');
+                        parent.nextElementSibling.classList.add('expanded');
+                    }
+                    if (part === pathParts[pathParts.length - 1]) {
+                        node.classList.add('active');
+                    }
+                }
+            });
+        }
+        async function loadElementData(parentPath, elementKey, addQuill = null) {
+            try {
+                let elementPath;
+                if (parentPath === 'root') {
+                    elementPath = `tree/${elementKey}`;
+                } else {
+                    elementPath = `tree/${parentPath}/children/${elementKey}`;
+                }
+                const elementRef = ref(database, elementPath);
+                const snapshot = await get(elementRef);
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    document.getElementById('modal-element-name').value = elementKey;
+                    if (addQuill == null && document.getElementById('edit-description-container')) {
+                        const editQuill = new Quill('#edit-description-container', {
+                            theme: 'snow',
+                            modules: {
+                                toolbar: [
+                                    ['bold', 'italic', 'underline', 'strike'],
+                                    ['blockquote', 'code-block'],
+                                    [{ 'header': 1 }, { 'header': 2 }],
+                                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                                    [{ 'script': 'sub' }, { 'script': 'super' }],
+                                    [{ 'indent': '-1' }, { 'indent': '+1' }],
+                                    [{ 'direction': 'rtl' }],
+                                    [{ 'size': ['small', false, 'large', 'huge'] }],
+                                    [{ 'color': [] }, { 'background': [] }],
+                                    [{ 'font': [] }],
+                                    [{ 'align': [] }],
+                                    ['clean']
+                                ]
+                            }
+                        });
+                        if (data.description) {
+                            editQuill.clipboard.dangerouslyPasteHTML(data.description);
+                        }
+                    }
+                    initializeTextFormatting();
+                }
+            } catch (error) {
+                console.error("Error loading element data:", error);
+            }
+        }
+        function clearForm() {
+            const elementNameInput = document.getElementById('rp-element-name');
+            const descriptionTextarea = document.getElementById('rp-description');
+            if (elementNameInput) {
+                elementNameInput.value = '';
+            }
+            if (descriptionTextarea) {
+                descriptionTextarea.value = '';
+            }
+            const elementSelect = document.getElementById('rp-elementSelect');
+            if (modifyToggle && modifyToggle.checked && elementSelect) {
+                elementSelect.innerHTML = '<option value="">Select an element</option>';
+            }
+        }
+        loadParentOptions();
+        function getFormattedDateTime() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = String(now.getFullYear()).slice(-2);
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${day}/${month}/${year}:${hours}:${minutes}`;
+        }
+        async function loadParentOptions(selectorId = 'parentSelect') {
+            try {
+                const treeRef = ref(database, 'tree');
+                const snapshot = await get(treeRef);
+                const parentSelect = document.getElementById(selectorId);
+                parentSelect.innerHTML = '<option value="root">Root</option>';
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    await generateParentOptions(data, '', parentSelect);
+                }
+            } catch (error) {
+                console.error("Error loading parent options:", error);
+            }
+        }
+        async function generateParentOptions(data, currentPath, selectElement) {
+            for (const [key, value] of Object.entries(data)) {
+                const newPath = currentPath ? `${currentPath}/${key}` : key;
+                const option = document.createElement('option');
+                option.value = newPath;
+                option.textContent = newPath;
+                selectElement.appendChild(option);
+                if (value && value.children) {
+                    await generateParentOptions(value.children, newPath, selectElement);
+                }
+            }
+        }
+        async function loadElementOptions(parentPath) {
+            try {
+                const elementSelect = document.getElementById('rp-elementSelect');
+                elementSelect.innerHTML = '<option value="">Select an element</option>';
+                if (parentPath === 'root') {
+                    const rootRef = ref(database, 'tree');
+                    const snapshot = await get(rootRef);
+                    if (snapshot.exists()) {
+                        const data = snapshot.val();
+                        Object.keys(data).forEach(key => {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.textContent = key;
+                            elementSelect.appendChild(option);
+                        });
+                    }
+                } else {
+                    const pathRef = ref(database, `tree/${parentPath}/children`);
+                    const snapshot = await get(pathRef);
+                    if (snapshot.exists()) {
+                        const data = snapshot.val();
+                        Object.keys(data).forEach(key => {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.textContent = key;
+                            elementSelect.appendChild(option);
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading element options:", error);
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            const panelCollapseToggle = document.getElementById('panel-collapse-toggle');
+            if (panelCollapseToggle) {
+                initializePanelState(panelCollapseToggle);
+            } else {
+                console.error("Could not find panel-collapse-toggle element");
+            }
+        });
+        function initializePanelState(panelCollapseToggle) {
+            const leftPanel = document.getElementById('left-panel');
+            if (window.innerWidth <= 640) {
+                leftPanel.classList.add('collapsed');
+                panelCollapseToggle.classList.add('collapsed');
+                const toggleIcon = panelCollapseToggle.querySelector('svg');
+                toggleIcon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+            }
+        }
+        async function saveElement(addQuill = null) {
+            try {
+                const isChildEditor = document.getElementById('add-child-name') !== null;
+                const elementNameInput = isChildEditor
+                    ? document.getElementById('add-child-name')
+                    : document.getElementById('modal-element-name');
+                const parentSelect = isChildEditor
+                    ? null // Child editor doesn't have parent select
+                    : document.getElementById('parentSelect');
+                const elementSelect = isChildEditor
+                    ? null // Child editor doesn't have element select
+                    : document.getElementById('elementSelect');
+
+                const newElementName = elementNameInput.value.trim();
+                const isModifyMode = !isChildEditor && elementSelect && elementSelect.style.display !== 'none';
+
+                let descriptionText = '';
+
+                // Get description content from appropriate Quill editor
+                if (addQuill) {
+                    // For child editor
+                    descriptionText = addQuill.root.innerHTML;
+                } else if (document.getElementById('edit-description-container')) {
+                    // For edit mode
+                    const editQuill = Quill.find(document.getElementById('edit-description-container'));
+                    if (editQuill) {
+                        descriptionText = editQuill.root.innerHTML;
+                    }
+                } else if (document.getElementById('modal-description')) {
+                    // For modal editor
+                    const modalQuill = Quill.find(document.getElementById('modal-description'));
+                    if (modalQuill) {
+                        descriptionText = modalQuill.root.innerHTML;
+                    }
+                }
+
+                // Validate input
+                if (!newElementName) {
+                    alert('Please enter an element name');
+                    return;
+                }
+
+                // Check for indent classes in the content
+                const hasIndentClasses = descriptionText.includes('ql-indent-');
+
+                const timestamp = getFormattedDateTime();
+                const elementData = {
+                    description: descriptionText, // Preserve all Quill formatting including indent classes
+                    children: {},
+                    viewCount: 0,
+                    lastModified: timestamp
+                };
+
+                let elementPath;
+
+                if (isChildEditor) {
+                    // Handle child element creation
+                    const parentPath = document.getElementById('add-child-button').dataset.path;
+                    const parentName = document.getElementById('add-child-button').dataset.name;
+
+                    if (parentPath === 'tree') {
+                        elementPath = `${parentPath}/${parentName}/children/${newElementName}`;
+                    } else {
+                        elementPath = `${parentPath}/children/${newElementName}`;
+                    }
+
+                    console.log('Saving child element to path:', elementPath);
+                    await set(ref(database, elementPath), elementData);
+                }
+                else if (isModifyMode) {
+                    // Handle element modification
+                    const selectedElement = elementSelect.value;
+                    if (!selectedElement) {
+                        alert('Please select an element to modify');
+                        return;
+                    }
+
+                    // Determine current element path
+                    if (parentSelect.value === 'root') {
+                        elementPath = `tree/${selectedElement}`;
+                    } else {
+                        elementPath = `tree/${parentSelect.value}/children/${selectedElement}`;
+                    }
+
+                    // Get existing data to preserve children and view count
+                    const elementRef = ref(database, elementPath);
+                    const snapshot = await get(elementRef);
+                    if (snapshot.exists()) {
+                        const existingData = snapshot.val();
+                        elementData.children = existingData.children || {};
+                        elementData.viewCount = existingData.viewCount || 0;
+                    }
+
+                    // Handle element renaming
+                    if (selectedElement !== newElementName) {
+                        const newPath = parentSelect.value === 'root'
+                            ? `tree/${newElementName}`
+                            : `tree/${parentSelect.value}/children/${newElementName}`;
+
+                        console.log('Renaming element from:', elementPath, 'to:', newPath);
+                        await set(ref(database, newPath), elementData);
+                        await set(ref(database, elementPath), null); // Delete old path
+                        elementPath = newPath;
+                    } else {
+                        console.log('Updating element at path:', elementPath);
+                        await set(ref(database, elementPath), elementData);
+                    }
+                }
+                else {
+                    // Handle new element creation
+                    if (parentSelect.value === 'root') {
+                        elementPath = `tree/${newElementName}`;
+                    } else {
+                        elementPath = `tree/${parentSelect.value}/children/${newElementName}`;
+                    }
+
+                    console.log('Creating new element at path:', elementPath);
+                    await set(ref(database, elementPath), elementData);
+                }
+
+                // Close modal if not child editor
+                if (!isChildEditor) {
+                    const em = document.getElementById('editor-modal');
+                    if (em) em.classList.remove('open');
+                }
+
+                // Refresh the tree view
+                jsonTree.innerHTML = '';
+                await renderTree(jsonTree);
+
+                // Show the updated/created element
+                const newElementRef = ref(database, elementPath);
+                const newSnapshot = await get(newElementRef);
+                if (newSnapshot.exists()) {
+                    const savedData = newSnapshot.val();
+                    console.log('Element saved successfully.');
+
+                    // Extract element name from path for display
+                    const pathParts = elementPath.split('/');
+                    const displayName = pathParts[pathParts.length - 1];
+
+                    showContent(savedData, displayName, elementPath);
+                }
+
+                // Show success notification
+                const action = isChildEditor ? 'Child element added' :
+                    isModifyMode ? 'Element updated' : 'Element created';
+                showNotification(`${action} successfully: ${newElementName}`, 'success');
+
+            } catch (error) {
+                console.error("Error saving element:", error);
+                alert('Error: ' + error.message);
+                showNotification('Error saving element: ' + error.message, 'error');
+            }
+        }
+
+         function showContent(item, itemName, path = '') {
+            // Always hide the header action buttons as they are no longer used contextually
+            document.getElementById('header-popout-btn').classList.add('hidden');
+            hideHeaderActionButtons();
+
+            const isAdmin = localStorage.getItem('userRole') === 'admin';
+
+            clearRightPanel();
+            currentlySelectedNode = item;
+            document.getElementById('header-title').textContent = itemName;
+            // Clean up the path for display: remove 'tree' and 'children' parts, then join with a chevron.
+            const cleanedPathHTML = path.split('/')
+                .filter(part => part !== 'tree' && part !== 'children')
+                .join(' <span class="mx-1 text-slate-600">&rsaquo;</span> ');
+            document.getElementById('header-path').innerHTML = cleanedPathHTML;
+
+            const contentPanel = document.getElementById('content-panel');
+            const contentCard = document.createElement('div');
+            contentCard.className = 'content-section bg-white rounded-lg shadow relative';
+
+            if (path) {
+                incrementViewCount(path, item);
+            }
+
+            let contentHTML = `
+        <div class="mt-3 formatted-content">
+            ${item.description || ''}
+        </div>
+    `;
+
+            if (item.viewCount !== undefined) {
+                contentHTML += `
+            <div class="view-counter mt-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                    <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+                </svg>
+                <span>${item.viewCount || 0}</span>
+            </div>
+        `;
+            }
+
+            if (item.lastModified) {
+                contentHTML += `
+            <div class="text-xs text-slate-500 mt-2">Last modified: ${item.lastModified}</div>
+        `;
+            }
+
+            contentCard.innerHTML = contentHTML;
+
+            // If the user is an admin, show the action buttons in the header
+            if (isAdmin) {
+                // This function will display the buttons in the header and attach the correct event listeners
+                showHeaderActionButtons(path, itemName);
+            }
+
+            processCodeBlocks(contentCard);
+            contentCard.querySelectorAll('pre.ql-syntax').forEach(pre => {
+                if (!pre.querySelector('code')) {
+                    let lang = 'sql'; // default language
+                    if (pre.className.match(/language-(\w+)/)) {
+                        lang = pre.className.match(/language-(\w+)/)[1];
+                    }
+                    const code = document.createElement('code');
+                    code.className = `language-${lang}`;
+                    code.textContent = pre.textContent;
+                    pre.textContent = '';
+                    pre.appendChild(code);
+                }
+            });
+
+            contentPanel.appendChild(contentCard);
+            const formattedContent = contentCard.querySelector('.formatted-content');
+            if (formattedContent) {
+                formattedContent.querySelectorAll('pre.ql-syntax').forEach(pre => {
+                    // Ensure code element exists
+                    if (!pre.querySelector('code')) {
+                        const code = document.createElement('code');
+                        code.className = 'language-sql'; // default language
+                        code.textContent = pre.textContent;
+                        pre.textContent = '';
+                        pre.appendChild(code);
+                    }
+
+                    // Apply syntax highlighting
+                    const codeElement = pre.querySelector('code');
+                    if (codeElement && window.Prism) {
+                        Prism.highlightElement(codeElement);
+                    }
+                });
+            }
+        }
+        async function incrementViewCount(path, item) {
+            if (!path) return;
+            try {
+                const elementRef = ref(database, path);
+                const snapshot = await get(elementRef);
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    const sessionKey = `viewed_${path}`;
+                    if (!sessionStorage.getItem(sessionKey)) {
+                        const currentCount = data.viewCount || 0;
+                        const newCount = currentCount + 1;
+                        await set(ref(database, `${path}/viewCount`), newCount);
+                        sessionStorage.setItem(sessionKey, 'true');
+                        item.viewCount = newCount;
+                    } else {
+                        item.viewCount = data.viewCount || 0;
+                    }
+                }
+            } catch (error) {
+                console.error("Error updating view count:", error);
+            }
+        }
+        function initializeQuillEditor(container, config) {
+            const quill = new Quill(container, config);
+            return quill;
+        }
+
+
+        function showAddChildForm(parentPath, parentName) {
+            clearRightPanel();
+            const contentPanel = document.getElementById('content-panel');
+            contentPanel.innerHTML = `
+        <div class="editor-container h-full">
+            <div id="add-child-description-container" class="full-height-editor h-full"></div>
+        </div>
+    `;
+
+            const descriptionContainer = document.getElementById('add-child-description-container');
+            if (descriptionContainer) {
+                // Simple Quill initialization without custom handlers or event listeners
+                const modules = {
+                    toolbar: [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        ['blockquote', 'code-block'],
+                        [{ 'header': 1 }, { 'header': 2 }],
+                        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                        [{ 'script': 'sub' }, { 'script': 'super' }],
+                        [{ 'indent': '-1' }, { 'indent': '+1' }],
+                        [{ 'direction': 'rtl' }],
+                        [{ 'size': ['small', false, 'large', 'huge'] }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'font': [] }],
+                        [{ 'align': [] }],
+                        ['clean']
+                    ]
+                };
+
+                const childQuill = new Quill(descriptionContainer, {
+                    theme: 'snow',
+                    modules: modules,
+                    placeholder: 'Enter description here...'
+                });
+
+                // Add custom toolbar elements
+                const toolbar = childQuill.getModule('toolbar').container;
+                const existingCustomSection = toolbar.querySelector('.custom-toolbar-section');
+                if (existingCustomSection) {
+                    existingCustomSection.remove();
+                }
+                const customSection = document.createElement('div');
+                customSection.className = 'custom-toolbar-section';
+                customSection.innerHTML = `
+            <span class="text-xs text-gray-600 ml-2">Adding child - use search bar above for child name • ⌘/Ctrl+S: Save • Double Esc: Cancel • Double-tap: Save • Long press→vibrate→release: Save</span>
+        `;
+                toolbar.appendChild(customSection);
+
+                initializeAddChildFormEventListeners(parentPath, parentName, childQuill);
+            }
+        }
+        function initializeAddChildFormEventListeners(parentPath, parentName, childQuill) {
+            let longPressTimer;
+            let lastTapTime = 0;
+
+            // Define the keyboard handler in a scope accessible to restoreHeader
+            let lastEscapeTime = 0;
+            function handleChildKeyboard(e) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    const currentTime = new Date().getTime();
+                    const escapeGap = currentTime - lastEscapeTime;
+
+                    // Double escape within 500ms
+                    if (escapeGap < 500 && escapeGap > 0) {
+                        if (confirm('Cancel adding child and lose all changes?')) {
+                            restoreHeader();
+                            loadAndShowElement(parentPath);
+                        }
+                    }
+                    lastEscapeTime = currentTime;
+                } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    saveChildElement();
+                }
+            }
+
+            // Setup header controls for adding child
+            const searchInput = document.getElementById('search-input');
+            const headerSaveBtn = document.getElementById('header-save-btn');
+            const headerCancelBtn = document.getElementById('header-cancel-btn');
+
+            // Store original search placeholder and value
+            const originalPlaceholder = searchInput.placeholder;
+            const originalValue = searchInput.value;
+
+            // Hide left panel during adding child
+            leftPanel.style.display = 'none';
+
+            // Hide action buttons during adding child
+            const actionButtons = document.getElementById('header-action-buttons');
+            if (actionButtons) {
+                actionButtons.querySelector('#header-add-child-btn').classList.add('hidden');
+                actionButtons.querySelector('#header-edit-btn').classList.add('hidden');
+                actionButtons.querySelector('#header-delete-btn').classList.add('hidden');
+            }
+
+            // Set search bar for child name input
+            searchInput.placeholder = 'Child element name...';
+            searchInput.value = '';
+            headerSaveBtn.classList.remove('hidden');
+            headerCancelBtn.classList.remove('hidden');
+
+            // Cleanup function to restore header
+            function restoreHeader() {
+                searchInput.placeholder = originalPlaceholder;
+                searchInput.value = originalValue;
+                headerSaveBtn.classList.add('hidden');
+                headerCancelBtn.classList.add('hidden');
+                leftPanel.style.display = 'block';
+                // Restore visibility of action buttons
+                if (actionButtons) {
+                    actionButtons.querySelector('#header-add-child-btn').classList.remove('hidden');
+                    actionButtons.querySelector('#header-edit-btn').classList.remove('hidden');
+                    actionButtons.querySelector('#header-delete-btn').classList.remove('hidden');
+                }
+
+                document.removeEventListener('keydown', handleChildKeyboard);
+
+                // Remove button event listeners by cloning the buttons
+                const newSaveBtn = headerSaveBtn.cloneNode(true);
+                const newCancelBtn = headerCancelBtn.cloneNode(true);
+                headerSaveBtn.parentNode.replaceChild(newSaveBtn, headerSaveBtn);
+                headerCancelBtn.parentNode.replaceChild(newCancelBtn, headerCancelBtn);
+
+                // Show action buttons again if admin
+                if (localStorage.getItem('userRole') === 'admin') {
+                    const currentElement = document.querySelector('#content-panel h2');
+                    if (currentElement) {
+                        // We'll need to re-show buttons when content loads
+                        hideHeaderActionButtons();
+                    }
+                }
+            }
+
+            // Header button event listeners
+            headerSaveBtn.addEventListener('click', saveChildElement);
+            headerCancelBtn.addEventListener('click', () => {
+                if (confirm('Cancel adding child and lose all changes?')) {
+                    restoreHeader();
+                    clearRightPanel();
+                    loadAndShowElement(parentPath);
+                }
+            });
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', handleChildKeyboard);
+
+            // Touch gestures for mobile
+            const editorElement = document.getElementById('add-child-description-container');
+            let vibrateTriggered = false;
+            let longPressStartTime = 0;
+
+            // Double-tap to save (faster gap)
+            editorElement.addEventListener('touchend', function (e) {
+                clearTimeout(longPressTimer);
+
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTapTime;
+
+                // Check if long press vibration was triggered and finger lifted immediately
+                if (vibrateTriggered && (currentTime - longPressStartTime) < 1200) {
+                    e.preventDefault();
+                    vibrateTriggered = false;
+                    saveChildElement();
+                    return;
+                }
+
+                // Double-tap detection (reduced from 500ms to 300ms)
+                if (tapLength < 300 && tapLength > 0) {
+                    e.preventDefault();
+                    saveChildElement();
+                }
+                lastTapTime = currentTime;
+                vibrateTriggered = false;
+            });
+
+            // Long press to save with vibration feedback
+            editorElement.addEventListener('touchstart', function (e) {
+                vibrateTriggered = false;
+                longPressStartTime = new Date().getTime();
+
+                longPressTimer = setTimeout(() => {
+                    // Vibrate on mobile devices
+                    if (navigator.vibrate) {
+                        navigator.vibrate(200); // 200ms vibration
+                    }
+                    vibrateTriggered = true;
+                }, 800); // 800ms for long press
+            });
+
+            // Save function
+            async function saveChildElement() {
+                try {
+                    const childName = searchInput.value.trim();
+                    const description = childQuill.root.innerHTML;
+                    if (!childName) {
+                        showNotification('Child element name is required', 'error');
+                        return;
+                    }
+                    const timestamp = getFormattedDateTime();
+                    const childData = {
+                        description: description,
+                        children: {},
+                        viewCount: 0,
+                        lastModified: timestamp
+                    };
+                    let childPath;
+                    if (parentPath.startsWith('tree/')) {
+                        childPath = `${parentPath}/children/${childName}`;
+                    } else {
+                        childPath = `tree/${parentPath}/children/${childName}`;
+                    }
+                    await set(ref(database, childPath), childData);
+                    jsonTree.innerHTML = '';
+                    await renderTree(jsonTree);
+
+                    // Clean up add child mode
+                    restoreHeader();
+
+                    // Properly clear and show the newly created child element
+                    clearRightPanel();
+                    const newChildRef = ref(database, childPath);
+                    const newSnapshot = await get(newChildRef);
+                    if (newSnapshot.exists()) {
+                        const newChildData = newSnapshot.val();
+                        showContent(newChildData, childName, childPath);
+                    }
+                    showNotification(`Child element "${childName}" added successfully`, 'success');
+                } catch (error) {
+                    console.error("Error adding child element:", error);
+                    showNotification('Error adding child element: ' + error.message, 'error');
+                }
+            }
+        }
+        function removeLeadingWhitespace(code) {
+            if (!code) return '';
+            code = code.trim();
+            let lines = code.split('\n');
+            while (lines.length > 0 && lines[0].trim() === '') {
+                lines.shift();
+            }
+            while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+                lines.pop();
+            }
+            if (lines.length === 0) return '';
+            const minIndent = lines.reduce((min, line) => {
+                if (line.trim().length === 0) return min;
+                const leadingSpaces = line.match(/^\s*/)[0].length;
+                return Math.min(min, leadingSpaces);
+            }, Infinity);
+            return lines.map(line =>
+                line.trim().length === 0 ? '' : line.substring(minIndent)
+            ).join('\n');
+        }
+        function confirmDeleteElement(elementPath, elementName) {
+            const confirmModal = document.createElement('div');
+            confirmModal.className = 'modal';
+            confirmModal.style.display = 'block';
+            confirmModal.innerHTML = `
+        <div class="modal-content max-w-md p-6 bg-white rounded-lg shadow-xl">
+            <h3 class="text-lg font-bold text-slate-900 mb-2">Confirm Deletion</h3>
+            <p class="text-sm text-slate-600 mb-4">This action is irreversible. To permanently delete the element, please type its name below.</p>
+            <div class="mb-4">
+                <label for="delete-confirm-input" class="block text-sm font-medium text-slate-700">
+                    Type "<strong class="text-red-600">${elementName}</strong>" to continue
+                </label>
+                <input type="text" id="delete-confirm-input" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500" autocomplete="off">
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="cancel-delete" class="btn btn-secondary">Cancel</button>
+                <button id="confirm-delete" class="btn btn-primary bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed" disabled>Delete</button>
+            </div>
+        </div>
+    `;
+            document.body.appendChild(confirmModal);
+
+            const confirmInput = document.getElementById('delete-confirm-input');
+            const confirmBtn = document.getElementById('confirm-delete');
+            const cancelBtn = document.getElementById('cancel-delete');
+
+            cancelBtn.addEventListener('click', () => {
+                document.body.removeChild(confirmModal);
+            });
+
+            confirmInput.addEventListener('input', () => {
+                if (confirmInput.value === elementName) {
+                    confirmBtn.disabled = false;
+                } else {
+                    confirmBtn.disabled = true;
+                }
+            });
+
+            confirmBtn.addEventListener('click', async () => {
+                try {
+                    await deleteElement(elementPath);
+                    document.body.removeChild(confirmModal);
+                    clearRightPanel();
+                    jsonTree.innerHTML = '';
+                    await renderTree(jsonTree);
+                    showNotification(`Element "${elementName}" deleted successfully`, 'success');
+                } catch (error) {
+                    console.error("Error deleting element:", error);
+                    showNotification('Error deleting element: ' + error.message, 'error');
+                }
+            });
+        }
+        async function deleteElement(elementPath) {
+            try {
+                const elementRef = ref(database, elementPath);
+                const snapshot = await get(elementRef);
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    if (data.children && Object.keys(data.children).length > 0) {
+                        const confirmChildrenDelete = confirm('This element has child elements that will also be deleted. Continue?');
+                        if (!confirmChildrenDelete) {
+                            return;
+                        }
+                    }
+                }
+                await set(ref(database, elementPath), null);
+            } catch (error) {
+                console.error("Error in deleteElement:", error);
+                throw error;
+            }
+        }
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg text-white ${type === 'success' ? 'bg-green-500' :
+                type === 'error' ? 'bg-red-500' :
+                    'bg-blue-500'
+                }`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.classList.add('opacity-0', 'transition-opacity', 'duration-500');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 500);
+            }, 3000);
+        }
+
+        function showHeaderActionButtons(elementPath, elementName) {
+            const headerActionButtons = document.getElementById('header-action-buttons');
+            const headerAddChildBtn = document.getElementById('header-add-child-btn');
+            const headerEditBtn = document.getElementById('header-edit-btn');
+            const headerDeleteBtn = document.getElementById('header-delete-btn');
+            // Show the button group
+            headerActionButtons.classList.remove('hidden');
+            // Also show the standalone popout button
+            document.getElementById('header-popout-btn').classList.remove('hidden');
+
+            // Remove existing event listeners by cloning the buttons
+            const newAddChildBtn = headerAddChildBtn.cloneNode(true);
+            const newEditBtn = headerEditBtn.cloneNode(true);
+            const newDeleteBtn = headerDeleteBtn.cloneNode(true);
+
+            headerAddChildBtn.parentNode.replaceChild(newAddChildBtn, headerAddChildBtn);
+            headerEditBtn.parentNode.replaceChild(newEditBtn, headerEditBtn);
+            headerDeleteBtn.parentNode.replaceChild(newDeleteBtn, headerDeleteBtn);
+
+            // Add event listeners
+            newAddChildBtn.addEventListener('click', () => {
+                showAddChildForm(elementPath, elementName);
+            });
+
+            newEditBtn.addEventListener('click', () => {
+                showEditForm(elementPath, elementName);
+            });
+
+            newDeleteBtn.addEventListener('click', () => {
+                confirmDeleteElement(elementPath, elementName);
+            });
+
+        }
+
+        function hideHeaderActionButtons() {
+            const headerActionButtons = document.getElementById('header-action-buttons');
+            document.getElementById('header-popout-btn').classList.add('hidden');
+            headerActionButtons.classList.add('hidden');
+        }
+        async function showEditForm(elementPath, elementName) {
+            try {
+                const elementRef = ref(database, elementPath);
+                const snapshot = await get(elementRef);
+                if (!snapshot.exists()) {
+                    console.error("Element not found:", elementPath);
+                    return;
+                }
+                const elementData = snapshot.val();
+                clearRightPanel();
+                const contentPanel = document.getElementById('content-panel');
+                contentPanel.innerHTML = `
+            <div class="editor-container">
+                <div id="edit-description-container" class="full-height-editor flex-1"></div>
+            </div>
+        `;
+
+                // Simple Quill configuration without custom event handlers
+                const modules = {
+                    toolbar: [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        ['blockquote', 'code-block'],
+                        [{ 'header': 1 }, { 'header': 2 }],
+                        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                        [{ 'script': 'sub' }, { 'script': 'super' }],
+                        [{ 'indent': '-1' }, { 'indent': '+1' }],
+                        [{ 'direction': 'rtl' }],
+                        [{ 'size': ['small', false, 'large', 'huge'] }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'font': [] }],
+                        [{ 'align': [] }],
+                        ['clean']
+                    ]
+                };
+
+                // Simple Quill initialization
+                const editQuill = new Quill('#edit-description-container', {
+                    theme: 'snow',
+                    modules: modules
+                });
+
+                if (elementData.description) {
+                    editQuill.clipboard.dangerouslyPasteHTML(elementData.description);
+                }
+
+                // Setup header controls for editing (rest of the function remains the same)
+                const searchInput = document.getElementById('search-input');
+                const headerSaveBtn = document.getElementById('header-save-btn');
+                const headerCancelBtn = document.getElementById('header-cancel-btn');
+
+                // Store original search placeholder and value
+                const originalPlaceholder = searchInput.placeholder;
+                const originalValue = searchInput.value;
+
+                // Hide left panel during editing
+                leftPanel.style.display = 'none';
+
+                // Hide action buttons during editing
+                const actionButtons = document.getElementById('header-action-buttons');
+                if (actionButtons) {
+                    actionButtons.querySelector('#header-add-child-btn').classList.add('hidden');
+                    actionButtons.querySelector('#header-edit-btn').classList.add('hidden');
+                    actionButtons.querySelector('#header-delete-btn').classList.add('hidden');
+                }
+
+                // Set search bar for element name editing
+                searchInput.placeholder = 'Element name...';
+                searchInput.value = elementName;
+                headerSaveBtn.classList.remove('hidden');
+                headerCancelBtn.classList.remove('hidden');
+
+                // *** FIX: Explicitly show the PiP button in edit mode ***
+                document.getElementById('header-popout-btn').classList.remove('hidden');
+
+                // Gesture and keyboard event listeners
+                let longPressTimer;
+                let lastTapTime = 0;
+
+                // Define the keyboard handler in a scope accessible to restoreHeader
+                let lastEscapeTime = 0;
+                function handleEditKeyboard(e) {
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        const currentTime = new Date().getTime();
+                        const escapeGap = currentTime - lastEscapeTime;
+
+                        // Double escape within 500ms
+                        if (escapeGap < 500 && escapeGap > 0) {
+                            if (confirm('Cancel editing and lose all changes?')) {
+                                restoreHeader();
+                                loadAndShowElement(elementPath);
+                            }
+                        }
+                        lastEscapeTime = currentTime;
+                    } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        saveEditElement();
+                    }
+                }
+
+                // Cleanup function to restore header
+                function restoreHeader() {
+                    searchInput.placeholder = originalPlaceholder;
+                    searchInput.value = originalValue;
+                    headerSaveBtn.classList.add('hidden');
+                    headerCancelBtn.classList.add('hidden');
+                    leftPanel.style.display = 'block';
+                    // Restore visibility of action buttons
+                    if (actionButtons) {
+                        actionButtons.querySelector('#header-add-child-btn').classList.remove('hidden');
+                        actionButtons.querySelector('#header-edit-btn').classList.remove('hidden');
+                        actionButtons.querySelector('#header-delete-btn').classList.remove('hidden');
+                    }
+
+                    document.removeEventListener('keydown', handleEditKeyboard);
+
+                    // Remove button event listeners by cloning the buttons
+                    const newSaveBtn = headerSaveBtn.cloneNode(true);
+                    const newCancelBtn = headerCancelBtn.cloneNode(true);
+                    headerSaveBtn.parentNode.replaceChild(newSaveBtn, headerSaveBtn);
+                    headerCancelBtn.parentNode.replaceChild(newCancelBtn, headerCancelBtn);
+
+                    // Action buttons will be shown again when content loads
+                    hideHeaderActionButtons();
+                }
+
+                // Header button event listeners
+                headerSaveBtn.addEventListener('click', saveEditElement);
+                headerCancelBtn.addEventListener('click', () => {
+                    if (confirm('Cancel editing and lose all changes?')) {
+                        restoreHeader();
+                        loadAndShowElement(elementPath);
+                    }
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', handleEditKeyboard);
+
+                // Touch gestures for mobile
+                const editorElement = document.getElementById('edit-description-container');
+                let vibrateTriggered = false;
+                let longPressStartTime = 0;
+
+                // Double-tap to save (faster gap)
+                editorElement.addEventListener('touchend', function (e) {
+                    clearTimeout(longPressTimer);
+
+                    const currentTime = new Date().getTime();
+                    const tapLength = currentTime - lastTapTime;
+
+                    // Check if long press vibration was triggered and finger lifted immediately
+                    if (vibrateTriggered && (currentTime - longPressStartTime) < 1200) {
+                        e.preventDefault();
+                        vibrateTriggered = false;
+                        saveEditElement();
+                        return;
+                    }
+
+                    // Double-tap detection (reduced from 500ms to 300ms)
+                    if (tapLength < 300 && tapLength > 0) {
+                        e.preventDefault();
+                        saveEditElement();
+                    }
+                    lastTapTime = currentTime;
+                    vibrateTriggered = false;
+                });
+
+                // Long press to save with vibration feedback
+                editorElement.addEventListener('touchstart', function (e) {
+                    vibrateTriggered = false;
+                    longPressStartTime = new Date().getTime();
+
+                    longPressTimer = setTimeout(() => {
+                        // Vibrate on mobile devices
+                        if (navigator.vibrate) {
+                            navigator.vibrate(200); // 200ms vibration
+                        }
+                        vibrateTriggered = true;
+                    }, 800); // 800ms for long press
+                });
+
+                // Save function
+                async function saveEditElement() {
+                    try {
+                        const newElementName = searchInput.value.trim();
+                        if (!newElementName) {
+                            showNotification('Element name is required', 'error');
+                            return;
+                        }
+
+                        const description = editQuill.root.innerHTML;
+                        const timestamp = getFormattedDateTime();
+
+                        const elementRef = ref(database, elementPath);
+                        const snapshot = await get(elementRef);
+
+                        if (snapshot.exists()) {
+                            const existingData = snapshot.val();
+                            const updatedData = {
+                                description: description,
+                                children: existingData.children || {},
+                                viewCount: existingData.viewCount || 0,
+                                lastModified: timestamp
+                            };
+                            await set(ref(database, elementPath), updatedData);
+                            jsonTree.innerHTML = '';
+                            await renderTree(jsonTree);
+                            // Clean up edit mode
+                            restoreHeader();
+                            const updatedRef = ref(database, elementPath);
+                            const updatedSnapshot = await get(updatedRef);
+                            if (updatedSnapshot.exists()) {
+                                const updatedElementData = updatedSnapshot.val();
+                                showContent(updatedElementData, newElementName, elementPath);
+                            }
+
+                            // Force clear and reload content panel
+                            clearRightPanel();
+                            await loadAndShowElement(elementPath);
+                            showNotification('Element updated successfully', 'success');
+                        }
+                    } catch (error) {
+                        console.error("Error updating element:", error);
+                        showNotification('Error updating element: ' + error.message, 'error');
+                    }
+                }
+
+            } catch (error) {
+                console.error("Error loading element for editing:", error);
+            }
+        }
+        function initializeEditFormEventListeners(elementPath, originalName, editQuill) {
+            document.getElementById('cancel-edit-button').addEventListener('click', () => {
+                loadAndShowElement(elementPath);
+            });
+            document.getElementById('update-button').addEventListener('click', async () => {
+                try {
+                    const newName = document.getElementById('edit-element-name').value.trim();
+                    const description = editQuill.root.innerHTML;
+                    if (!newName) {
+                        alert('Please enter an element name');
+                        return;
+                    }
+                    const timestamp = getFormattedDateTime();
+                    const elementRef = ref(database, elementPath);
+                    const snapshot = await get(elementRef);
+                    if (snapshot.exists()) {
+                        const existingData = snapshot.val();
+                        const updatedData = {
+                            description: description,
+                            children: existingData.children || {},
+                            viewCount: existingData.viewCount || 0,
+                            lastModified: timestamp
+                        };
+                        if (newName !== originalName) {
+                            const pathParts = elementPath.split('/');
+                            const elementIndex = pathParts.indexOf(originalName);
+                            if (elementIndex !== -1) {
+                                pathParts[elementIndex] = newName;
+                                const newPath = pathParts.join('/');
+                                jsonTree.innerHTML = '';
+                                await set(ref(database, newPath), updatedData);
+                                await set(ref(database, elementPath), null);
+                                await renderTree(jsonTree);
+                                loadAndShowElement(newPath);
+                            }
+                        } else {
+                            await set(ref(database, elementPath), updatedData);
+                            loadAndShowElement(elementPath);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error updating element:", error);
+                    alert('Error updating element: ' + error.message);
+                }
+            });
+        }
+        async function loadAndShowElement(path) {
+            try {
+                const elementRef = ref(database, path);
+                const snapshot = await get(elementRef);
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    const pathParts = path.split('/');
+                    const elementName = pathParts[pathParts.length - 1];
+                    clearRightPanel();
+                    showContent(data, elementName, path);
+                }
+            } catch (error) {
+                console.error("Error loading element:", error);
+            }
+        }
+        function initializeTextFormatting() {
+            document.querySelectorAll('.formatting-toolbar').forEach(toolbar => {
+                const editableDiv = toolbar.nextElementSibling;
+                if (!editableDiv || !editableDiv.hasAttribute('contenteditable')) return;
+                toolbar.querySelectorAll('.format-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        editableDiv.focus();
+                        const format = btn.dataset.format;
+                        switch (format) {
+                            case 'bold':
+                                document.execCommand('bold', false, null);
+                                break;
+                            case 'italic':
+                                document.execCommand('italic', false, null);
+                                break;
+                            case 'ul':
+                                document.execCommand('insertUnorderedList', false, null);
+                                break;
+                            case 'ol':
+                                document.execCommand('insertOrderedList', false, null);
+                                break;
+                        }
+                        updateFormatButtonStates(toolbar);
+                    });
+                });
+                const fontSelect = toolbar.querySelector('.format-font');
+                if (fontSelect) {
+                    fontSelect.addEventListener('change', () => {
+                        editableDiv.focus();
+                        const fontFamily = fontSelect.value;
+                        if (fontFamily === 'default') {
+                            document.execCommand('removeFormat', false, null);
+                        } else {
+                            document.execCommand('fontName', false, fontFamily);
+                        }
+                    });
+                }
+                editableDiv.addEventListener('keyup', () => updateFormatButtonStates(toolbar));
+                editableDiv.addEventListener('mouseup', () => updateFormatButtonStates(toolbar));
+                editableDiv.addEventListener('input', () => updateFormatButtonStates(toolbar));
+            });
+        }
+        function updateFormatButtonStates(toolbar) {
+            toolbar.querySelector('[data-format="bold"]').classList.toggle('active', document.queryCommandState('bold'));
+            toolbar.querySelector('[data-format="italic"]').classList.toggle('active', document.queryCommandState('italic'));
+            const inUnorderedList = document.queryCommandState('insertUnorderedList');
+            const inOrderedList = document.queryCommandState('insertOrderedList');
+            toolbar.querySelector('[data-format="ul"]').classList.toggle('active', inUnorderedList);
+            toolbar.querySelector('[data-format="ol"]').classList.toggle('active', inOrderedList);
+            const fontSelect = toolbar.querySelector('.format-font');
+            if (fontSelect) {
+                const currentFont = document.queryCommandValue('fontName');
+                if (currentFont) {
+                    for (const option of fontSelect.options) {
+                        if (currentFont.includes(option.value) && option.value !== 'default') {
+                            fontSelect.value = option.value;
+                            return;
+                        }
+                    }
+                }
+                fontSelect.value = 'default';
+            }
+        }
+    </script>
+</body>
+
+</html>
