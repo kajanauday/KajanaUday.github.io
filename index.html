@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login - Tech Log</title>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -104,12 +104,11 @@
     import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
     import { getDatabase, ref, get, set } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
 
-    // --- FIREBASE CONFIG (replace values with your project's values if different) ---
+    // ---------- FIREBASE CONFIG: update if needed ----------
     const firebaseConfig = {
       apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
       authDomain: "kajanaudaynotes.firebaseapp.com",
       projectId: "kajanaudaynotes",
-      // regional database URL — use the asia-southeast1 regional URL to avoid warnings
       databaseURL: "https://kajanaudaynotes-default-rtdb.asia-southeast1.firebasedatabase.app",
       storageBucket: "kajanaudaynotes.firebasestorage.app",
       messagingSenderId: "696311985600",
@@ -117,14 +116,14 @@
       measurementId: "G-Y9QK783LVC"
     };
 
-    // Initialize Firebase
+    // Initialize Firebase services
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const firestoreDb = getFirestore(app);
     const realtimeDb = getDatabase(app);
     const googleProvider = new GoogleAuthProvider();
 
-    // lightweight debug logs (remove in production)
+    // Debugging info
     console.log('origin:', location.origin);
     console.log('firebase app options:', app.options);
 
@@ -138,31 +137,81 @@
     const passwordInput = document.getElementById('password');
     const googleSigninContainer = googleSignin.parentElement;
 
-    // Admin email domain derived from authDomain so we produce the same firebase user emails used in your project
+    // Derived admin email domain
     const ADMIN_EMAIL_DOMAIN = firebaseConfig.authDomain || 'example.firebaseapp.com';
 
-    // Role assignment and debug recording
+    // Role assignment helpers
     const INITIAL_ADMIN_EMAIL = "kajana.uday@gmail.com";
     let isAdminLoginAttempt = false;
     const loginDebugLogs = [];
-
     function logAndStore(message) {
       console.log(message);
       const timestamp = new Date().toLocaleTimeString();
       loginDebugLogs.push(`[${timestamp}] ${message}`);
     }
 
-    // Persist session in local persistence
+    // Persist session in local persistence (best-effort)
     setPersistence(auth, browserLocalPersistence).catch((err) => {
       console.warn('setPersistence error (non-fatal):', err);
     });
+
+    // Robust navigation helper: tries assign, replace, and as a last resort unregisters SW and reloads
+    async function navigateToApplication() {
+      const dest = `${location.origin}/application.html`;
+      try {
+        console.log('[Navigation] Attempting location.assign ->', dest);
+        // top-level if possible
+        const target = (window.self !== window.top) ? window.top : window;
+        try {
+          target.location.assign(dest);
+        } catch (e) {
+          // If cross-origin framed, fallback to location.replace in current context
+          console.warn('[Navigation] assign to top failed, falling back to current location.replace', e);
+          location.replace(dest);
+        }
+
+        // After a short delay, if navigation didn't happen, try a stronger fallback
+        setTimeout(async () => {
+          if (!location.href.includes('/application.html')) {
+            console.warn('[Navigation] assign/replace did not navigate. Trying fallback replace and service-worker cleanup.');
+            try {
+              location.replace(dest);
+            } catch (e) {
+              console.error('[Navigation] second replace failed:', e);
+            }
+
+            // If still not navigated, try unregistering service workers (common source of stale cached pages)
+            try {
+              if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                if (regs && regs.length) {
+                  console.log('[Navigation] unregistering service workers to avoid cached responses', regs);
+                  await Promise.all(regs.map(r => r.unregister()));
+                  // reload to force fresh network navigation
+                  location.replace(dest + '?sw=cleared_' + Date.now());
+                } else {
+                  console.log('[Navigation] no service workers registered');
+                }
+              }
+            } catch (swErr) {
+              console.error('[Navigation] service worker handling error:', swErr);
+            }
+          } else {
+            console.log('[Navigation] Navigation succeeded.');
+          }
+        }, 200);
+      } catch (navErr) {
+        console.error('[Navigation] Unexpected navigation error:', navErr);
+        try { location.href = '/application.html'; } catch (e) { console.error(e); }
+      }
+    }
 
     // Handle redirect result (called on page load after provider redirects back)
     getRedirectResult(auth)
       .then((result) => {
         if (result && result.user) {
           console.log('Redirect sign-in result:', result.user.uid);
-          // onAuthStateChanged will run and perform role assignment/redirect
+          // onAuthStateChanged will also run and continue the flow
         } else {
           console.log('No redirect sign-in result.');
         }
@@ -172,7 +221,7 @@
         showError(`Authentication error: ${error.message || error.code}`);
       });
 
-    // React to auth state changes (role lookup/assignment and redirect to application.html)
+    // React to auth state changes (role lookup/assignment and redirect)
     onAuthStateChanged(auth, async (user) => {
       if (!user) return;
 
@@ -200,8 +249,8 @@
         await logUserLogin(user, userRole);
         sessionStorage.setItem('loginDebugLogs', JSON.stringify(loginDebugLogs));
 
-        // Redirect to main app page
-        window.location.href = 'application.html';
+        // Robust navigation to application page
+        await navigateToApplication();
       } catch (err) {
         console.error('Error during auth state handling:', err);
         showError('An internal error occurred. See console for details.');
@@ -250,7 +299,7 @@
       try {
         googleProvider.setCustomParameters({ prompt: 'select_account' });
         await signInWithRedirect(auth, googleProvider);
-        // The browser will navigate away to provider and come back — no further code here runs
+        // Browser will navigate away to provider and return to this page.
       } catch (error) {
         console.error("Authentication error (redirect):", error);
         showError(getErrorMessage(error));
@@ -285,7 +334,6 @@
         return;
       }
 
-      // create an email using the project's authDomain so it matches supervised test accounts if you use this convention
       const emailForFirebase = `${username.trim()}@${ADMIN_EMAIL_DOMAIN}`;
 
       try {
