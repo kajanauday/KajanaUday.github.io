@@ -6,54 +6,22 @@
   <title>Login - Tech Log</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    .auth-container {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-color: #f8fafc;
-    }
-    .auth-card {
-      width: 100%;
-      max-width: 400px;
-      background-color: white;
-      border-radius: 0.5rem;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.08);
-      overflow: hidden;
-    }
-    .auth-header {
-      background-color: #1e293b;
-      color: white;
-      padding: 1rem;
-      text-align: center;
-    }
-    .auth-body {
-      padding: 1.5rem;
-    }
-    .error-message {
-      margin-top: 1rem;
-      padding: 0.75rem;
-      background-color: #fee2e2;
-      color: #b91c1c;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-      display: none;
-    }
+    .auth-container { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#f8fafc; }
+    .auth-card { width:100%; max-width:400px; background:#fff; border-radius:.5rem; box-shadow:0 4px 6px rgba(0,0,0,.08); overflow:hidden; }
+    .auth-header { background:#1e293b; color:#fff; padding:1rem; text-align:center; }
+    .auth-body { padding:1.5rem; }
+    .error-message { margin-top:1rem; padding:.75rem; background:#fee2e2; color:#b91c1c; border-radius:.375rem; font-size:.875rem; display:none; }
   </style>
 </head>
 <body>
   <div class="auth-container">
     <div class="auth-card">
-      <div class="auth-header">
-        <h1 class="text-xl font-bold">Tech Log</h1>
-      </div>
-
+      <div class="auth-header"><h1 class="text-xl font-bold">Tech Log</h1></div>
       <div class="auth-body">
         <div id="error-message" class="error-message"></div>
 
         <div class="mt-6">
-          <button id="google-signin"
-                  class="w-full py-3 px-4 border border-slate-300 rounded-md flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
+          <button id="google-signin" class="w-full py-3 px-4 border border-slate-300 rounded-md flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
             <!-- Google SVG -->
             <svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
               <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path>
@@ -66,25 +34,12 @@
         </div>
 
         <div id="admin-login-form" class="hidden mt-4 space-y-4">
-          <div>
-            <label for="username" class="sr-only">Username</label>
-            <input type="text" id="username" placeholder="Username"
-                   class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <div>
-            <label for="password" class="sr-only">Password</label>
-            <input type="password" id="password" placeholder="Password"
-                   class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
-          <button id="admin-signin-btn"
-                  class="w-full py-2 px-4 bg-slate-800 text-white rounded-md hover:bg-slate-900 transition-colors">
-            Sign In
-          </button>
+          <div><input type="text" id="username" placeholder="Username" class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
+          <div><input type="password" id="password" placeholder="Password" class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
+          <button id="admin-signin-btn" class="w-full py-2 px-4 bg-slate-800 text-white rounded-md hover:bg-slate-900 transition-colors">Sign In</button>
         </div>
 
-        <div class="mt-6 text-center">
-          <button id="show-admin-login-btn" class="text-sm text-blue-600 hover:underline">Admin Login</button>
-        </div>
+        <div class="mt-6 text-center"><button id="show-admin-login-btn" class="text-sm text-blue-600 hover:underline">Admin Login</button></div>
       </div>
     </div>
   </div>
@@ -104,7 +59,7 @@
     import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
     import { getDatabase, ref, get, set } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
 
-    // ---------- FIREBASE CONFIG: update if needed ----------
+    // ========== FIREBASE CONFIG - keep yours here ==========
     const firebaseConfig = {
       apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
       authDomain: "kajanaudaynotes.firebaseapp.com",
@@ -116,18 +71,13 @@
       measurementId: "G-Y9QK783LVC"
     };
 
-    // Initialize Firebase services
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const firestoreDb = getFirestore(app);
     const realtimeDb = getDatabase(app);
     const googleProvider = new GoogleAuthProvider();
 
-    // Debugging info
-    console.log('origin:', location.origin);
-    console.log('firebase app options:', app.options);
-
-    // UI elements
+    // UI
     const googleSignin = document.getElementById('google-signin');
     const errorMessage = document.getElementById('error-message');
     const showAdminLoginBtn = document.getElementById('show-admin-login-btn');
@@ -137,236 +87,181 @@
     const passwordInput = document.getElementById('password');
     const googleSigninContainer = googleSignin.parentElement;
 
-    // Derived admin email domain
-    const ADMIN_EMAIL_DOMAIN = firebaseConfig.authDomain || 'example.firebaseapp.com';
+    // Debug outputs
+    console.log('origin:', location.origin);
+    console.log('firebase app options:', app.options);
 
-    // Role assignment helpers
-    const INITIAL_ADMIN_EMAIL = "kajana.uday@gmail.com";
-    let isAdminLoginAttempt = false;
-    const loginDebugLogs = [];
-    function logAndStore(message) {
-      console.log(message);
-      const timestamp = new Date().toLocaleTimeString();
-      loginDebugLogs.push(`[${timestamp}] ${message}`);
-    }
+    // Helpers
+    function showError(msg) { errorMessage.style.display = 'block'; errorMessage.textContent = msg; console.warn(msg); }
+    function hideError(){ errorMessage.style.display = 'none'; errorMessage.textContent = ''; }
 
-    // Persist session in local persistence (best-effort)
-    setPersistence(auth, browserLocalPersistence).catch((err) => {
-      console.warn('setPersistence error (non-fatal):', err);
-    });
+    // Ensure persistence
+    setPersistence(auth, browserLocalPersistence).catch((e)=>console.warn('setPersistence:', e));
 
-    // Robust navigation helper: tries assign, replace, and as a last resort unregisters SW and reloads
-    async function navigateToApplication() {
-      const dest = `${location.origin}/application.html`;
+    // IMPORTANT: Unregister service workers (if any) then navigate. This forces network load of application.html.
+    async function unregisterSWs() {
+      if (!('serviceWorker' in navigator)) return false;
       try {
-        console.log('[Navigation] Attempting location.assign ->', dest);
-        // top-level if possible
-        const target = (window.self !== window.top) ? window.top : window;
-        try {
-          target.location.assign(dest);
-        } catch (e) {
-          // If cross-origin framed, fallback to location.replace in current context
-          console.warn('[Navigation] assign to top failed, falling back to current location.replace', e);
-          location.replace(dest);
-        }
-
-        // After a short delay, if navigation didn't happen, try a stronger fallback
-        setTimeout(async () => {
-          if (!location.href.includes('/application.html')) {
-            console.warn('[Navigation] assign/replace did not navigate. Trying fallback replace and service-worker cleanup.');
-            try {
-              location.replace(dest);
-            } catch (e) {
-              console.error('[Navigation] second replace failed:', e);
-            }
-
-            // If still not navigated, try unregistering service workers (common source of stale cached pages)
-            try {
-              if ('serviceWorker' in navigator) {
-                const regs = await navigator.serviceWorker.getRegistrations();
-                if (regs && regs.length) {
-                  console.log('[Navigation] unregistering service workers to avoid cached responses', regs);
-                  await Promise.all(regs.map(r => r.unregister()));
-                  // reload to force fresh network navigation
-                  location.replace(dest + '?sw=cleared_' + Date.now());
-                } else {
-                  console.log('[Navigation] no service workers registered');
-                }
-              }
-            } catch (swErr) {
-              console.error('[Navigation] service worker handling error:', swErr);
-            }
-          } else {
-            console.log('[Navigation] Navigation succeeded.');
-          }
-        }, 200);
-      } catch (navErr) {
-        console.error('[Navigation] Unexpected navigation error:', navErr);
-        try { location.href = '/application.html'; } catch (e) { console.error(e); }
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (!regs || regs.length === 0) return false;
+        console.log('[SW] Found service workers, unregistering them before navigation.', regs);
+        await Promise.all(regs.map(r => r.unregister()));
+        // give the browser a short moment
+        await new Promise(res => setTimeout(res, 80));
+        return true;
+      } catch (err) {
+        console.warn('[SW] error unregistering:', err);
+        return false;
       }
     }
 
-    // Handle redirect result (called on page load after provider redirects back)
+    async function navigateToApplication() {
+      // Build cache-busted absolute URL
+      const dest = `${location.origin}/application.html?cb=${Date.now()}`;
+      try {
+        // Unregister SWs first to avoid cached responses serving login again
+        await unregisterSWs();
+
+        // If page is inside a frame and same-origin, try top navigation
+        if (window.self !== window.top) {
+          try {
+            window.top.location.replace(dest);
+            return;
+          } catch (err) {
+            console.warn('[Nav] Could not set top.location (cross-origin frame):', err);
+          }
+        }
+
+        // Normal navigation
+        console.log('[Nav] Navigating to', dest);
+        // use replace to avoid keeping login in history (optional)
+        location.replace(dest);
+
+        // Fallback: if navigation didn't take effect in 300ms, force reload with location.href
+        setTimeout(() => {
+          if (!location.href.includes('/application.html')) {
+            console.warn('[Nav] Fallback navigation: forcing location.href');
+            try { location.href = dest; } catch (e) { console.error('[Nav] fallback failed', e); }
+          }
+        }, 300);
+      } catch (err) {
+        console.error('[Nav] Unexpected error while navigating:', err);
+      }
+    }
+
+    // Handle redirect result (on return from provider)
     getRedirectResult(auth)
-      .then((result) => {
+      .then(result => {
         if (result && result.user) {
-          console.log('Redirect sign-in result:', result.user.uid);
-          // onAuthStateChanged will also run and continue the flow
+          console.log('Redirect sign-in result user:', result.user.uid);
         } else {
           console.log('No redirect sign-in result.');
         }
       })
-      .catch((error) => {
-        console.error('getRedirectResult error:', error);
-        showError(`Authentication error: ${error.message || error.code}`);
+      .catch(err => {
+        console.error('getRedirectResult error:', err);
+        showError('Authentication error: ' + (err.message || err.code));
       });
 
-    // React to auth state changes (role lookup/assignment and redirect)
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
+    // Role handling once user is signed in
+    let isAdminLoginAttempt = false;
+    const loginDebugLogs = [];
+    function logAndStore(m){ console.log(m); loginDebugLogs.push(`[${new Date().toLocaleTimeString()}] ${m}`); }
 
-      const userRoleRef = ref(realtimeDb, `userRoles/${user.uid}`);
-      let userRole;
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        console.log('[Auth] No user signed in.');
+        return;
+      }
 
       try {
         logAndStore(`[Auth] Checking role for user: ${user.uid}`);
-        const roleSnapshot = await get(userRoleRef);
-        if (roleSnapshot.exists()) {
-          userRole = roleSnapshot.val();
-          logAndStore(`[Auth] Role found in database: '${userRole}'`);
+        const userRoleRef = ref(realtimeDb, `userRoles/${user.uid}`);
+        const snap = await get(userRoleRef);
+        let role;
+        if (snap.exists()) {
+          role = snap.val();
+          logAndStore(`[Auth] Role found: ${role}`);
         } else {
-          logAndStore('[Auth] No role found in database. Assigning new role.');
-          userRole = isAdminLoginAttempt ? 'admin' : 'reader';
-          logAndStore(`[Auth] Login method was admin form: ${isAdminLoginAttempt}. Assigning role: '${userRole}'`);
-          await set(userRoleRef, userRole);
-          logAndStore('[Auth] New role saved to database.');
+          role = isAdminLoginAttempt ? 'admin' : 'reader';
+          logAndStore(`[Auth] Assigning new role: ${role}`);
+          await set(userRoleRef, role);
         }
 
-        localStorage.setItem('userRole', userRole);
-        logAndStore(`[Auth] Role '${userRole}' stored in localStorage. Redirecting to application...`);
+        localStorage.setItem('userRole', role);
+        logAndStore(`[Auth] Stored role locally and will navigate to application.`);
         isAdminLoginAttempt = false;
 
-        await logUserLogin(user, userRole);
-        sessionStorage.setItem('loginDebugLogs', JSON.stringify(loginDebugLogs));
+        // Log login (fire-and-forget)
+        (async function logUser() {
+          try {
+            const userLogRef = doc(firestoreDb, "user_logs", user.uid);
+            await setDoc(userLogRef, { email: user.email, displayName: user.displayName||'', lastLogin: serverTimestamp(), isAdmin: role==='admin' }, { merge:true });
+            const loginLogRef = doc(firestoreDb, "login_logs", `${user.uid}_${Date.now()}`);
+            await setDoc(loginLogRef, { userId:user.uid, email:user.email, timestamp:serverTimestamp(), userAgent:navigator.userAgent, isAdmin:role==='admin' });
+          } catch(e) { console.warn('logUserLogin failed', e); }
+        })();
 
-        // Robust navigation to application page
+        // Navigate (unregister SWs first to avoid cached login page)
         await navigateToApplication();
       } catch (err) {
-        console.error('Error during auth state handling:', err);
-        showError('An internal error occurred. See console for details.');
+        console.error('Error in onAuthStateChanged handler:', err);
+        showError('Internal error during login. Check console.');
       }
     });
 
-    // Log user login in Firestore
-    async function logUserLogin(user, userRole) {
-      try {
-        const userLogRef = doc(firestoreDb, "user_logs", user.uid);
-        await setDoc(userLogRef, {
-          email: user.email,
-          displayName: user.displayName || '',
-          lastLogin: serverTimestamp(),
-          isAdmin: userRole === 'admin'
-        }, { merge: true });
-
-        const loginLogRef = doc(firestoreDb, "login_logs", `${user.uid}_${Date.now()}`);
-        await setDoc(loginLogRef, {
-          userId: user.uid,
-          email: user.email,
-          timestamp: serverTimestamp(),
-          userAgent: navigator.userAgent,
-          isAdmin: userRole === 'admin'
-        });
-      } catch (error) {
-        console.error("Error logging user login:", error);
-      }
-    }
-
-    // UI helpers
-    function showError(msg) {
-      errorMessage.style.display = 'block';
-      errorMessage.textContent = msg;
-      console.warn(msg);
-    }
-
-    function hideError() {
-      errorMessage.style.display = 'none';
-      errorMessage.textContent = '';
-    }
-
-    // Start redirect-based sign-in for Google
+    // Start redirect-based sign-in
     googleSignin.addEventListener('click', async () => {
       hideError();
       try {
         googleProvider.setCustomParameters({ prompt: 'select_account' });
         await signInWithRedirect(auth, googleProvider);
-        // Browser will navigate away to provider and return to this page.
-      } catch (error) {
-        console.error("Authentication error (redirect):", error);
-        showError(getErrorMessage(error));
+        // browser navigates away, returns to this page after provider
+      } catch (err) {
+        console.error('signInWithRedirect error:', err);
+        showError(getErrorMessage(err));
       }
     });
 
-    // Admin login toggle
+    // Admin UI toggles and email/password sign-in (keeps same behavior)
     showAdminLoginBtn.addEventListener('click', () => {
       googleSigninContainer.classList.add('hidden');
       adminLoginForm.classList.remove('hidden');
       showAdminLoginBtn.textContent = 'Back to User Login';
       hideError();
-
-      // Toggle back handler
-      showAdminLoginBtn.onclick = () => {
-        googleSigninContainer.classList.remove('hidden');
-        adminLoginForm.classList.add('hidden');
-        showAdminLoginBtn.textContent = 'Admin Login';
-        showAdminLoginBtn.onclick = null;
-        showAdminLoginBtn.addEventListener('click', arguments.callee, { once: true });
-      };
+      showAdminLoginBtn.onclick = () => { googleSigninContainer.classList.remove('hidden'); adminLoginForm.classList.add('hidden'); showAdminLoginBtn.textContent='Admin Login'; showAdminLoginBtn.onclick=null; showAdminLoginBtn.addEventListener('click', arguments.callee, { once: true }); };
     }, { once: true });
 
-    // Admin sign-in with email/password (constructs an internal email using the project's authDomain)
     adminSigninBtn.addEventListener('click', async () => {
       hideError();
       const username = usernameInput.value;
       const password = passwordInput.value;
+      if (!username || !password) { showError('Please enter username & password'); return; }
 
-      if (!username || !password) {
-        showError('Please enter both username and password.');
-        return;
-      }
-
-      const emailForFirebase = `${username.trim()}@${ADMIN_EMAIL_DOMAIN}`;
-
+      const emailForFirebase = `${username.trim()}@${(firebaseConfig.authDomain||'example.firebaseapp.com')}`;
       try {
         isAdminLoginAttempt = true;
         await signInWithEmailAndPassword(auth, emailForFirebase, password);
-        // onAuthStateChanged will handle role assignment & redirect
-      } catch (error) {
-        console.error("Admin authentication error:", error);
-        showError(getErrorMessage(error));
+        // onAuthStateChanged will handle redirect
+      } catch (err) {
+        console.error('Admin sign-in failed:', err);
+        showError(getErrorMessage(err));
         isAdminLoginAttempt = false;
       }
     });
 
-    // Friendly error mapping
     function getErrorMessage(error) {
-      const code = error && error.code ? error.code : null;
+      const code = (error && error.code) || '';
       switch (code) {
-        case 'auth/popup-closed-by-user':
-          return 'Sign-in popup was closed before completing the sign in.';
-        case 'auth/cancelled-popup-request':
-          return 'The sign-in popup was cancelled.';
-        case 'auth/popup-blocked':
-          return 'Sign-in popup was blocked by the browser.';
+        case 'auth/popup-closed-by-user': return 'Sign-in popup was closed.';
+        case 'auth/cancelled-popup-request': return 'Sign-in popup cancelled.';
+        case 'auth/popup-blocked': return 'Sign-in popup blocked by browser.';
         case 'auth/user-not-found':
         case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-          return 'Invalid email or password. Please try again.';
-        case 'auth/too-many-requests':
-          return 'Access to this account has been temporarily disabled due to many failed login attempts. Try again later.';
-        case 'auth/unauthorized-domain':
-          return 'This domain is not authorized for OAuth operations. Add your domain to the Firebase console (Authentication → Authorized domains).';
-        default:
-          return (error && (error.message || error.code)) || 'An error occurred during sign in. Please try again.';
+        case 'auth/invalid-credential': return 'Invalid credentials.';
+        case 'auth/too-many-requests': return 'Too many attempts. Try later.';
+        case 'auth/unauthorized-domain': return 'Domain not authorized. Add kajanauday.github.io in Firebase Console -> Auth -> Authorized domains.';
+        default: return (error && (error.message || error.code)) || 'An error occurred.';
       }
     }
   </script>
