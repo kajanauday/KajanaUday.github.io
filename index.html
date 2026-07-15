@@ -5,265 +5,87 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Login - Tech Log</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <style>
-    .auth-container { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#f8fafc; }
-    .auth-card { width:100%; max-width:400px; background:#fff; border-radius:.5rem; box-shadow:0 4px 6px rgba(0,0,0,.08); overflow:hidden; }
-    .auth-header { background:#1e293b; color:#fff; padding:1rem; text-align:center; }
+    body { min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 100%); }
+    .auth-card { width:100%; max-width:420px; background:#fff; border-radius:1rem; box-shadow:0 18px 45px rgba(15,23,42,.08); overflow:hidden; }
+    .auth-header { background:#0f172a; color:#fff; padding:1.25rem 1.5rem; }
     .auth-body { padding:1.5rem; }
-    .error-message { margin-top:1rem; padding:.75rem; background:#fee2e2; color:#b91c1c; border-radius:.375rem; font-size:.875rem; display:none; }
+    .hint { font-size:.9rem; color:#64748b; }
   </style>
 </head>
 <body>
-  <div class="auth-container">
-    <div class="auth-card">
-      <div class="auth-header"><h1 class="text-xl font-bold">Tech Log</h1></div>
-      <div class="auth-body">
-        <div id="error-message" class="error-message"></div>
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1 class="text-xl font-semibold">Tech Log</h1>
+      <p class="mt-1 text-sm text-slate-300">Dummy login mode for local preview</p>
+    </div>
+    <div class="auth-body">
+      <p class="hint">Sign in with Google to continue. Admins are determined by the project's `/admins/{uid}` entry in Firebase Realtime Database.</p>
 
-        <div class="mt-6">
-          <button id="google-signin" class="w-full py-3 px-4 border border-slate-300 rounded-md flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
-            <!-- Google SVG -->
-            <svg width="20" height="20" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-              <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path>
-              <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path>
-              <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path>
-              <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path>
-            </svg>
-            <span class="text-sm font-medium text-slate-700">Sign in with Google</span>
-          </button>
-        </div>
+      <div class="mt-5 space-y-3">
+        <button id="google-signin" class="w-full rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700">Sign in with Google</button>
+        <div class="text-center text-sm text-slate-500">or</div>
+        <form id="demo-login-form" class="space-y-3">
+          <input id="demo-name" type="text" placeholder="Name (demo)" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
+          <input id="demo-password" type="password" placeholder="Password (demo)" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
+          <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800">Enter Demo</button>
+        </form>
+      </div>
 
-        <div id="admin-login-form" class="hidden mt-4 space-y-4">
-          <div><input type="text" id="username" placeholder="Username" class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
-          <div><input type="password" id="password" placeholder="Password" class="w-full px-4 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
-          <button id="admin-signin-btn" class="w-full py-2 px-4 bg-slate-800 text-white rounded-md hover:bg-slate-900 transition-colors">Sign In</button>
-        </div>
-
-        <div class="mt-6 text-center"><button id="show-admin-login-btn" class="text-sm text-blue-600 hover:underline">Admin Login</button></div>
+      <div class="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        Tip: use any name and password to continue.
       </div>
     </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
-    import {
-      getAuth,
-      signInWithRedirect,
-      getRedirectResult,
-      GoogleAuthProvider,
-      onAuthStateChanged,
-      signInWithEmailAndPassword,
-      setPersistence,
-      browserLocalPersistence
-    } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
-    import { getFirestore, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
-    import { getDatabase, ref, get, set } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+    <script>
+      // Firebase config should match the project used by language-studio.html
+      const firebaseConfig = {
+        apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
+        authDomain: "kajanaudaynotes.firebaseapp.com",
+        databaseURL: "https://kajanaudaynotes-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "kajanaudaynotes",
+        storageBucket: "kajanaudaynotes.firebasestorage.app",
+        messagingSenderId: "696311985600",
+        appId: "1:696311985600:web:ceaf9f9fcaf30cabc5c425",
+        measurementId: "G-Y9QK783LVC"
+      };
 
-    // ========== FIREBASE CONFIG - keep yours here ==========
-    const firebaseConfig = {
-      apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
-      authDomain: "kajanaudaynotes.firebaseapp.com",
-      projectId: "kajanaudaynotes",
-      databaseURL: "https://kajanaudaynotes-default-rtdb.asia-southeast1.firebasedatabase.app",
-      storageBucket: "kajanaudaynotes.firebasestorage.app",
-      messagingSenderId: "696311985600",
-      appId: "1:696311985600:web:ceaf9f9fcaf30cabc5c425",
-      measurementId: "G-Y9QK783LVC"
-    };
+      const firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const firestoreDb = getFirestore(app);
-    const realtimeDb = getDatabase(app);
-    const googleProvider = new GoogleAuthProvider();
-
-    // UI
-    const googleSignin = document.getElementById('google-signin');
-    const errorMessage = document.getElementById('error-message');
-    const showAdminLoginBtn = document.getElementById('show-admin-login-btn');
-    const adminLoginForm = document.getElementById('admin-login-form');
-    const adminSigninBtn = document.getElementById('admin-signin-btn');
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    const googleSigninContainer = googleSignin.parentElement;
-
-    // Debug outputs
-    console.log('origin:', location.origin);
-    console.log('firebase app options:', app.options);
-
-    // Helpers
-    function showError(msg) { errorMessage.style.display = 'block'; errorMessage.textContent = msg; console.warn(msg); }
-    function hideError(){ errorMessage.style.display = 'none'; errorMessage.textContent = ''; }
-
-    // Ensure persistence
-    setPersistence(auth, browserLocalPersistence).catch((e)=>console.warn('setPersistence:', e));
-
-    // IMPORTANT: Unregister service workers (if any) then navigate. This forces network load of application.html.
-    async function unregisterSWs() {
-      if (!('serviceWorker' in navigator)) return false;
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        if (!regs || regs.length === 0) return false;
-        console.log('[SW] Found service workers, unregistering them before navigation.', regs);
-        await Promise.all(regs.map(r => r.unregister()));
-        // give the browser a short moment
-        await new Promise(res => setTimeout(res, 80));
-        return true;
-      } catch (err) {
-        console.warn('[SW] error unregistering:', err);
-        return false;
-      }
-    }
-
-    async function navigateToApplication() {
-      // Build cache-busted absolute URL
-      const dest = `${location.origin}/application.html?cb=${Date.now()}`;
-      try {
-        // Unregister SWs first to avoid cached responses serving login again
-        await unregisterSWs();
-
-        // If page is inside a frame and same-origin, try top navigation
-        if (window.self !== window.top) {
-          try {
-            window.top.location.replace(dest);
-            return;
-          } catch (err) {
-            console.warn('[Nav] Could not set top.location (cross-origin frame):', err);
-          }
+      const googleBtn = document.getElementById('google-signin');
+      googleBtn.addEventListener('click', async () => {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          await auth.signInWithPopup(provider);
+          // Signed in — redirect to app
+          window.location.href = '/language-studio.html';
+        } catch (err) {
+          console.error('Google sign-in failed', err);
+          alert('Google sign-in failed. See console.');
         }
-
-        // Normal navigation
-        console.log('[Nav] Navigating to', dest);
-        // use replace to avoid keeping login in history (optional)
-        location.replace(dest);
-
-        // Fallback: if navigation didn't take effect in 300ms, force reload with location.href
-        setTimeout(() => {
-          if (!location.href.includes('/application.html')) {
-            console.warn('[Nav] Fallback navigation: forcing location.href');
-            try { location.href = dest; } catch (e) { console.error('[Nav] fallback failed', e); }
-          }
-        }, 300);
-      } catch (err) {
-        console.error('[Nav] Unexpected error while navigating:', err);
-      }
-    }
-
-    // Handle redirect result (on return from provider)
-    getRedirectResult(auth)
-      .then(result => {
-        if (result && result.user) {
-          console.log('Redirect sign-in result user:', result.user.uid);
-        } else {
-          console.log('No redirect sign-in result.');
-        }
-      })
-      .catch(err => {
-        console.error('getRedirectResult error:', err);
-        showError('Authentication error: ' + (err.message || err.code));
       });
 
-    // Role handling once user is signed in
-    let isAdminLoginAttempt = false;
-    const loginDebugLogs = [];
-    function logAndStore(m){ console.log(m); loginDebugLogs.push(`[${new Date().toLocaleTimeString()}] ${m}`); }
+      const form = document.getElementById('demo-login-form');
+      const nameInput = document.getElementById('demo-name');
+      const passwordInput = document.getElementById('demo-password');
 
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        console.log('[Auth] No user signed in.');
-        return;
-      }
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const name = nameInput.value.trim();
+        const password = passwordInput.value.trim();
 
-      try {
-        logAndStore(`[Auth] Checking role for user: ${user.uid}`);
-        const userRoleRef = ref(realtimeDb, `userRoles/${user.uid}`);
-        const snap = await get(userRoleRef);
-        let role;
-        if (snap.exists()) {
-          role = snap.val();
-          logAndStore(`[Auth] Role found: ${role}`);
-        } else {
-          role = isAdminLoginAttempt ? 'admin' : 'reader';
-          logAndStore(`[Auth] Assigning new role: ${role}`);
-          await set(userRoleRef, role);
+        if (!name || !password) {
+          alert('Please enter both fields.');
+          return;
         }
 
-        localStorage.setItem('userRole', role);
-        logAndStore(`[Auth] Stored role locally and will navigate to application.`);
-        isAdminLoginAttempt = false;
-
-        // Log login (fire-and-forget)
-        (async function logUser() {
-          try {
-            const userLogRef = doc(firestoreDb, "user_logs", user.uid);
-            await setDoc(userLogRef, { email: user.email, displayName: user.displayName||'', lastLogin: serverTimestamp(), isAdmin: role==='admin' }, { merge:true });
-            const loginLogRef = doc(firestoreDb, "login_logs", `${user.uid}_${Date.now()}`);
-            await setDoc(loginLogRef, { userId:user.uid, email:user.email, timestamp:serverTimestamp(), userAgent:navigator.userAgent, isAdmin:role==='admin' });
-          } catch(e) { console.warn('logUserLogin failed', e); }
-        })();
-
-        // Navigate (unregister SWs first to avoid cached login page)
-        await navigateToApplication();
-      } catch (err) {
-        console.error('Error in onAuthStateChanged handler:', err);
-        showError('Internal error during login. Check console.');
-      }
-    });
-
-    // Start redirect-based sign-in
-    googleSignin.addEventListener('click', async () => {
-      hideError();
-      try {
-        googleProvider.setCustomParameters({ prompt: 'select_account' });
-        await signInWithRedirect(auth, googleProvider);
-        // browser navigates away, returns to this page after provider
-      } catch (err) {
-        console.error('signInWithRedirect error:', err);
-        showError(getErrorMessage(err));
-      }
-    });
-
-    // Admin UI toggles and email/password sign-in (keeps same behavior)
-    showAdminLoginBtn.addEventListener('click', () => {
-      googleSigninContainer.classList.add('hidden');
-      adminLoginForm.classList.remove('hidden');
-      showAdminLoginBtn.textContent = 'Back to User Login';
-      hideError();
-      showAdminLoginBtn.onclick = () => { googleSigninContainer.classList.remove('hidden'); adminLoginForm.classList.add('hidden'); showAdminLoginBtn.textContent='Admin Login'; showAdminLoginBtn.onclick=null; showAdminLoginBtn.addEventListener('click', arguments.callee, { once: true }); };
-    }, { once: true });
-
-    adminSigninBtn.addEventListener('click', async () => {
-      hideError();
-      const username = usernameInput.value;
-      const password = passwordInput.value;
-      if (!username || !password) { showError('Please enter username & password'); return; }
-
-      const emailForFirebase = `${username.trim()}@kajanaudaynotes.firebaseapp.com`;
-      try {
-        isAdminLoginAttempt = true;
-        await signInWithEmailAndPassword(auth, emailForFirebase, password);
-        // onAuthStateChanged will handle redirect
-      } catch (err) {
-        console.error('Admin sign-in failed:', err);
-        showError(getErrorMessage(err));
-        isAdminLoginAttempt = false;
-      }
-    });
-
-    function getErrorMessage(error) {
-      const code = (error && error.code) || '';
-      switch (code) {
-        case 'auth/popup-closed-by-user': return 'Sign-in popup was closed.';
-        case 'auth/cancelled-popup-request': return 'Sign-in popup cancelled.';
-        case 'auth/popup-blocked': return 'Sign-in popup blocked by browser.';
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential': return 'Invalid credentials.';
-        case 'auth/too-many-requests': return 'Too many attempts. Try later.';
-        case 'auth/unauthorized-domain': return 'Domain not authorized. Add kajanauday.github.io in Firebase Console -> Auth -> Authorized domains.';
-        default: return (error && (error.message || error.code)) || 'An error occurred.';
-      }
-    }
-  </script>
+        localStorage.setItem('demoUser', name);
+        window.location.href = '/language-studio.html';
+      });
+    </script>
 </body>
 </html>

@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Language Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --panel: #ffffff;
+      --panel-strong: #f8fafc;
+      --border: #dbe4f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --accent-dark: #1e3a8a;
+    }
+
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%);
+      color: var(--text);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .dict-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.8rem;
+      background: white;
+      color: var(--muted);
+    }
+
+    .compact-card {
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.75rem;
+      border: 1px solid #e2e8f0;
+      background: white;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    .compact-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+
+    .meaning-inline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+      font-size: 0.75rem;
+      color: #475569;
+    }
+
+    .draft-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%);
+      border-color: #bfdbfe;
+    }
+
+    .modal-backdrop {
+      display: none;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen">
+    <header class="sticky top-0 z-20 border-b border-slate-200/80 bg-white/75 backdrop-blur">
+      <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+        <div>
+          <h1 class="text-2xl font-semibold text-slate-900">Language Studio</h1>
+        </div>
+
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div class="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <select id="language-select" class="bg-transparent text-sm font-medium text-slate-900 outline-none">
+              <option value="japanese">Japanese</option>
+              <option value="telugu">Telugu</option>
+              <option value="hindi">Hindi</option>
+              <option value="tamil">Tamil</option>
+              <option value="english">English</option>
+            </select>
+          </div>
+
+          <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <svg class="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m20 20-4.2-4.2"></path>
+            </svg>
+            <input id="dictionary-search" type="search" placeholder="Search words" class="w-40 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400" />
+          </label>
+          <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100">QUIZ</button>
+
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
+      <div class="mb-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div class="flex flex-wrap items-end gap-2">
+          <label class="min-w-[140px] flex-1">
+            <input id="native-word" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Native" />
+          </label>
+
+          <label class="min-w-[140px] flex-1">
+            <input id="pronunciation" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Pronunciation" />
+          </label>
+
+          <label class="min-w-[140px] flex-1">
+            <input id="telugu-meaning" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Telugu" />
+          </label>
+
+          <label class="min-w-[140px] flex-1">
+            <input id="english-meaning" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="English" />
+          </label>
+
+          <div class="flex gap-2 items-center">
+            <button id="save-to-dictionary" type="button" class="ml-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Add</button>
+            <button id="clear-form" type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Clear</button>
+            <button id="delete-current" type="button" class="hidden rounded-lg border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <section class="glass-card overflow-hidden rounded-3xl border border-slate-200 shadow-[0_10px_40px_rgba(15,23,42,0.06)]">
+        <div class="flex items-center justify-end border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+          <span id="dictionary-count" class="rounded-full bg-white px-3 py-1 text-xs text-slate-500">0 entries</span>
+        </div>
+
+        <div class="max-h-[520px] overflow-y-auto p-3">
+          <div id="dictionary-list" class="space-y-2"></div>
+        </div>
+      </section>
+
+      <div id="quiz-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
+        <div class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+          <div class="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div>
+              <h2 class="text-xl font-semibold text-slate-900">Quiz</h2>
+              <p class="text-sm text-slate-500">Review words one by one and bag missed items.</p>
+            </div>
+            <button id="quiz-close" type="button" class="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm hover:bg-slate-200">Close</button>
+          </div>
+          <div class="mt-6 space-y-4">
+            <div class="flex items-center justify-between gap-4">
+              <span id="quiz-status" class="text-sm font-medium text-slate-700">Quiz paused</span>
+              <button id="quiz-start" type="button" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Start quiz</button>
+            </div>
+            <div id="quiz-card" class="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-center shadow-sm">
+              <div id="quiz-word" class="text-4xl font-semibold text-slate-900">Ready?</div>
+              <div id="quiz-meaning" class="mt-3 text-sm text-slate-600">Click start to begin.</div>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <button id="quiz-miss" type="button" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-100">Bag missed</button>
+              <span id="quiz-timer" class="text-sm text-slate-500">00s</span>
+            </div>
+          </div>
+          <div id="quiz-results" class="hidden mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <div class="font-semibold text-slate-900">Missed words pending:</div>
+            <div id="quiz-missed-list" class="mt-3 space-y-2"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
+      authDomain: "kajanaudaynotes.firebaseapp.com",
+      databaseURL: "https://kajanaudaynotes-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "kajanaudaynotes",
+      storageBucket: "kajanaudaynotes.firebasestorage.app",
+      messagingSenderId: "696311985600",
+      appId: "1:696311985600:web:ceaf9f9fcaf30cabc5c425",
+      measurementId: "G-Y9QK783LVC"
+    };
+
+    const firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+    const database = firebase.database(firebaseApp);
+    const auth = firebase.auth();
+    const wordsRef = database.ref('words');
+
+    // auth state and admin flag
+    state.currentUser = null;
+    state.isAdmin = false;
+
+    auth.onAuthStateChanged(async (user) => {
+      state.currentUser = user;
+      if (!user) {
+        // Not signed in — redirect to login
+        // Allow local/demo access if demoUser present
+        if (!localStorage.getItem('demoUser')) {
+          window.location.href = '/';
+          return;
+        }
+      }
+
+      // Check admin flag in database
+      if (user && user.uid) {
+        try {
+          const snap = await database.ref('admins/' + user.uid).once('value');
+          state.isAdmin = !!snap.val();
+        } catch (err) {
+          console.error('Failed to read admin flag', err);
+          state.isAdmin = false;
+        }
+      }
+
+      // Re-render dictionary to reflect admin controls
+      renderDictionary();
+    });
+
+    const languageConfig = {
+      japanese: { label: 'Japanese' },
+      telugu: { label: 'Telugu' },
+      hindi: { label: 'Hindi' },
+      tamil: { label: 'Tamil' },
+      english: { label: 'English' }
+    };
+
+    const state = {
+      language: 'japanese',
+      query: '',
+      words: [],
+      editingId: null,
+      quizQueue: [],
+      quizMissed: [],
+      quizCurrent: null,
+      quizTimerId: null,
+      quizEndTime: null
+    };
+
+    const languageSelect = document.getElementById('language-select');
+    const searchInput = document.getElementById('dictionary-search');
+    const boardPreview = document.getElementById('board-preview');
+    const dictionaryList = document.getElementById('dictionary-list');
+    const dictionaryCount = document.getElementById('dictionary-count');
+    const saveToDictionaryBtn = document.getElementById('save-to-dictionary');
+    const clearFormBtn = document.getElementById('clear-form');
+    const deleteCurrentBtn = document.getElementById('delete-current');
+    const quizButton = document.getElementById('quiz-button');
+    const quizModal = document.getElementById('quiz-modal');
+    const quizClose = document.getElementById('quiz-close');
+    const quizStart = document.getElementById('quiz-start');
+    const quizStatus = document.getElementById('quiz-status');
+    const quizCard = document.getElementById('quiz-card');
+    const quizWord = document.getElementById('quiz-word');
+    const quizMeaning = document.getElementById('quiz-meaning');
+    const quizMiss = document.getElementById('quiz-miss');
+    const quizTimer = document.getElementById('quiz-timer');
+    const quizResults = document.getElementById('quiz-results');
+    const quizMissedList = document.getElementById('quiz-missed-list');
+    const nativeWordInput = document.getElementById('native-word');
+    const pronunciationInput = document.getElementById('pronunciation');
+    const teluguMeaningInput = document.getElementById('telugu-meaning');
+    const englishMeaningInput = document.getElementById('english-meaning');
+
+    function getCurrentLanguageData() {
+      return languageConfig[state.language] || languageConfig.japanese;
+    }
+
+    function normalize(text) {
+      return (text || '').trim().toLowerCase();
+    }
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getEntriesFromSnapshot(snapshot) {
+      const raw = snapshot.val() || {};
+      return Object.entries(raw)
+        .map(([id, entry]) => ({ id, ...(entry || {}) }))
+        .filter(entry => entry.language === state.language)
+        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    }
+
+    async function seedDefaultWordsIfNeeded() {
+      const snapshot = await wordsRef.once('value');
+      const data = snapshot.val();
+      if (data && Object.keys(data).length) {
+        return;
+      }
+
+      const seedEntries = [
+        { word: 'こんにちは', pronunciation: 'kon-ni-chi-wa', englishMeaning: 'Hello', teluguMeaning: 'హలో', language: 'japanese', createdAt: Date.now() },
+        { word: 'ありがとう', pronunciation: 'a-ri-ga-to-u', englishMeaning: 'Thank you', teluguMeaning: 'ధన్యవాదాలు', language: 'japanese', createdAt: Date.now() + 1 },
+        { word: '学校', pronunciation: 'ga-ku-ko', englishMeaning: 'School', teluguMeaning: 'పాఠశాల', language: 'japanese', createdAt: Date.now() + 2 }
+      ];
+
+      const payload = {};
+      seedEntries.forEach((entry, index) => {
+        payload[`seed-${String(index + 1).padStart(2, '0')}`] = entry;
+      });
+
+      await wordsRef.set(payload);
+    }
+
+    function renderDictionary() {
+      const query = normalize(state.query);
+      const filtered = state.words.filter(entry => {
+        const haystack = [entry.word, entry.pronunciation, entry.englishMeaning, entry.teluguMeaning]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+
+      const items = filtered.slice();
+      dictionaryCount.textContent = `${items.length} ${items.length === 1 ? 'entry' : 'entries'}`;
+      dictionaryList.innerHTML = '';
+
+      if (!items.length) {
+        return;
+      }
+
+      items.forEach(entry => {
+        const card = document.createElement('article');
+        card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between';
+
+        const pronunciation = entry.pronunciation || '';
+        const teluguMeaning = entry.teluguMeaning || '';
+        const englishMeaning = entry.englishMeaning || '';
+
+        card.innerHTML = `
+          <div class="min-w-0 flex-1 flex gap-3 items-center">
+            <div class="min-w-[120px] truncate text-sm font-semibold text-slate-900">${escapeHtml(entry.word)}</div>
+            <div class="truncate text-xs text-slate-500 sm:min-w-[100px]">${escapeHtml(pronunciation)}</div>
+            <div class="truncate text-xs text-slate-600 sm:min-w-[140px]">${escapeHtml(teluguMeaning)}</div>
+            <div class="truncate text-xs text-slate-600">${escapeHtml(englishMeaning)}</div>
+          </div>
+          <div class="flex items-center">
+            <button type="button" title="Edit" data-action="edit-mode" data-id="${entry.id}" class="edit-btn p-2 rounded-md text-slate-600 hover:bg-slate-100">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/></svg>
+            </button>
+            ${state.isAdmin ? `<button type="button" title="Delete" data-action="delete" data-id="${entry.id}" class="ml-2 p-2 rounded-md text-rose-600 hover:bg-rose-50">🗑️</button>` : ''}
+          </div>
+        `;
+        dictionaryList.appendChild(card);
+      });
+    }
+
+    function renderBoard() {
+      const data = getCurrentLanguageData();
+      if (boardPreview) boardPreview.innerHTML = '';
+    }
+
+    function clearForm() {
+      nativeWordInput.value = '';
+      pronunciationInput.value = '';
+      teluguMeaningInput.value = '';
+      englishMeaningInput.value = '';
+      nativeWordInput.focus();
+    }
+
+    async function addCurrentEntryToDictionary() {
+      const word = nativeWordInput.value.trim();
+      if (!word) {
+        window.alert('Please enter the native word first.');
+        return;
+      }
+
+      const newEntry = {
+        word,
+        pronunciation: pronunciationInput.value.trim(),
+        teluguMeaning: teluguMeaningInput.value.trim(),
+        englishMeaning: englishMeaningInput.value.trim(),
+        language: state.language,
+        createdAt: Date.now()
+      };
+
+      // If editing an existing entry, perform update
+      if (state.editingId) {
+        const updates = {
+          word: newEntry.word,
+          pronunciation: newEntry.pronunciation,
+          teluguMeaning: newEntry.teluguMeaning,
+          englishMeaning: newEntry.englishMeaning
+        };
+        try {
+          console.log('Updating entry', state.editingId, updates);
+          if (String(state.editingId).startsWith('local-')) {
+            // local-only update
+            state.words = state.words.map(w => w.id === state.editingId ? { ...w, ...updates } : w);
+            renderDictionary();
+            exitEditMode();
+            return;
+          }
+          await wordsRef.child(state.editingId).update(updates);
+          exitEditMode();
+        } catch (err) {
+          console.error('Failed to update entry', err);
+          if (err && (err.code === 'PERMISSION_DENIED' || String(err).includes('PERMISSION_DENIED') || String(err).includes('permission_denied'))) {
+            window.alert('Permission denied: cannot update. See console.');
+            return;
+          }
+          window.alert('Failed to update entry. See console.');
+        }
+        return;
+      }
+
+      // Otherwise add new entry
+      try {
+        console.log('Adding entry to Firebase', newEntry);
+        await wordsRef.push(newEntry);
+        clearForm();
+        saveToDictionaryBtn.disabled = true;
+        saveToDictionaryBtn.textContent = 'Added';
+        setTimeout(() => {
+          saveToDictionaryBtn.disabled = false;
+          saveToDictionaryBtn.textContent = 'Add';
+        }, 1200);
+      } catch (err) {
+        console.error('Failed to add entry to Firebase', err);
+        if (err && (err.code === 'PERMISSION_DENIED' || String(err).includes('PERMISSION_DENIED') || String(err).includes('permission_denied'))) {
+          window.alert('Permission denied: Firebase blocked the write. For testing, update your Realtime Database rules or sign in. See console for details.');
+          const fallback = { id: 'local-' + Date.now(), ...newEntry };
+          state.words.unshift(fallback);
+          renderDictionary();
+          return;
+        }
+        window.alert('Failed to add entry. See console for details.');
+      }
+    }
+
+    async function deleteWordEntry(id) {
+      if (!id) return;
+      if (!window.confirm('Delete this word?')) return;
+      try {
+        if (String(id).startsWith('local-')) {
+          // local-only entry: remove from UI
+          state.words = state.words.filter(w => w.id !== id);
+          renderDictionary();
+          if (state.editingId === id) exitEditMode();
+          return;
+        }
+
+        if (!state.isAdmin) {
+          window.alert('You are not authorized to delete this entry.');
+          return;
+        }
+
+        await wordsRef.child(id).remove();
+        if (state.editingId === id) exitEditMode();
+      } catch (err) {
+        console.error('Failed to delete entry', err);
+        window.alert('Failed to delete entry. See console for details.');
+      }
+    }
+
+    function wireRealtimeListener() {
+      wordsRef.on('value', (snapshot) => {
+        state.words = getEntriesFromSnapshot(snapshot);
+        renderDictionary();
+      });
+    }
+
+    function enterEditMode(entry) {
+      if (!entry) return;
+      state.editingId = entry.id;
+      nativeWordInput.value = entry.word || '';
+      pronunciationInput.value = entry.pronunciation || '';
+      teluguMeaningInput.value = entry.teluguMeaning || '';
+      englishMeaningInput.value = entry.englishMeaning || '';
+      saveToDictionaryBtn.textContent = 'Save';
+      deleteCurrentBtn.classList.remove('hidden');
+      nativeWordInput.focus();
+    }
+
+    function exitEditMode() {
+      state.editingId = null;
+      clearForm();
+      saveToDictionaryBtn.textContent = 'Add';
+      deleteCurrentBtn.classList.add('hidden');
+    }
+
+    function openQuizModal() {
+      quizModal.classList.add('open');
+      quizStatus.textContent = 'Quiz paused';
+      quizTimer.textContent = '00s';
+      quizResults.classList.add('hidden');
+      quizMissedList.innerHTML = '';
+      quizWord.textContent = 'Ready?';
+      quizMeaning.textContent = 'Click start to begin.';
+      state.quizQueue = [];
+      state.quizMissed = [];
+      state.quizCurrent = null;
+      state.quizTimerId = null;
+      state.quizEndTime = null;
+      quizStart.textContent = 'Start quiz';
+      quizStart.disabled = false;
+    }
+
+    function closeQuizModal() {
+      quizModal.classList.remove('open');
+      stopQuiz();
+    }
+
+    function stopQuiz() {
+      if (state.quizTimerId) {
+        clearInterval(state.quizTimerId);
+        state.quizTimerId = null;
+      }
+    }
+
+    function startQuizTimer() {
+      if (state.quizTimerId) {
+        clearInterval(state.quizTimerId);
+      }
+      state.quizTimerId = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((state.quizEndTime - Date.now()) / 1000));
+        quizTimer.textContent = `${remaining}s`;
+        if (remaining <= 0) {
+          clearInterval(state.quizTimerId);
+          state.quizTimerId = null;
+          if (!state.quizQueue.length) {
+            endQuizRound();
+          } else {
+            state.quizEndTime = Date.now() + 5000;
+            showNextQuizWord();
+          }
+        }
+      }, 250);
+    }
+
+    function renderMissedList() {
+      if (!state.quizMissed.length) {
+        quizResults.classList.add('hidden');
+        return;
+      }
+      quizResults.classList.remove('hidden');
+      quizMissedList.innerHTML = '';
+      state.quizMissed.forEach(entry => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700';
+        item.innerHTML = `
+          <span class="truncate">${escapeHtml(entry.word)} - ${escapeHtml(entry.englishMeaning || entry.teluguMeaning || '')}</span>
+          <button type="button" data-action="retry-word" data-id="${entry.id}" class="rounded-full bg-indigo-600 px-3 py-1 text-white text-xs">Retry</button>
+        `;
+        quizMissedList.appendChild(item);
+      });
+    }
+
+    function startQuiz() {
+      const queue = state.words.map(entry => ({ ...entry }));
+      if (!queue.length) {
+        quizStatus.textContent = 'No words available for quiz.';
+        return;
+      }
+      state.quizQueue = queue;
+      state.quizMissed = [];
+      state.quizStatus = 'running';
+      quizStatus.textContent = `${state.quizQueue.length} words queued`;
+      quizStart.textContent = 'Running...';
+      quizStart.disabled = true;
+      showNextQuizWord();
+      state.quizEndTime = Date.now() + 5000;
+      startQuizTimer();
+    }
+
+    function showNextQuizWord() {
+      if (!state.quizQueue.length) {
+        endQuizRound();
+        return;
+      }
+      state.quizCurrent = state.quizQueue.shift();
+      quizWord.textContent = state.quizCurrent.word || '—';
+      quizMeaning.textContent = state.quizCurrent.englishMeaning || state.quizCurrent.teluguMeaning || 'No meaning available';
+      state.quizEndTime = Date.now() + 5000;
+      quizStatus.textContent = `Question ${state.words.length - state.quizQueue.length}/${state.words.length}`;
+    }
+
+    function bagCurrentWord() {
+      if (!state.quizCurrent) return;
+      state.quizMissed.push(state.quizCurrent);
+      if (state.quizQueue.length === 0) {
+        endQuizRound();
+      } else {
+        showNextQuizWord();
+      }
+    }
+
+    function endQuizRound() {
+      stopQuiz();
+      if (state.quizMissed.length) {
+        renderMissedList();
+        quizStatus.textContent = `Missed ${state.quizMissed.length} word(s). Retry them.`;
+        quizStart.textContent = 'Retry missed';
+        quizStart.disabled = false;
+      } else {
+        quizStatus.textContent = 'Quiz complete! No missed words.';
+        quizStart.textContent = 'Restart';
+        quizStart.disabled = false;
+      }
+    }
+
+    function retryMissedWords() {
+      if (!state.quizMissed.length) return;
+      state.quizQueue = state.quizMissed.slice();
+      state.quizMissed = [];
+      renderMissedList();
+      quizStatus.textContent = 'Retrying missed words';
+      quizStart.textContent = 'Running...';
+      quizStart.disabled = true;
+      showNextQuizWord();
+      state.quizEndTime = Date.now() + 5000;
+      startQuizTimer();
+    }
+
+    languageSelect.addEventListener('change', (event) => {
+      state.language = event.target.value;
+      renderBoard();
+      renderDictionary();
+    });
+
+    searchInput.addEventListener('input', (event) => {
+      state.query = event.target.value;
+      renderDictionary();
+    });
+
+    dictionaryList.addEventListener('click', (event) => {
+      const actionButton = event.target.closest('[data-action]');
+      if (!actionButton) return;
+      const action = actionButton.getAttribute('data-action');
+      const id = actionButton.getAttribute('data-id');
+      const entry = state.words.find(item => item.id === id);
+      if (action === 'edit-mode') {
+        enterEditMode(entry);
+      } else if (action === 'delete') {
+        // Only allow delete if admin or local entry
+        if (String(id).startsWith('local-')) {
+          deleteWordEntry(id);
+        } else if (state.isAdmin) {
+          deleteWordEntry(id);
+        } else {
+          window.alert('You are not authorized to delete this entry.');
+        }
+      }
+    });
+
+    quizMissedList.addEventListener('click', (event) => {
+      const actionButton = event.target.closest('[data-action]');
+      if (!actionButton) return;
+      const action = actionButton.getAttribute('data-action');
+      const id = actionButton.getAttribute('data-id');
+      if (action === 'retry-word') {
+        const retryEntry = state.quizMissed.find(item => item.id === id);
+        if (retryEntry) {
+          state.quizMissed = state.quizMissed.filter(item => item.id !== id);
+          state.quizQueue = [retryEntry];
+          renderMissedList();
+          quizStatus.textContent = `Retrying ${retryEntry.word}`;
+          quizStart.textContent = 'Running...';
+          quizStart.disabled = true;
+          showNextQuizWord();
+          state.quizEndTime = Date.now() + 5000;
+          startQuizTimer();
+        }
+      }
+    });
+
+    quizButton.addEventListener('click', () => openQuizModal());
+    quizClose.addEventListener('click', () => closeQuizModal());
+    quizStart.addEventListener('click', () => {
+      if (!state.quizQueue.length && !state.quizMissed.length) {
+        startQuiz();
+      } else {
+        retryMissedWords();
+      }
+    });
+    quizMiss.addEventListener('click', () => bagCurrentWord());
+    saveToDictionaryBtn.addEventListener('click', () => addCurrentEntryToDictionary());
+    clearFormBtn.addEventListener('click', () => exitEditMode());
+    deleteCurrentBtn.addEventListener('click', () => {
+      if (!state.editingId) return;
+      deleteWordEntry(state.editingId);
+    });
+
+    renderBoard();
+    renderDictionary();
+
+    seedDefaultWordsIfNeeded()
+      .then(() => {
+        wireRealtimeListener();
+      })
+      .catch((error) => {
+        console.error('Firebase initialisation failed', error);
+        renderDictionary();
+      });
+  </script>
+</body>
+</html>
