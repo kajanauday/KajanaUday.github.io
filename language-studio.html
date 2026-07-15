@@ -215,6 +215,15 @@
       english: { label: 'English' }
     };
 
+    // ISO codes used by the translation API for each supported language.
+    const langCodeMap = {
+      japanese: 'ja',
+      telugu: 'te',
+      hindi: 'hi',
+      tamil: 'ta',
+      english: 'en'
+    };
+
     const state = {
       language: 'japanese',
       query: '',
@@ -298,6 +307,98 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
+
+    function debounce(fn, delay) {
+      let timerId;
+      return (...args) => {
+        clearTimeout(timerId);
+        timerId = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    async function translateText(text, sourceLang, targetLang) {
+      if (!text || sourceLang === targetLang) return '';
+      try {
+        // Google's free client-side translation endpoint — real machine
+        // translation (no API key), unlike MyMemory's crowd-sourced lookup
+        // which returns bad matches for short/casual words like "Hi".
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const segments = data && data[0];
+        if (!Array.isArray(segments)) return '';
+        return segments.map(segment => segment[0] || '').join('').trim();
+      } catch (err) {
+        console.error('Auto-translation failed', err);
+        return '';
+      }
+    }
+
+    async function getRomanization(text, sourceLang, targetLang) {
+      if (!text || sourceLang === 'en') return '';
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&dt=rm&q=${encodeURIComponent(text)}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const segments = data && data[0];
+        if (!Array.isArray(segments)) return '';
+        // Romanization is appended as an extra segment shaped like [null, null, ...romanizedText].
+        const romanEntry = segments.find(segment => segment[0] === null && segment[1] === null);
+        if (!romanEntry) return '';
+        const romanized = romanEntry.slice(2).find(value => typeof value === 'string' && value.trim());
+        return romanized || '';
+      } catch (err) {
+        console.error('Romanization failed', err);
+        return '';
+      }
+    }
+
+    async function fillPronunciationFromNative() {
+      const nativeLang = langCodeMap[state.language] || 'ja';
+      if (nativeLang === 'en') return; // already Latin script, nothing to romanize
+      if (document.activeElement === pronunciationInput) return;
+      if (pronunciationInput.value.trim()) return;
+
+      const nativeText = nativeWordInput.value.trim();
+      if (!nativeText) return;
+
+      const romanized = await getRomanization(nativeText, nativeLang, 'en');
+      if (romanized && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
+        pronunciationInput.value = romanized;
+      }
+    }
+
+    async function autoTranslateFrom(sourceKey) {
+      const fields = {
+        native: { input: nativeWordInput, lang: langCodeMap[state.language] || 'ja' },
+        english: { input: englishMeaningInput, lang: 'en' },
+        telugu: { input: teluguMeaningInput, lang: 'te' }
+      };
+
+      const source = fields[sourceKey];
+      const text = source.input.value.trim();
+      if (!text) return;
+
+      const targetKeys = Object.keys(fields).filter(key => key !== sourceKey);
+      await Promise.all(targetKeys.map(async (key) => {
+        const target = fields[key];
+        // Don't clobber text the user is actively typing or has already filled in.
+        if (document.activeElement === target.input) return;
+        if (target.input.value.trim()) return;
+        if (target.lang === source.lang) return;
+
+        const translated = await translateText(text, source.lang, target.lang);
+        if (translated && !target.input.value.trim() && document.activeElement !== target.input) {
+          target.input.value = translated;
+        }
+      }));
+
+      await fillPronunciationFromNative();
+    }
+
+    const debouncedTranslateFromNative = debounce(() => autoTranslateFrom('native'), 700);
+    const debouncedTranslateFromEnglish = debounce(() => autoTranslateFrom('english'), 700);
+    const debouncedTranslateFromTelugu = debounce(() => autoTranslateFrom('telugu'), 700);
 
     function getEntriesFromSnapshot(snapshot) {
       const raw = snapshot.val() || {};
@@ -638,6 +739,10 @@
       state.quizEndTime = Date.now() + 5000;
       startQuizTimer();
     }
+
+    nativeWordInput.addEventListener('input', debouncedTranslateFromNative);
+    englishMeaningInput.addEventListener('input', debouncedTranslateFromEnglish);
+    teluguMeaningInput.addEventListener('input', debouncedTranslateFromTelugu);
 
     languageSelect.addEventListener('change', (event) => {
       state.language = event.target.value;
