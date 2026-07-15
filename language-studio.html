@@ -348,18 +348,18 @@
 
       items.forEach(entry => {
         const card = document.createElement('article');
-        card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between';
+        card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between py-2';
 
         const pronunciation = entry.pronunciation || '';
         const teluguMeaning = entry.teluguMeaning || '';
         const englishMeaning = entry.englishMeaning || '';
 
         card.innerHTML = `
-          <div class="min-w-0 flex-1 flex gap-3 items-center">
-            <div class="min-w-[120px] truncate text-sm font-semibold text-slate-900">${escapeHtml(entry.word)}</div>
-            <div class="truncate text-xs text-slate-500 sm:min-w-[100px]">${escapeHtml(pronunciation)}</div>
-            <div class="truncate text-xs text-slate-600 sm:min-w-[140px]">${escapeHtml(teluguMeaning)}</div>
-            <div class="truncate text-xs text-slate-600">${escapeHtml(englishMeaning)}</div>
+          <div class="min-w-0 flex-1 grid grid-cols-2 gap-x-3 items-start">
+            <div class="min-w-[120px] truncate text-sm font-semibold text-slate-900 leading-tight">${escapeHtml(entry.word)}</div>
+            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-right">${escapeHtml(teluguMeaning)}</div>
+            <div class="min-w-[120px] truncate text-xs text-slate-500 leading-tight">${escapeHtml(pronunciation)}</div>
+            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-right">${escapeHtml(englishMeaning)}</div>
           </div>
           <div class="flex items-center">
             <button type="button" title="Edit" data-action="edit-mode" data-id="${entry.id}" class="edit-btn p-2 rounded-md text-slate-600 hover:bg-slate-100">
