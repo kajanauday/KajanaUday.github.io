@@ -205,6 +205,28 @@
     const auth = firebase.auth();
     const wordsRef = database.ref('words');
 
+    
+
+    const languageConfig = {
+      japanese: { label: 'Japanese' },
+      telugu: { label: 'Telugu' },
+      hindi: { label: 'Hindi' },
+      tamil: { label: 'Tamil' },
+      english: { label: 'English' }
+    };
+
+    const state = {
+      language: 'japanese',
+      query: '',
+      words: [],
+      editingId: null,
+      quizQueue: [],
+      quizMissed: [],
+      quizCurrent: null,
+      quizTimerId: null,
+      quizEndTime: null
+    };
+
     // auth state and admin flag
     state.currentUser = null;
     state.isAdmin = false;
@@ -234,26 +256,6 @@
       // Re-render dictionary to reflect admin controls
       renderDictionary();
     });
-
-    const languageConfig = {
-      japanese: { label: 'Japanese' },
-      telugu: { label: 'Telugu' },
-      hindi: { label: 'Hindi' },
-      tamil: { label: 'Tamil' },
-      english: { label: 'English' }
-    };
-
-    const state = {
-      language: 'japanese',
-      query: '',
-      words: [],
-      editingId: null,
-      quizQueue: [],
-      quizMissed: [],
-      quizCurrent: null,
-      quizTimerId: null,
-      quizEndTime: null
-    };
 
     const languageSelect = document.getElementById('language-select');
     const searchInput = document.getElementById('dictionary-search');
