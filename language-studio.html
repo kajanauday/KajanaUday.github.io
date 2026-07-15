@@ -111,13 +111,14 @@
             <input id="dictionary-search" type="search" placeholder="Search words" class="w-40 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400" />
           </label>
           <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100">QUIZ</button>
+          <button id="reading-button" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100">READ</button>
 
         </div>
       </div>
     </header>
 
     <main class="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
-      <div class="mb-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+      <div id="add-word-panel" class="hidden mb-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
         <div class="flex flex-wrap items-end gap-2">
           <label class="min-w-[140px] flex-1">
             <input id="native-word" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Native" />
@@ -154,31 +155,61 @@
       </section>
 
       <div id="quiz-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
-        <div class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
-          <div class="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
+          <div class="flex items-center justify-between gap-2 border-b border-slate-200 pb-3">
             <div>
-              <h2 class="text-xl font-semibold text-slate-900">Quiz</h2>
-              <p class="text-sm text-slate-500">Review words one by one and bag missed items.</p>
+              <h2 class="text-base font-semibold text-slate-900">Quiz</h2>
+              <p class="text-xs text-slate-500">Miss a word and it comes back until perfect.</p>
             </div>
-            <button id="quiz-close" type="button" class="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm hover:bg-slate-200">Close</button>
+            <button id="quiz-close" type="button" class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs hover:bg-slate-200">Close</button>
           </div>
-          <div class="mt-6 space-y-4">
-            <div class="flex items-center justify-between gap-4">
-              <span id="quiz-status" class="text-sm font-medium text-slate-700">Quiz paused</span>
-              <button id="quiz-start" type="button" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Start quiz</button>
-            </div>
-            <div id="quiz-card" class="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-center shadow-sm">
-              <div id="quiz-word" class="text-4xl font-semibold text-slate-900">Ready?</div>
-              <div id="quiz-meaning" class="mt-3 text-sm text-slate-600">Click start to begin.</div>
-            </div>
+
+          <div class="mt-3 flex items-center gap-4">
+            <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+              <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-slate-200 transition [&:has(:checked)]:bg-blue-600">
+                <input id="quiz-toggle-pronunciation" type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                <span class="inline-block h-4 w-4 translate-x-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-4"></span>
+              </span>
+              Pronunciation
+            </label>
+            <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+              <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-slate-200 transition [&:has(:checked)]:bg-blue-600">
+                <input id="quiz-toggle-meaning" type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                <span class="inline-block h-4 w-4 translate-x-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-4"></span>
+              </span>
+              Meaning
+            </label>
+          </div>
+
+          <div class="mt-3 space-y-3">
             <div class="flex items-center justify-between gap-3">
-              <button id="quiz-miss" type="button" class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-100">Bag missed</button>
-              <span id="quiz-timer" class="text-sm text-slate-500">00s</span>
+              <span id="quiz-status" class="text-xs font-medium text-slate-600">Quiz paused</span>
+              <button id="quiz-start" type="button" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">Start quiz</button>
+            </div>
+            <div id="quiz-card" class="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center shadow-sm">
+              <div id="quiz-word" class="text-3xl font-semibold text-slate-900">Ready?</div>
+              <div id="quiz-pronunciation" class="hidden mt-2 text-sm text-slate-500"></div>
+              <div id="quiz-meaning" class="mt-2 text-sm text-slate-600">Click start to begin.</div>
+            </div>
+            <div id="quiz-actions" class="hidden items-center justify-between gap-3">
+              <button id="quiz-wrong" type="button" class="flex-1 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-100">Wrong</button>
+              <button id="quiz-correct" type="button" class="flex-1 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600 hover:bg-emerald-100">Correct</button>
             </div>
           </div>
-          <div id="quiz-results" class="hidden mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <div class="font-semibold text-slate-900">Missed words pending:</div>
-            <div id="quiz-missed-list" class="mt-3 space-y-2"></div>
+        </div>
+      </div>
+
+      <div id="reading-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
+        <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl">
+          <div class="flex items-center justify-end">
+            <button id="reading-close" type="button" title="Close" class="rounded-full border border-slate-200 bg-slate-100 p-1.5 text-slate-500 hover:bg-slate-200">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+            </button>
+          </div>
+          <div id="reading-card" class="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center shadow-sm">
+            <div id="reading-word" class="text-3xl font-semibold text-slate-900">🔊</div>
+            <div id="reading-pronunciation" class="hidden mt-2 text-sm text-slate-500"></div>
+            <div id="reading-meaning" class="mt-2 text-sm text-slate-600">Reading mode starting…</div>
           </div>
         </div>
       </div>
@@ -228,12 +259,17 @@
       language: 'japanese',
       query: '',
       words: [],
+      wordIndex: new Map(), // normalized word -> entry id, for O(1) duplicate lookups
       editingId: null,
       quizQueue: [],
       quizMissed: [],
       quizCurrent: null,
-      quizTimerId: null,
-      quizEndTime: null
+      quizTotal: 0,
+      quizMode: 'idle',
+      warOnWrongSet: null,
+      readingActive: false,
+      readingQueue: [],
+      readingTimeoutId: null
     };
 
     // auth state and admin flag
@@ -262,10 +298,14 @@
         }
       }
 
+      // Show the add/edit form only to admins; guests get read-only + quiz.
+      addWordPanel.classList.toggle('hidden', !state.isAdmin);
+
       // Re-render dictionary to reflect admin controls
       renderDictionary();
     });
 
+    const addWordPanel = document.getElementById('add-word-panel');
     const languageSelect = document.getElementById('language-select');
     const searchInput = document.getElementById('dictionary-search');
     const boardPreview = document.getElementById('board-preview');
@@ -281,11 +321,19 @@
     const quizStatus = document.getElementById('quiz-status');
     const quizCard = document.getElementById('quiz-card');
     const quizWord = document.getElementById('quiz-word');
+    const quizPronunciation = document.getElementById('quiz-pronunciation');
     const quizMeaning = document.getElementById('quiz-meaning');
-    const quizMiss = document.getElementById('quiz-miss');
-    const quizTimer = document.getElementById('quiz-timer');
-    const quizResults = document.getElementById('quiz-results');
-    const quizMissedList = document.getElementById('quiz-missed-list');
+    const quizActions = document.getElementById('quiz-actions');
+    const quizWrong = document.getElementById('quiz-wrong');
+    const quizCorrect = document.getElementById('quiz-correct');
+    const quizTogglePronunciation = document.getElementById('quiz-toggle-pronunciation');
+    const quizToggleMeaning = document.getElementById('quiz-toggle-meaning');
+    const readingButton = document.getElementById('reading-button');
+    const readingModal = document.getElementById('reading-modal');
+    const readingClose = document.getElementById('reading-close');
+    const readingWord = document.getElementById('reading-word');
+    const readingPronunciation = document.getElementById('reading-pronunciation');
+    const readingMeaning = document.getElementById('reading-meaning');
     const nativeWordInput = document.getElementById('native-word');
     const pronunciationInput = document.getElementById('pronunciation');
     const teluguMeaningInput = document.getElementById('telugu-meaning');
@@ -306,6 +354,10 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function rebuildWordIndex() {
+      state.wordIndex = new Map(state.words.map(entry => [normalize(entry.word), entry.id]));
     }
 
     function debounce(fn, delay) {
@@ -458,15 +510,26 @@
         card.innerHTML = `
           <div class="min-w-0 flex-1 grid grid-cols-2 gap-x-3 items-start">
             <div class="min-w-[120px] truncate text-sm font-semibold text-slate-900 leading-tight">${escapeHtml(entry.word)}</div>
-            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-right">${escapeHtml(teluguMeaning)}</div>
+            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left">${escapeHtml(teluguMeaning)}</div>
             <div class="min-w-[120px] truncate text-xs text-slate-500 leading-tight">${escapeHtml(pronunciation)}</div>
-            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-right">${escapeHtml(englishMeaning)}</div>
+            <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left">${escapeHtml(englishMeaning)}</div>
           </div>
           <div class="flex items-center">
-            <button type="button" title="Edit" data-action="edit-mode" data-id="${entry.id}" class="edit-btn p-2 rounded-md text-slate-600 hover:bg-slate-100">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/></svg>
+            <button type="button" title="${entry.starred ? 'Remove from quiz' : 'Add to quiz'}" data-action="toggle-star" data-id="${entry.id}" class="star-btn p-2 rounded-md bg-white hover:bg-slate-100">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="${entry.starred ? '#2563eb' : 'none'}" stroke="${entry.starred ? '#2563eb' : '#94a3b8'}" stroke-width="1.5" stroke-linejoin="round">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.958a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.448a1 1 0 00-.363 1.118l1.287 3.957c.3.922-.755 1.688-1.538 1.118l-3.37-2.448a1 1 0 00-1.176 0l-3.37 2.448c-.783.57-1.838-.196-1.538-1.118l1.287-3.957a1 1 0 00-.363-1.118l-3.37-2.448c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.286-3.958z" />
+              </svg>
             </button>
-            ${state.isAdmin ? `<button type="button" title="Delete" data-action="delete" data-id="${entry.id}" class="ml-2 p-2 rounded-md text-rose-600 hover:bg-rose-50">🗑️</button>` : ''}
+            <button type="button" title="${entry.readingEnabled ? 'Remove from reading mode' : 'Add to reading mode'}" data-action="toggle-reading" data-id="${entry.id}" class="reading-btn ml-2 p-2 rounded-md bg-white hover:bg-slate-100">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="${entry.readingEnabled ? '#7c3aed' : '#94a3b8'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path fill="${entry.readingEnabled ? '#7c3aed' : 'none'}" d="M11.25 5.507v13.185a.75.75 0 01-1.28.53l-4.184-4.183H3.75A1.5 1.5 0 012.25 13.5v-3a1.5 1.5 0 011.5-1.5h2.036l4.184-4.183a.75.75 0 011.28.53z" />
+                <path d="M16.5 8.25a4.5 4.5 0 010 7.5" />
+                <path d="M18.75 5.25a8.25 8.25 0 010 13.5" />
+              </svg>
+            </button>
+            ${state.isAdmin ? `<button type="button" title="Edit" data-action="edit-mode" data-id="${entry.id}" class="edit-btn ml-2 p-2 rounded-md text-slate-600 hover:bg-slate-100">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/></svg>
+            </button>` : ''}
           </div>
         `;
         dictionaryList.appendChild(card);
@@ -487,9 +550,20 @@
     }
 
     async function addCurrentEntryToDictionary() {
+      if (!state.isAdmin) {
+        window.alert('You are not authorized to add or edit words.');
+        return;
+      }
+
       const word = nativeWordInput.value.trim();
       if (!word) {
         window.alert('Please enter the native word first.');
+        return;
+      }
+
+      const duplicateId = state.wordIndex.get(normalize(word));
+      if (duplicateId && duplicateId !== state.editingId) {
+        window.alert(`"${word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
         return;
       }
 
@@ -499,6 +573,8 @@
         teluguMeaning: teluguMeaningInput.value.trim(),
         englishMeaning: englishMeaningInput.value.trim(),
         language: state.language,
+        starred: false,
+        readingEnabled: false,
         createdAt: Date.now()
       };
 
@@ -515,6 +591,7 @@
           if (String(state.editingId).startsWith('local-')) {
             // local-only update
             state.words = state.words.map(w => w.id === state.editingId ? { ...w, ...updates } : w);
+            rebuildWordIndex();
             renderDictionary();
             exitEditMode();
             return;
@@ -549,6 +626,7 @@
           window.alert('Permission denied: Firebase blocked the write. For testing, update your Realtime Database rules or sign in. See console for details.');
           const fallback = { id: 'local-' + Date.now(), ...newEntry };
           state.words.unshift(fallback);
+          rebuildWordIndex();
           renderDictionary();
           return;
         }
@@ -563,6 +641,7 @@
         if (String(id).startsWith('local-')) {
           // local-only entry: remove from UI
           state.words = state.words.filter(w => w.id !== id);
+          rebuildWordIndex();
           renderDictionary();
           if (state.editingId === id) exitEditMode();
           return;
@@ -581,9 +660,44 @@
       }
     }
 
+    async function toggleStarred(entry) {
+      if (!entry) return;
+      const starred = !entry.starred;
+      try {
+        if (String(entry.id).startsWith('local-')) {
+          state.words = state.words.map(w => w.id === entry.id ? { ...w, starred } : w);
+          rebuildWordIndex();
+          renderDictionary();
+          return;
+        }
+        await wordsRef.child(entry.id).update({ starred });
+      } catch (err) {
+        console.error('Failed to toggle star', err);
+        window.alert('Failed to update star. See console for details.');
+      }
+    }
+
+    async function toggleReadingEnabled(entry) {
+      if (!entry) return;
+      const readingEnabled = !entry.readingEnabled;
+      try {
+        if (String(entry.id).startsWith('local-')) {
+          state.words = state.words.map(w => w.id === entry.id ? { ...w, readingEnabled } : w);
+          rebuildWordIndex();
+          renderDictionary();
+          return;
+        }
+        await wordsRef.child(entry.id).update({ readingEnabled });
+      } catch (err) {
+        console.error('Failed to toggle reading mode', err);
+        window.alert('Failed to update reading mode. See console for details.');
+      }
+    }
+
     function wireRealtimeListener() {
       wordsRef.on('value', (snapshot) => {
         state.words = getEntriesFromSnapshot(snapshot);
+        rebuildWordIndex();
         renderDictionary();
       });
     }
@@ -610,134 +724,242 @@
     function openQuizModal() {
       quizModal.classList.add('open');
       quizStatus.textContent = 'Quiz paused';
-      quizTimer.textContent = '00s';
-      quizResults.classList.add('hidden');
-      quizMissedList.innerHTML = '';
       quizWord.textContent = 'Ready?';
+      quizPronunciation.textContent = '';
+      quizPronunciation.classList.add('hidden');
       quizMeaning.textContent = 'Click start to begin.';
       state.quizQueue = [];
       state.quizMissed = [];
       state.quizCurrent = null;
-      state.quizTimerId = null;
-      state.quizEndTime = null;
+      state.quizTotal = 0;
+      state.quizMode = 'idle';
+      state.warOnWrongSet = null;
       quizStart.textContent = 'Start quiz';
       quizStart.disabled = false;
+      quizActions.classList.remove('flex');
+      quizActions.classList.add('hidden');
     }
 
     function closeQuizModal() {
       quizModal.classList.remove('open');
-      stopQuiz();
-    }
-
-    function stopQuiz() {
-      if (state.quizTimerId) {
-        clearInterval(state.quizTimerId);
-        state.quizTimerId = null;
-      }
-    }
-
-    function startQuizTimer() {
-      if (state.quizTimerId) {
-        clearInterval(state.quizTimerId);
-      }
-      state.quizTimerId = setInterval(() => {
-        const remaining = Math.max(0, Math.ceil((state.quizEndTime - Date.now()) / 1000));
-        quizTimer.textContent = `${remaining}s`;
-        if (remaining <= 0) {
-          clearInterval(state.quizTimerId);
-          state.quizTimerId = null;
-          if (!state.quizQueue.length) {
-            endQuizRound();
-          } else {
-            state.quizEndTime = Date.now() + 5000;
-            showNextQuizWord();
-          }
-        }
-      }, 250);
-    }
-
-    function renderMissedList() {
-      if (!state.quizMissed.length) {
-        quizResults.classList.add('hidden');
-        return;
-      }
-      quizResults.classList.remove('hidden');
-      quizMissedList.innerHTML = '';
-      state.quizMissed.forEach(entry => {
-        const item = document.createElement('div');
-        item.className = 'flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700';
-        item.innerHTML = `
-          <span class="truncate">${escapeHtml(entry.word)} - ${escapeHtml(entry.englishMeaning || entry.teluguMeaning || '')}</span>
-          <button type="button" data-action="retry-word" data-id="${entry.id}" class="rounded-full bg-indigo-600 px-3 py-1 text-white text-xs">Retry</button>
-        `;
-        quizMissedList.appendChild(item);
-      });
     }
 
     function startQuiz() {
-      const queue = state.words.map(entry => ({ ...entry }));
+      const queue = state.words.filter(entry => entry.starred).map(entry => ({ ...entry }));
       if (!queue.length) {
-        quizStatus.textContent = 'No words available for quiz.';
+        quizStatus.textContent = 'No starred words yet. Star some words to add them to the quiz.';
         return;
       }
+      state.quizMode = 'normal';
+      state.warOnWrongSet = null;
+      beginRound(queue, `${queue.length} word(s) queued`);
+    }
+
+    function beginRound(queue, statusText) {
       state.quizQueue = queue;
       state.quizMissed = [];
-      state.quizStatus = 'running';
-      quizStatus.textContent = `${state.quizQueue.length} words queued`;
+      state.quizTotal = queue.length;
+      quizStatus.textContent = statusText;
       quizStart.textContent = 'Running...';
       quizStart.disabled = true;
+      quizActions.classList.remove('hidden');
+      quizActions.classList.add('flex');
       showNextQuizWord();
-      state.quizEndTime = Date.now() + 5000;
-      startQuizTimer();
+    }
+
+    function renderQuizCard() {
+      const entry = state.quizCurrent;
+      quizWord.textContent = entry ? (entry.word || '—') : '—';
+
+      if (entry && quizTogglePronunciation.checked && entry.pronunciation) {
+        quizPronunciation.textContent = entry.pronunciation;
+        quizPronunciation.classList.remove('hidden');
+      } else {
+        quizPronunciation.textContent = '';
+        quizPronunciation.classList.add('hidden');
+      }
+
+      if (entry && quizToggleMeaning.checked) {
+        const parts = [];
+        if (entry.englishMeaning) parts.push(`English: ${entry.englishMeaning}`);
+        if (entry.teluguMeaning) parts.push(`Telugu: ${entry.teluguMeaning}`);
+        quizMeaning.textContent = parts.join(' · ') || 'No meaning available';
+      } else {
+        quizMeaning.textContent = '';
+      }
     }
 
     function showNextQuizWord() {
       if (!state.quizQueue.length) {
-        endQuizRound();
+        endRound();
         return;
       }
       state.quizCurrent = state.quizQueue.shift();
-      quizWord.textContent = state.quizCurrent.word || '—';
-      quizMeaning.textContent = state.quizCurrent.englishMeaning || state.quizCurrent.teluguMeaning || 'No meaning available';
-      state.quizEndTime = Date.now() + 5000;
-      quizStatus.textContent = `Question ${state.words.length - state.quizQueue.length}/${state.words.length}`;
+      renderQuizCard();
+      quizStatus.textContent = `Question ${state.quizTotal - state.quizQueue.length}/${state.quizTotal}`;
     }
 
-    function bagCurrentWord() {
+    function advanceQuiz() {
+      state.quizCurrent = null;
+      showNextQuizWord();
+    }
+
+    function handleCorrect() {
+      if (!state.quizCurrent) return;
+      advanceQuiz();
+    }
+
+    function handleWrong() {
       if (!state.quizCurrent) return;
       state.quizMissed.push(state.quizCurrent);
-      if (state.quizQueue.length === 0) {
-        endQuizRound();
-      } else {
-        showNextQuizWord();
-      }
+      advanceQuiz();
     }
 
-    function endQuizRound() {
-      stopQuiz();
-      if (state.quizMissed.length) {
-        renderMissedList();
-        quizStatus.textContent = `Missed ${state.quizMissed.length} word(s). Retry them.`;
-        quizStart.textContent = 'Retry missed';
-        quizStart.disabled = false;
-      } else {
-        quizStatus.textContent = 'Quiz complete! No missed words.';
+    function endRound() {
+      quizActions.classList.remove('flex');
+      quizActions.classList.add('hidden');
+      quizPronunciation.classList.add('hidden');
+
+      if (!state.quizMissed.length) {
+        quizStatus.textContent = state.quizMode === 'warOnWrong'
+          ? 'WarOnWrong cleared! Every missed word answered correctly.'
+          : 'Quiz complete! No missed words.';
+        quizWord.textContent = 'Done!';
+        quizMeaning.textContent = '';
         quizStart.textContent = 'Restart';
         quizStart.disabled = false;
+        state.quizMode = 'idle';
+        state.warOnWrongSet = null;
+        return;
+      }
+
+      if (state.quizMode === 'normal') {
+        state.warOnWrongSet = state.quizMissed.slice();
+        state.quizMode = 'warOnWrong';
+      }
+
+      // Do-or-die: every WarOnWrong attempt restarts from the same missed set
+      // captured when we first entered it — a single miss resets the whole pass.
+      const retryQueue = state.warOnWrongSet.map(entry => ({ ...entry }));
+      beginRound(retryQueue, `WarOnWrong: ${retryQueue.length} word(s) — get them all right to finish`);
+    }
+
+    function shuffle(array) {
+      const copy = array.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    let cachedEnglishVoice;
+
+    function getBestEnglishVoice() {
+      if (cachedEnglishVoice !== undefined) return Promise.resolve(cachedEnglishVoice);
+      return new Promise((resolve) => {
+        const pick = (voices) => {
+          const english = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+          const best = english.find(v => /google|natural|enhanced|premium|neural/i.test(v.name)) || english[0] || null;
+          cachedEnglishVoice = best;
+          resolve(best);
+        };
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length) {
+          pick(voices);
+          return;
+        }
+        window.speechSynthesis.onvoiceschanged = () => pick(window.speechSynthesis.getVoices());
+      });
+    }
+
+    async function speak(text) {
+      if (!text || !('speechSynthesis' in window)) return;
+      const voice = await getBestEnglishVoice();
+      return new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.9;
+        if (voice) utterance.voice = voice;
+        utterance.onend = resolve;
+        utterance.onerror = resolve;
+        window.speechSynthesis.speak(utterance);
+      });
+    }
+
+    // The device's English voice can't pronounce Japanese/Telugu script — it
+    // falls back to reading out Unicode character names letter by letter.
+    // Romanize anything non-Latin before handing it to speechSynthesis.
+    async function toSpokenText(text, sourceLang) {
+      if (!text) return '';
+      if (sourceLang === 'en') return text;
+      const romanized = await getRomanization(text, sourceLang, 'en');
+      return romanized || text;
+    }
+
+    function renderReadingCard(entry) {
+      readingWord.textContent = entry.word || '—';
+      if (entry.pronunciation) {
+        readingPronunciation.textContent = entry.pronunciation;
+        readingPronunciation.classList.remove('hidden');
+      } else {
+        readingPronunciation.textContent = '';
+        readingPronunciation.classList.add('hidden');
+      }
+      const parts = [];
+      if (entry.englishMeaning) parts.push(`English: ${entry.englishMeaning}`);
+      if (entry.teluguMeaning) parts.push(`Telugu: ${entry.teluguMeaning}`);
+      readingMeaning.textContent = parts.join(' · ') || 'No meaning available';
+    }
+
+    async function runReadingLoop() {
+      while (state.readingActive) {
+        if (!state.readingQueue.length) {
+          state.readingQueue = shuffle(state.words.filter(entry => entry.readingEnabled));
+          if (!state.readingQueue.length) break; // nothing enabled anymore
+        }
+
+        const entry = state.readingQueue.shift();
+        renderReadingCard(entry);
+
+        const nativeLang = langCodeMap[entry.language] || 'ja';
+        const spokenWord = entry.pronunciation || await toSpokenText(entry.word, nativeLang);
+        const spokenTelugu = await toSpokenText(entry.teluguMeaning, 'te');
+        const meaningParts = [entry.englishMeaning, spokenTelugu].filter(Boolean);
+        const speechText = meaningParts.length ? `${spokenWord} means ${meaningParts.join(', ')}` : spokenWord;
+
+        await speak(speechText);
+        if (!state.readingActive) break;
+
+        await new Promise(resolve => {
+          state.readingTimeoutId = setTimeout(resolve, 2000);
+        });
       }
     }
 
-    function retryMissedWords() {
-      if (!state.quizMissed.length) return;
-      state.quizQueue = state.quizMissed.slice();
-      state.quizMissed = [];
-      renderMissedList();
-      quizStatus.textContent = 'Retrying missed words';
-      quizStart.textContent = 'Running...';
-      quizStart.disabled = true;
-      showNextQuizWord();
-      state.quizEndTime = Date.now() + 5000;
-      startQuizTimer();
+    function openReadingModal() {
+      const pool = state.words.filter(entry => entry.readingEnabled);
+      if (!pool.length) {
+        window.alert('No words enabled for reading mode yet. Tap the speaker icon on a word first.');
+        return;
+      }
+      readingModal.classList.add('open');
+      readingWord.textContent = '🔊';
+      readingPronunciation.classList.add('hidden');
+      readingMeaning.textContent = 'Reading mode starting…';
+      state.readingActive = true;
+      state.readingQueue = shuffle(pool);
+      runReadingLoop();
+    }
+
+    function closeReadingModal() {
+      readingModal.classList.remove('open');
+      state.readingActive = false;
+      if (state.readingTimeoutId) {
+        clearTimeout(state.readingTimeoutId);
+        state.readingTimeoutId = null;
+      }
+      window.speechSynthesis.cancel();
     }
 
     nativeWordInput.addEventListener('input', debouncedTranslateFromNative);
@@ -763,49 +985,22 @@
       const entry = state.words.find(item => item.id === id);
       if (action === 'edit-mode') {
         enterEditMode(entry);
-      } else if (action === 'delete') {
-        // Only allow delete if admin or local entry
-        if (String(id).startsWith('local-')) {
-          deleteWordEntry(id);
-        } else if (state.isAdmin) {
-          deleteWordEntry(id);
-        } else {
-          window.alert('You are not authorized to delete this entry.');
-        }
-      }
-    });
-
-    quizMissedList.addEventListener('click', (event) => {
-      const actionButton = event.target.closest('[data-action]');
-      if (!actionButton) return;
-      const action = actionButton.getAttribute('data-action');
-      const id = actionButton.getAttribute('data-id');
-      if (action === 'retry-word') {
-        const retryEntry = state.quizMissed.find(item => item.id === id);
-        if (retryEntry) {
-          state.quizMissed = state.quizMissed.filter(item => item.id !== id);
-          state.quizQueue = [retryEntry];
-          renderMissedList();
-          quizStatus.textContent = `Retrying ${retryEntry.word}`;
-          quizStart.textContent = 'Running...';
-          quizStart.disabled = true;
-          showNextQuizWord();
-          state.quizEndTime = Date.now() + 5000;
-          startQuizTimer();
-        }
+      } else if (action === 'toggle-star') {
+        toggleStarred(entry);
+      } else if (action === 'toggle-reading') {
+        toggleReadingEnabled(entry);
       }
     });
 
     quizButton.addEventListener('click', () => openQuizModal());
     quizClose.addEventListener('click', () => closeQuizModal());
-    quizStart.addEventListener('click', () => {
-      if (!state.quizQueue.length && !state.quizMissed.length) {
-        startQuiz();
-      } else {
-        retryMissedWords();
-      }
-    });
-    quizMiss.addEventListener('click', () => bagCurrentWord());
+    quizStart.addEventListener('click', () => startQuiz());
+    quizWrong.addEventListener('click', () => handleWrong());
+    quizCorrect.addEventListener('click', () => handleCorrect());
+    quizTogglePronunciation.addEventListener('change', () => { if (state.quizCurrent) renderQuizCard(); });
+    quizToggleMeaning.addEventListener('change', () => { if (state.quizCurrent) renderQuizCard(); });
+    readingButton.addEventListener('click', () => openReadingModal());
+    readingClose.addEventListener('click', () => closeReadingModal());
     saveToDictionaryBtn.addEventListener('click', () => addCurrentEntryToDictionary());
     clearFormBtn.addEventListener('click', () => exitEditMode());
     deleteCurrentBtn.addEventListener('click', () => {

@@ -19,23 +19,19 @@
   <div class="auth-card">
     <div class="auth-header">
       <h1 class="text-xl font-semibold">Tech Log</h1>
-      <p class="mt-1 text-sm text-slate-300">Dummy login mode for local preview</p>
+      <p class="mt-1 text-sm text-slate-300">Sign in to continue</p>
     </div>
     <div class="auth-body">
-      <p class="hint">Sign in with Google to continue. Admins are determined by the project's `/admins/{uid}` entry in Firebase Realtime Database.</p>
+      <p class="hint">Sign in with Google, or with a username and password. Admins are determined by the project's `/admins/{uid}` entry in Firebase Realtime Database.</p>
 
       <div class="mt-5 space-y-3">
         <button id="google-signin" class="w-full rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700">Sign in with Google</button>
         <div class="text-center text-sm text-slate-500">or</div>
         <form id="demo-login-form" class="space-y-3">
-          <input id="demo-name" type="text" placeholder="Name (demo)" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
-          <input id="demo-password" type="password" placeholder="Password (demo)" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
-          <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800">Enter Demo</button>
+          <input id="demo-name" type="text" placeholder="Username" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
+          <input id="demo-password" type="password" placeholder="Password" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
+          <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800">Sign in</button>
         </form>
-      </div>
-
-      <div class="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-        Tip: use any name and password to continue.
       </div>
     </div>
   </div>
@@ -73,18 +69,28 @@
       const nameInput = document.getElementById('demo-name');
       const passwordInput = document.getElementById('demo-password');
 
-      form.addEventListener('submit', (event) => {
+      // Firebase Auth needs an email, so usernames are mapped to a
+      // synthetic address under a fixed domain tied to this project.
+      const USERNAME_EMAIL_DOMAIN = 'kajanaudaynotes.local';
+
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const name = nameInput.value.trim();
+        const username = nameInput.value.trim().toLowerCase();
         const password = passwordInput.value.trim();
 
-        if (!name || !password) {
+        if (!username || !password) {
           alert('Please enter both fields.');
           return;
         }
 
-        localStorage.setItem('demoUser', name);
-        window.location.href = '/language-studio.html';
+        const email = `${username}@${USERNAME_EMAIL_DOMAIN}`;
+        try {
+          await auth.signInWithEmailAndPassword(email, password);
+          window.location.href = '/language-studio.html';
+        } catch (err) {
+          console.error('Sign-in failed', err);
+          alert('Invalid username or password.');
+        }
       });
     </script>
 </body>
