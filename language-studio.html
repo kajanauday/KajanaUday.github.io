@@ -259,6 +259,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wanakana@5.3.1/dist/wanakana.min.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
@@ -428,6 +429,118 @@
       }
     }
 
+    function transliterateJapaneseToRomaji(text) {
+      if (!text) return '';
+
+      const singleKanaMap = {
+        'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o',
+        'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko',
+        'さ': 'sa', 'し': 'shi', 'す': 'su', 'せ': 'se', 'そ': 'so',
+        'た': 'ta', 'ち': 'chi', 'つ': 'tsu', 'て': 'te', 'と': 'to',
+        'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no',
+        'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho',
+        'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo',
+        'や': 'ya', 'ゆ': 'yu', 'よ': 'yo',
+        'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro',
+        'わ': 'wa', 'を': 'wo', 'ん': 'n',
+        'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
+        'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
+        'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'で': 'de', 'ど': 'do',
+        'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo',
+        'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
+        'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo', 'っ': 'tsu'
+      };
+
+      const comboKanaMap = {
+        'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo',
+        'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho',
+        'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho',
+        'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo',
+        'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo',
+        'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
+        'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo',
+        'ぎゃ': 'gya', 'ぎゅ': 'gyu', 'ぎょ': 'gyo',
+        'じゃ': 'ja', 'じゅ': 'ju', 'じょ': 'jo',
+        'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo',
+        'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo',
+        'だ': 'da'
+      };
+
+      const normalized = String(text)
+        .replace(/\s+/g, '')
+        .replace(/（/g, '(')
+        .replace(/）/g, ')');
+
+      const syllables = [];
+      let index = 0;
+
+      while (index < normalized.length) {
+        const char = normalized[index];
+        const next = normalized[index + 1];
+
+        if (!char) break;
+        if (char === 'ー') {
+          const previous = syllables[syllables.length - 1];
+          if (previous && /[aeiou]$/.test(previous)) {
+            syllables[syllables.length - 1] = previous + previous.slice(-1);
+          }
+          index += 1;
+          continue;
+        }
+
+        if (char === 'っ') {
+          const nextKana = next && (comboKanaMap[next] || singleKanaMap[next] || next);
+          if (nextKana) {
+            const consonant = nextKana[0];
+            syllables.push(consonant + consonant);
+          }
+          index += 1;
+          continue;
+        }
+
+        const katakana = char && char.charCodeAt(0) >= 0x30A0 && char.charCodeAt(0) <= 0x30FF;
+        const hiragana = char && char.charCodeAt(0) >= 0x3040 && char.charCodeAt(0) <= 0x309F;
+
+        if (katakana) {
+          const hiraganaChar = String.fromCharCode(char.charCodeAt(0) - 0x60);
+          const combo = comboKanaMap[hiraganaChar + (next || '')] || comboKanaMap[hiraganaChar];
+          if (combo) {
+            syllables.push(combo);
+            index += 2;
+            continue;
+          }
+          const single = singleKanaMap[hiraganaChar];
+          if (single) {
+            syllables.push(single);
+            index += 1;
+            continue;
+          }
+        }
+
+        if (hiragana) {
+          const combo = comboKanaMap[char + (next || '')] || comboKanaMap[char];
+          if (combo) {
+            syllables.push(combo);
+            index += 2;
+            continue;
+          }
+          const single = singleKanaMap[char];
+          if (single) {
+            syllables.push(single);
+            index += 1;
+            continue;
+          }
+        }
+
+        if (/[a-zA-Z]/.test(char)) {
+          syllables.push(char.toLowerCase());
+        }
+        index += 1;
+      }
+
+      return syllables.join('-').replace(/-+/g, '-').replace(/-$/, '');
+    }
+
     async function getRomanization(text, sourceLang, targetLang) {
       if (!text || sourceLang === 'en') return '';
       try {
@@ -455,6 +568,14 @@
 
       const nativeText = nativeWordInput.value.trim();
       if (!nativeText) return;
+
+      if (nativeLang === 'ja') {
+        const internalRomanization = transliterateJapaneseToRomaji(nativeText);
+        if (internalRomanization && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
+          pronunciationInput.value = internalRomanization;
+          return;
+        }
+      }
 
       const romanized = await getRomanization(nativeText, nativeLang, 'en');
       if (romanized && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
@@ -967,48 +1088,79 @@
       return copy;
     }
 
-    let cachedEnglishVoice;
+    let cachedVoicesByLang = new Map();
 
-    function getBestEnglishVoice() {
-      if (cachedEnglishVoice !== undefined) return Promise.resolve(cachedEnglishVoice);
+    function normalizeSpeechText(text, language) {
+      if (!text) return '';
+      const normalized = String(text).trim().replace(/\s+/g, ' ');
+      if (language === 'ja') {
+        return normalized.replace(/[。！？]/g, '.').replace(/-/g, ' ').replace(/_/g, ' ');
+      }
+      if (language === 'te') {
+        return normalized.replace(/-/g, ' ').replace(/_/g, ' ');
+      }
+      return normalized;
+    }
+
+    function getBestVoice(languageCode) {
+      if (cachedVoicesByLang.has(languageCode)) {
+        return Promise.resolve(cachedVoicesByLang.get(languageCode));
+      }
+
       return new Promise((resolve) => {
         const pick = (voices) => {
-          const english = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
-          const best = english.find(v => /google|natural|enhanced|premium|neural/i.test(v.name)) || english[0] || null;
-          cachedEnglishVoice = best;
+          const normalizedCode = languageCode.toLowerCase();
+          const matching = voices.filter(voice => voice.lang && voice.lang.toLowerCase().startsWith(normalizedCode));
+          const best = matching.find(voice => /google|natural|enhanced|premium|neural|wave/i.test(voice.name))
+            || matching[0]
+            || voices.find(voice => voice.lang && voice.lang.toLowerCase().startsWith('en'))
+            || voices[0]
+            || null;
+          cachedVoicesByLang.set(languageCode, best);
           resolve(best);
         };
+
         const voices = window.speechSynthesis.getVoices();
         if (voices.length) {
           pick(voices);
           return;
         }
+
         window.speechSynthesis.onvoiceschanged = () => pick(window.speechSynthesis.getVoices());
       });
     }
 
-    async function speak(text) {
+    async function speak(text, languageCode = 'en-US', rate = 0.95, pitch = 1) {
       if (!text || !('speechSynthesis' in window)) return;
-      const voice = await getBestEnglishVoice();
+      const voice = await getBestVoice(languageCode);
       return new Promise((resolve) => {
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'en-US';
-        utterance.rate = 0.9;
+        utterance.lang = languageCode;
+        utterance.rate = rate;
+        utterance.pitch = pitch;
+        utterance.volume = 1;
         if (voice) utterance.voice = voice;
         utterance.onend = resolve;
         utterance.onerror = resolve;
+        window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
       });
     }
 
-    // The device's English voice can't pronounce Japanese/Telugu script — it
-    // falls back to reading out Unicode character names letter by letter.
-    // Romanize anything non-Latin before handing it to speechSynthesis.
     async function toSpokenText(text, sourceLang) {
       if (!text) return '';
       if (sourceLang === 'en') return text;
+
+      const normalized = String(text).trim();
+      if (sourceLang === 'ja') {
+        return normalizeSpeechText(normalized, 'ja');
+      }
+      if (sourceLang === 'te') {
+        return normalizeSpeechText(normalized, 'te');
+      }
+
       const romanized = await getRomanization(text, sourceLang, 'en');
-      return romanized || text;
+      return romanized || normalized;
     }
 
     function renderReadingCard(entry) {
@@ -1037,12 +1189,15 @@
         renderReadingCard(entry);
 
         const nativeLang = langCodeMap[entry.language] || 'ja';
-        const spokenWord = entry.pronunciation || await toSpokenText(entry.word, nativeLang);
+        const speechLanguage = entry.language === 'japanese' ? 'ja-JP' : entry.language === 'telugu' ? 'te-IN' : 'en-US';
+        const spokenWord = entry.pronunciation
+          ? normalizeSpeechText(entry.pronunciation, entry.language === 'japanese' ? 'ja' : entry.language === 'telugu' ? 'te' : 'en')
+          : await toSpokenText(entry.word, nativeLang);
         const spokenTelugu = await toSpokenText(entry.teluguMeaning, 'te');
         const meaningParts = [entry.englishMeaning, spokenTelugu].filter(Boolean);
         const speechText = meaningParts.length ? `${spokenWord} means ${meaningParts.join(', ')}` : spokenWord;
 
-        await speak(speechText);
+        await speak(speechText, speechLanguage, entry.language === 'japanese' ? 0.9 : 0.95, entry.language === 'japanese' ? 1 : 1);
         if (!state.readingActive) break;
 
         await new Promise(resolve => {
@@ -1076,7 +1231,21 @@
       window.speechSynthesis.cancel();
     }
 
-    nativeWordInput.addEventListener('input', debouncedTranslateFromNative);
+    function handleNativeInput() {
+      if (state.language === 'japanese' && window.wanakana) {
+        const currentValue = nativeWordInput.value;
+        const looksLikeRomaji = /^[a-zA-Z\s-]+$/.test(currentValue);
+        if (looksLikeRomaji) {
+          const hiraganaValue = window.wanakana.toHiragana(currentValue);
+          if (hiraganaValue !== currentValue) {
+            nativeWordInput.value = hiraganaValue;
+          }
+        }
+      }
+      debouncedTranslateFromNative();
+    }
+
+    nativeWordInput.addEventListener('input', handleNativeInput);
     englishMeaningInput.addEventListener('input', debouncedTranslateFromEnglish);
     teluguMeaningInput.addEventListener('input', debouncedTranslateFromTelugu);
 
