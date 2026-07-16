@@ -30,9 +30,38 @@
       -webkit-backdrop-filter: blur(8px);
     }
 
+    .dict-card {
+      position: relative;
+      overflow: hidden;
+    }
+
     .dict-card:hover {
       transform: translateY(-2px);
       box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .dict-card::before,
+    .dict-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .dict-card.quiz-active::after {
+      right: 0;
+      opacity: 1;
+      background: linear-gradient(180deg, #bfdbfe 0%, #2563eb 100%);
+    }
+
+    .dict-card.reading-active::before {
+      left: 0;
+      opacity: 1;
+      background: linear-gradient(180deg, #ddd6fe 0%, #7c3aed 100%);
     }
 
     .pill {
@@ -103,15 +132,16 @@
             </select>
           </div>
 
-          <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <svg class="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="6"></circle>
-              <path d="m20 20-4.2-4.2"></path>
-            </svg>
-            <input id="dictionary-search" type="search" placeholder="Search words" class="w-40 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400" />
-          </label>
-          <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100">QUIZ</button>
-          <button id="reading-button" type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100">READ</button>
+          <div class="flex items-center gap-2">
+            <button id="search-toggle" type="button" class="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-100" title="Search">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="6"></circle>
+                <path d="m20 20-4.2-4.2"></path>
+              </svg>
+            </button>
+            <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100" title="Quiz">✦</button>
+            <button id="reading-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100" title="Read">▶</button>
+          </div>
 
         </div>
       </div>
@@ -119,6 +149,15 @@
 
     <main class="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
       <div id="add-word-panel" class="hidden mb-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div class="mb-2 hidden" id="search-panel">
+          <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm">
+            <svg class="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="6"></circle>
+              <path d="m20 20-4.2-4.2"></path>
+            </svg>
+            <input id="dictionary-search" type="search" placeholder="Search words" class="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400" />
+          </label>
+        </div>
         <div class="flex flex-wrap items-end gap-2">
           <label class="min-w-[140px] flex-1">
             <input id="native-word" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Native" />
@@ -137,15 +176,16 @@
           </label>
 
           <div class="flex gap-2 items-center">
-            <button id="save-to-dictionary" type="button" class="ml-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Add</button>
-            <button id="clear-form" type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Clear</button>
-            <button id="delete-current" type="button" class="hidden rounded-lg border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">Delete</button>
+            <button id="save-to-dictionary" type="button" class="ml-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700" title="Add">+</button>
+            <button id="clear-form" type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50" title="Clear">×</button>
+            <button id="delete-current" type="button" class="hidden rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50" title="Delete">−</button>
           </div>
         </div>
       </div>
 
       <section class="glass-card overflow-hidden rounded-3xl border border-slate-200 shadow-[0_10px_40px_rgba(15,23,42,0.06)]">
-        <div class="flex items-center justify-end border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+          <span class="text-xs text-slate-500">Swipe right for quiz • Swipe left for read list • Double-click to edit</span>
           <span id="dictionary-count" class="rounded-full bg-white px-3 py-1 text-xs text-slate-500">0 entries</span>
         </div>
 
@@ -207,7 +247,7 @@
             </button>
           </div>
           <div id="reading-card" class="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center shadow-sm">
-            <div id="reading-word" class="text-3xl font-semibold text-slate-900">🔊</div>
+            <div id="reading-word" class="text-3xl font-semibold text-slate-900">Read</div>
             <div id="reading-pronunciation" class="hidden mt-2 text-sm text-slate-500"></div>
             <div id="reading-meaning" class="mt-2 text-sm text-slate-600">Reading mode starting…</div>
           </div>
@@ -308,6 +348,8 @@
     const addWordPanel = document.getElementById('add-word-panel');
     const languageSelect = document.getElementById('language-select');
     const searchInput = document.getElementById('dictionary-search');
+    const searchToggle = document.getElementById('search-toggle');
+    const searchPanel = document.getElementById('search-panel');
     const boardPreview = document.getElementById('board-preview');
     const dictionaryList = document.getElementById('dictionary-list');
     const dictionaryCount = document.getElementById('dictionary-count');
@@ -481,6 +523,86 @@
       await wordsRef.set(payload);
     }
 
+    function getSwipeThreshold() {
+      return Math.max(48, window.innerWidth * 0.1);
+    }
+
+    function handleCardSwipe(entry, deltaX) {
+      if (!entry) return;
+      if (deltaX > 0) {
+        toggleStarred(entry);
+      } else if (deltaX < 0) {
+        toggleReadingEnabled(entry);
+      }
+    }
+
+    function attachCardInteractions(card, entry) {
+      let touchStartX = null;
+      let clickTimer = null;
+
+      card.addEventListener('touchstart', (event) => {
+        const touch = event.touches[0];
+        if (touch) touchStartX = touch.clientX;
+      }, { passive: true });
+
+      card.addEventListener('touchend', (event) => {
+        if (touchStartX === null) return;
+        const touch = event.changedTouches[0];
+        const deltaX = touch ? touch.clientX - touchStartX : 0;
+        touchStartX = null;
+        if (Math.abs(deltaX) >= getSwipeThreshold()) {
+          handleCardSwipe(entry, deltaX);
+        }
+      }, { passive: true });
+
+      card.addEventListener('touchcancel', () => {
+        touchStartX = null;
+      }, { passive: true });
+
+      card.addEventListener('pointerdown', (event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        card.dataset.pointerStartX = String(event.clientX);
+      });
+
+      card.addEventListener('pointerup', (event) => {
+        const startX = Number(card.dataset.pointerStartX || 0);
+        const deltaX = event.clientX - startX;
+        delete card.dataset.pointerStartX;
+        if (Math.abs(deltaX) >= getSwipeThreshold()) {
+          handleCardSwipe(entry, deltaX);
+        }
+      });
+
+      card.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        if (!state.isAdmin) return;
+        enterEditMode(entry);
+        addWordPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+
+      card.addEventListener('click', (event) => {
+        if (event.detail > 1) return;
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+        }
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          const wasHidden = searchPanel.classList.contains('hidden');
+          if (!wasHidden) {
+            searchPanel.classList.add('hidden');
+            return;
+          }
+          searchPanel.classList.remove('hidden');
+          searchInput.focus();
+        }, 220);
+      });
+    }
+
     function renderDictionary() {
       const query = normalize(state.query);
       const filtered = state.words.filter(entry => {
@@ -501,7 +623,10 @@
 
       items.forEach(entry => {
         const card = document.createElement('article');
-        card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between py-2';
+        const cardClasses = ['compact-card', 'dict-card', 'transition-all', 'duration-150', 'flex', 'items-center', 'justify-between', 'py-2'];
+        if (entry.starred) cardClasses.push('quiz-active');
+        if (entry.readingEnabled) cardClasses.push('reading-active');
+        card.className = cardClasses.join(' ');
 
         const pronunciation = entry.pronunciation || '';
         const teluguMeaning = entry.teluguMeaning || '';
@@ -514,24 +639,12 @@
             <div class="min-w-[120px] truncate text-xs text-slate-500 leading-tight">${escapeHtml(pronunciation)}</div>
             <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left">${escapeHtml(englishMeaning)}</div>
           </div>
-          <div class="flex items-center">
-            <button type="button" title="${entry.starred ? 'Remove from quiz' : 'Add to quiz'}" data-action="toggle-star" data-id="${entry.id}" class="star-btn p-2 rounded-md bg-white hover:bg-slate-100">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="${entry.starred ? '#2563eb' : 'none'}" stroke="${entry.starred ? '#2563eb' : '#94a3b8'}" stroke-width="1.5" stroke-linejoin="round">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.958a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.37 2.448a1 1 0 00-.363 1.118l1.287 3.957c.3.922-.755 1.688-1.538 1.118l-3.37-2.448a1 1 0 00-1.176 0l-3.37 2.448c-.783.57-1.838-.196-1.538-1.118l1.287-3.957a1 1 0 00-.363-1.118l-3.37-2.448c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.286-3.958z" />
-              </svg>
-            </button>
-            <button type="button" title="${entry.readingEnabled ? 'Remove from reading mode' : 'Add to reading mode'}" data-action="toggle-reading" data-id="${entry.id}" class="reading-btn ml-2 p-2 rounded-md bg-white hover:bg-slate-100">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="${entry.readingEnabled ? '#7c3aed' : '#94a3b8'}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path fill="${entry.readingEnabled ? '#7c3aed' : 'none'}" d="M11.25 5.507v13.185a.75.75 0 01-1.28.53l-4.184-4.183H3.75A1.5 1.5 0 012.25 13.5v-3a1.5 1.5 0 011.5-1.5h2.036l4.184-4.183a.75.75 0 011.28.53z" />
-                <path d="M16.5 8.25a4.5 4.5 0 010 7.5" />
-                <path d="M18.75 5.25a8.25 8.25 0 010 13.5" />
-              </svg>
-            </button>
-            ${state.isAdmin ? `<button type="button" title="Edit" data-action="edit-mode" data-id="${entry.id}" class="edit-btn ml-2 p-2 rounded-md text-slate-600 hover:bg-slate-100">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"/></svg>
-            </button>` : ''}
+          <div class="ml-3 flex min-w-[88px] items-center justify-end text-[11px] font-medium text-slate-400">
+            <span class="mr-2">${entry.starred ? 'Quiz' : ''}</span>
+            <span>${entry.readingEnabled ? 'Read' : ''}</span>
           </div>
         `;
+        attachCardInteractions(card, entry);
         dictionaryList.appendChild(card);
       });
     }
@@ -705,6 +818,7 @@
     function enterEditMode(entry) {
       if (!entry) return;
       state.editingId = entry.id;
+      addWordPanel.classList.remove('hidden');
       nativeWordInput.value = entry.word || '';
       pronunciationInput.value = entry.pronunciation || '';
       teluguMeaningInput.value = entry.teluguMeaning || '';
@@ -747,7 +861,7 @@
     function startQuiz() {
       const queue = state.words.filter(entry => entry.starred).map(entry => ({ ...entry }));
       if (!queue.length) {
-        quizStatus.textContent = 'No starred words yet. Star some words to add them to the quiz.';
+        quizStatus.textContent = 'No words are queued for the quiz yet. Swipe right on cards to add them.';
         return;
       }
       state.quizMode = 'normal';
@@ -940,11 +1054,11 @@
     function openReadingModal() {
       const pool = state.words.filter(entry => entry.readingEnabled);
       if (!pool.length) {
-        window.alert('No words enabled for reading mode yet. Tap the speaker icon on a word first.');
+        window.alert('No words enabled for reading mode yet. Swipe left on a card to add it to read mode.');
         return;
       }
       readingModal.classList.add('open');
-      readingWord.textContent = '🔊';
+      readingWord.textContent = 'Read';
       readingPronunciation.classList.add('hidden');
       readingMeaning.textContent = 'Reading mode starting…';
       state.readingActive = true;
@@ -970,6 +1084,14 @@
       state.language = event.target.value;
       renderBoard();
       renderDictionary();
+    });
+
+    searchToggle.addEventListener('click', () => {
+      const isOpen = !searchPanel.classList.contains('hidden');
+      searchPanel.classList.toggle('hidden', isOpen);
+      if (!isOpen) {
+        searchInput.focus();
+      }
     });
 
     searchInput.addEventListener('input', (event) => {
