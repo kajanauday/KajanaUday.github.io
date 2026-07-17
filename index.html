@@ -22,16 +22,21 @@
       <p class="mt-1 text-sm text-slate-300">Sign in to continue</p>
     </div>
     <div class="auth-body">
-      <p class="hint">Sign in with Google, or with a username and password. Admins are determined by the project's `/admins/{uid}` entry in Firebase Realtime Database.</p>
+      <form id="access-code-form" class="space-y-3">
+        <input id="access-code" type="password" placeholder="Enter Access Code" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
+        <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800">Sign in</button>
+      </form>
 
-      <div class="mt-5 space-y-3">
-        <button id="google-signin" class="w-full rounded-lg bg-red-600 px-4 py-2.5 font-medium text-white transition hover:bg-red-700">Sign in with Google</button>
-        <div class="text-center text-sm text-slate-500">or</div>
-        <form id="demo-login-form" class="space-y-3">
-          <input id="demo-name" type="text" placeholder="Username" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
-          <input id="demo-password" type="password" placeholder="Password" class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" required />
-          <button type="submit" class="w-full rounded-lg bg-slate-900 px-4 py-2.5 font-medium text-white transition hover:bg-slate-800">Sign in</button>
-        </form>
+      <p class="mt-6 text-center text-xs text-slate-500">Looking for gmail login?</p>
+      <div class="mt-2 flex justify-center">
+        <button id="google-signin" type="button" title="Sign in with Google" class="flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
+          <svg class="h-8 w-8" viewBox="0 0 48 48">
+            <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+            <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+            <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+            <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+          </svg>
+        </button>
       </div>
     </div>
   </div>
@@ -57,7 +62,8 @@
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
           await auth.signInWithPopup(provider);
-          // Signed in — redirect to app
+          // Signed in — redirect to app. Role is resolved in language-studio.html
+          // via the /admins/{uid} Realtime Database entry; everyone else is a viewer.
           window.location.href = '/language-studio.html';
         } catch (err) {
           console.error('Google sign-in failed', err);
@@ -65,31 +71,34 @@
         }
       });
 
-      const form = document.getElementById('demo-login-form');
-      const nameInput = document.getElementById('demo-name');
-      const passwordInput = document.getElementById('demo-password');
+      const accessForm = document.getElementById('access-code-form');
+      const accessCodeInput = document.getElementById('access-code');
 
-      // Firebase Auth needs an email, so usernames are mapped to a
-      // synthetic address under a fixed domain tied to this project.
-      const USERNAME_EMAIL_DOMAIN = 'kajanaudaynotes.local';
+      // Firebase Auth needs an email and a 6+ char password, so each access
+      // code maps to a synthetic account under a fixed domain, with a fixed
+      // suffix appended to satisfy Firebase's password length minimum.
+      // Firebase rejects unknown codes / wrong passwords — nothing is checked
+      // client-side. e.g. code "kajanauday" -> kajanauday@kajanaudaynotes.local.
+      const ACCESS_CODE_EMAIL_DOMAIN = 'kajanaudaynotes.local';
+      const ACCESS_CODE_PASSWORD_SUFFIX = '-code';
 
-      form.addEventListener('submit', async (event) => {
+      accessForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const username = nameInput.value.trim().toLowerCase();
-        const password = passwordInput.value.trim();
+        const code = accessCodeInput.value.trim();
 
-        if (!username || !password) {
-          alert('Please enter both fields.');
+        if (!code) {
+          alert('Please enter an access code.');
           return;
         }
 
-        const email = `${username}@${USERNAME_EMAIL_DOMAIN}`;
+        const email = `${code.toLowerCase()}@${ACCESS_CODE_EMAIL_DOMAIN}`;
+        const password = `${code}${ACCESS_CODE_PASSWORD_SUFFIX}`;
         try {
           await auth.signInWithEmailAndPassword(email, password);
           window.location.href = '/language-studio.html';
         } catch (err) {
-          console.error('Sign-in failed', err);
-          alert('Invalid username or password.');
+          console.error('Access code sign-in failed', err);
+          alert('Invalid access code.');
         }
       });
     </script>
