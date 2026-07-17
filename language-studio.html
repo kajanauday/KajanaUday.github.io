@@ -157,10 +157,44 @@
       text-transform: uppercase;
       color: var(--muted);
       padding: 0.15rem 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
     }
 
     .section-group > summary::marker {
       font-size: 0.6rem;
+    }
+
+    .section-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .section-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+
+    .section-action-btn {
+      font-size: inherit;
+      font-weight: inherit;
+      letter-spacing: normal;
+      text-transform: none;
+      line-height: 1;
+      color: var(--muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .section-action-btn:hover {
+      color: var(--accent);
     }
 
     .section-group .section-body {
@@ -196,6 +230,7 @@
             </button>
             <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Quiz">✦</button>
             <button id="reading-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Read">▶</button>
+            <button id="script-practice-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Japanese script practice">あ</button>
             <button id="theme-toggle" type="button" class="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-amber-300 dark:hover:bg-slate-700" title="Toggle theme">
               <svg id="theme-icon-sun" class="hidden h-4 w-4 dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4"></circle>
@@ -339,6 +374,18 @@
           </div>
         </div>
       </div>
+
+      <div id="script-practice-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
+        <div class="glass-card relative flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 shadow-2xl dark:border-slate-700">
+          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2 dark:border-slate-700">
+            <span id="script-practice-title" class="text-sm font-semibold text-slate-900 dark:text-slate-100">Script Practice</span>
+            <button id="script-practice-close" type="button" title="Close" class="rounded-full border border-slate-200 bg-slate-100 p-1.5 text-slate-500 hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+            </button>
+          </div>
+          <iframe id="script-practice-frame" class="h-full w-full flex-1 border-0" title="Script practice" src="about:blank"></iframe>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -394,6 +441,7 @@
       quizTotal: 0,
       quizMode: 'idle',
       warOnWrongSet: null,
+      quizSourceEntries: [],
       readingActive: false,
       readingQueue: [],
       readingTimeoutId: null,
@@ -409,8 +457,8 @@
     auth.onAuthStateChanged(async (user) => {
       state.currentUser = user;
       if (!user) {
-        // Not signed in — redirect to login
-        window.location.href = '/';
+        // Not signed in — redirect to login, passing this page so login sends us back here
+        window.location.href = '/?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
         return;
       }
 
@@ -437,7 +485,6 @@
     const searchInput = document.getElementById('dictionary-search');
     const searchToggle = document.getElementById('search-toggle');
     const searchPanel = document.getElementById('search-panel');
-    const boardPreview = document.getElementById('board-preview');
     const dictionaryList = document.getElementById('dictionary-list');
     const dictionaryCount = document.getElementById('dictionary-count');
     const saveToDictionaryBtn = document.getElementById('save-to-dictionary');
@@ -458,6 +505,10 @@
     const quizTogglePronunciation = document.getElementById('quiz-toggle-pronunciation');
     const quizToggleMeaning = document.getElementById('quiz-toggle-meaning');
     const readingButton = document.getElementById('reading-button');
+    const scriptPracticeButton = document.getElementById('script-practice-button');
+    scriptPracticeButton.addEventListener('click', () => {
+      openScriptPracticeModal('hiragana', 'Hiragana');
+    });
     const themeToggle = document.getElementById('theme-toggle');
     themeToggle.addEventListener('click', () => {
       const isDark = document.documentElement.classList.toggle('dark');
@@ -474,6 +525,10 @@
     });
     const readingModal = document.getElementById('reading-modal');
     const readingClose = document.getElementById('reading-close');
+    const scriptPracticeModal = document.getElementById('script-practice-modal');
+    const scriptPracticeFrame = document.getElementById('script-practice-frame');
+    const scriptPracticeTitle = document.getElementById('script-practice-title');
+    const scriptPracticeClose = document.getElementById('script-practice-close');
     const readingWord = document.getElementById('reading-word');
     const readingPronunciation = document.getElementById('reading-pronunciation');
     const readingMeaning = document.getElementById('reading-meaning');
@@ -574,6 +629,15 @@
         'だ': 'da'
       };
 
+      // A plain vowel kana right after a syllable ending in the same vowel (or う
+      // after an お-ending syllable) lengthens it — write that as a macron rather
+      // than doubling the letter, e.g. どう -> "dō" not "dou".
+      const plainVowelMap = {
+        'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o',
+        'ア': 'a', 'イ': 'i', 'ウ': 'u', 'エ': 'e', 'オ': 'o'
+      };
+      const macronMap = { a: 'ā', i: 'ī', u: 'ū', e: 'ē', o: 'ō' };
+
       const normalized = String(text)
         .replace(/\s+/g, '')
         .replace(/（/g, '(')
@@ -589,8 +653,9 @@
         if (!char) break;
         if (char === 'ー') {
           const previous = syllables[syllables.length - 1];
-          if (previous && /[aeiou]$/.test(previous)) {
-            syllables[syllables.length - 1] = previous + previous.slice(-1);
+          const lastVowel = previous ? previous.slice(-1) : '';
+          if (previous && macronMap[lastVowel]) {
+            syllables[syllables.length - 1] = previous.slice(0, -1) + macronMap[lastVowel];
           }
           index += 1;
           continue;
@@ -599,11 +664,24 @@
         if (char === 'っ') {
           const nextKana = next && (comboKanaMap[next] || singleKanaMap[next] || next);
           if (nextKana) {
-            const consonant = nextKana[0];
-            syllables.push(consonant + consonant);
+            // Push just the doubling consonant — the next character's own syllable
+            // (processed on the following loop iteration) supplies the second copy.
+            syllables.push(nextKana[0]);
           }
           index += 1;
           continue;
+        }
+
+        if (plainVowelMap[char]) {
+          const vowel = plainVowelMap[char];
+          const previous = syllables[syllables.length - 1];
+          const lastVowel = previous ? previous.slice(-1) : '';
+          const isLongVowel = previous && (lastVowel === vowel || (vowel === 'u' && lastVowel === 'o'));
+          if (isLongVowel) {
+            syllables[syllables.length - 1] = previous.slice(0, -1) + macronMap[lastVowel];
+            index += 1;
+            continue;
+          }
         }
 
         const katakana = char && char.charCodeAt(0) >= 0x30A0 && char.charCodeAt(0) <= 0x30FF;
@@ -646,7 +724,7 @@
         index += 1;
       }
 
-      return syllables.join('-').replace(/-+/g, '-').replace(/-$/, '');
+      return syllables.join('');
     }
 
     async function getRomanization(text, sourceLang, targetLang) {
@@ -677,7 +755,12 @@
       const nativeText = nativeWordInput.value.trim();
       if (!nativeText) return;
 
-      if (nativeLang === 'ja') {
+      // Kanji can't be transliterated char-by-char (no kana mapping exists for it), so
+      // any kanji in the text routes straight to the Google romanization API below —
+      // the internal transliterator would otherwise silently skip those characters
+      // and return an incomplete, wrong result instead of falling through.
+      const containsKanji = /[一-鿿]/.test(nativeText);
+      if (nativeLang === 'ja' && !containsKanji) {
         const internalRomanization = transliterateJapaneseToRomaji(nativeText);
         if (internalRomanization && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
           pronunciationInput.value = internalRomanization;
@@ -731,76 +814,7 @@
         .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
     }
 
-    async function seedDefaultWordsIfNeeded() {
-      const snapshot = await wordsRef.once('value');
-      const data = snapshot.val();
-      if (data && Object.keys(data).length) {
-        return;
-      }
-
-      const seedEntries = [
-        { word: 'こんにちは', pronunciation: 'kon-ni-chi-wa', englishMeaning: 'Hello', teluguMeaning: 'హలో', language: 'japanese', createdAt: Date.now() },
-        { word: 'ありがとう', pronunciation: 'a-ri-ga-to-u', englishMeaning: 'Thank you', teluguMeaning: 'ధన్యవాదాలు', language: 'japanese', createdAt: Date.now() + 1 },
-        { word: '学校', pronunciation: 'ga-ku-ko', englishMeaning: 'School', teluguMeaning: 'పాఠశాల', language: 'japanese', createdAt: Date.now() + 2 }
-      ];
-
-      const payload = {};
-      seedEntries.forEach((entry, index) => {
-        payload[`seed-${String(index + 1).padStart(2, '0')}`] = entry;
-      });
-
-      await wordsRef.set(payload);
-    }
-
-    function getSwipeThreshold() {
-      return Math.max(48, window.innerWidth * 0.1);
-    }
-
-    function handleCardSwipe(entry, deltaX) {
-      if (!entry) return;
-      if (deltaX > 0) {
-        toggleStarred(entry);
-      } else if (deltaX < 0) {
-        toggleReadingEnabled(entry);
-      }
-    }
-
     function attachCardInteractions(card, entry) {
-      let touchStartX = null;
-
-      card.addEventListener('touchstart', (event) => {
-        const touch = event.touches[0];
-        if (touch) touchStartX = touch.clientX;
-      }, { passive: true });
-
-      card.addEventListener('touchend', (event) => {
-        if (touchStartX === null) return;
-        const touch = event.changedTouches[0];
-        const deltaX = touch ? touch.clientX - touchStartX : 0;
-        touchStartX = null;
-        if (Math.abs(deltaX) >= getSwipeThreshold()) {
-          handleCardSwipe(entry, deltaX);
-        }
-      }, { passive: true });
-
-      card.addEventListener('touchcancel', () => {
-        touchStartX = null;
-      }, { passive: true });
-
-      card.addEventListener('pointerdown', (event) => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return;
-        card.dataset.pointerStartX = String(event.clientX);
-      });
-
-      card.addEventListener('pointerup', (event) => {
-        const startX = Number(card.dataset.pointerStartX || 0);
-        const deltaX = event.clientX - startX;
-        delete card.dataset.pointerStartX;
-        if (Math.abs(deltaX) >= getSwipeThreshold()) {
-          handleCardSwipe(entry, deltaX);
-        }
-      });
-
       card.addEventListener('dblclick', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -897,7 +911,23 @@
         });
 
         const summary = document.createElement('summary');
-        summary.textContent = `${key} (${entries.length})`;
+        summary.innerHTML = `
+          <span class="section-label">${escapeHtml(key)} (${entries.length})</span>
+          <span class="section-actions">
+            <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
+            <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
+          </span>
+        `;
+        summary.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          startSectionQuiz(entries);
+        });
+        summary.querySelector('[data-section-read]').addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          startSectionReading(entries);
+        });
         details.appendChild(summary);
 
         const body = document.createElement('div');
@@ -916,11 +946,6 @@
       const anyCollapsed = Array.from(detailsEls).some(details => !details.open);
       collapseToggle.textContent = anyCollapsed ? 'Expand all' : 'Collapse all';
       collapseToggle.dataset.action = anyCollapsed ? 'expand' : 'collapse';
-    }
-
-    function renderBoard() {
-      const data = getCurrentLanguageData();
-      if (boardPreview) boardPreview.innerHTML = '';
     }
 
     function clearForm() {
@@ -971,13 +996,7 @@
       }
       const value = sectionInput.value.trim();
       try {
-        if (String(id).startsWith('local-')) {
-          state.words = state.words.map(w => w.id === id ? { ...w, section: value } : w);
-          rebuildWordIndex();
-          renderDictionary();
-        } else {
-          await wordsRef.child(id).update({ section: value });
-        }
+        await wordsRef.child(id).update({ section: value });
       } catch (err) {
         console.error('Failed to update section', err);
         window.alert('Failed to save section. See console for details.');
@@ -1025,25 +1044,11 @@
           englishMeaning: newEntry.englishMeaning
         };
         try {
-          console.log('Updating entry', editingId, updates);
-          if (String(editingId).startsWith('local-')) {
-            // local-only update
-            state.words = state.words.map(w => w.id === editingId ? { ...w, ...updates } : w);
-            rebuildWordIndex();
-            renderDictionary();
-            exitEditMode();
-            showSectionAssignPanel(editingId);
-            return;
-          }
           await wordsRef.child(editingId).update(updates);
           exitEditMode();
           showSectionAssignPanel(editingId);
         } catch (err) {
           console.error('Failed to update entry', err);
-          if (err && (err.code === 'PERMISSION_DENIED' || String(err).includes('PERMISSION_DENIED') || String(err).includes('permission_denied'))) {
-            window.alert('Permission denied: cannot update. See console.');
-            return;
-          }
           window.alert('Failed to update entry. See console.');
         }
         return;
@@ -1051,20 +1056,10 @@
 
       // Otherwise add new entry
       try {
-        console.log('Adding entry to Firebase', newEntry);
         const ref = await wordsRef.push(newEntry);
         showSectionAssignPanel(ref.key);
       } catch (err) {
         console.error('Failed to add entry to Firebase', err);
-        if (err && (err.code === 'PERMISSION_DENIED' || String(err).includes('PERMISSION_DENIED') || String(err).includes('permission_denied'))) {
-          window.alert('Permission denied: Firebase blocked the write. For testing, update your Realtime Database rules or sign in. See console for details.');
-          const fallback = { id: 'local-' + Date.now(), ...newEntry };
-          state.words.unshift(fallback);
-          rebuildWordIndex();
-          renderDictionary();
-          showSectionAssignPanel(fallback.id);
-          return;
-        }
         window.alert('Failed to add entry. See console for details.');
       }
     }
@@ -1072,60 +1067,16 @@
     async function deleteWordEntry(id) {
       if (!id) return;
       if (!window.confirm('Delete this word?')) return;
+      if (!state.isAdmin) {
+        window.alert('You are not authorized to delete this entry.');
+        return;
+      }
       try {
-        if (String(id).startsWith('local-')) {
-          // local-only entry: remove from UI
-          state.words = state.words.filter(w => w.id !== id);
-          rebuildWordIndex();
-          renderDictionary();
-          if (state.editingId === id) exitEditMode();
-          return;
-        }
-
-        if (!state.isAdmin) {
-          window.alert('You are not authorized to delete this entry.');
-          return;
-        }
-
         await wordsRef.child(id).remove();
         if (state.editingId === id) exitEditMode();
       } catch (err) {
         console.error('Failed to delete entry', err);
         window.alert('Failed to delete entry. See console for details.');
-      }
-    }
-
-    async function toggleStarred(entry) {
-      if (!entry) return;
-      const starred = !entry.starred;
-      try {
-        if (String(entry.id).startsWith('local-')) {
-          state.words = state.words.map(w => w.id === entry.id ? { ...w, starred } : w);
-          rebuildWordIndex();
-          renderDictionary();
-          return;
-        }
-        await wordsRef.child(entry.id).update({ starred });
-      } catch (err) {
-        console.error('Failed to toggle star', err);
-        window.alert('Failed to update star. See console for details.');
-      }
-    }
-
-    async function toggleReadingEnabled(entry) {
-      if (!entry) return;
-      const readingEnabled = !entry.readingEnabled;
-      try {
-        if (String(entry.id).startsWith('local-')) {
-          state.words = state.words.map(w => w.id === entry.id ? { ...w, readingEnabled } : w);
-          rebuildWordIndex();
-          renderDictionary();
-          return;
-        }
-        await wordsRef.child(entry.id).update({ readingEnabled });
-      } catch (err) {
-        console.error('Failed to toggle reading mode', err);
-        window.alert('Failed to update reading mode. See console for details.');
       }
     }
 
@@ -1180,15 +1131,36 @@
       quizModal.classList.remove('open');
     }
 
+    // Restarts using whichever entry set the quiz was last launched with — set by
+    // launchQuiz()/startSectionQuiz() so "Restart" reruns the same words, not a
+    // fixed starred-only subset.
     function startQuiz() {
-      const queue = state.words.filter(entry => entry.starred).map(entry => ({ ...entry }));
+      const queue = state.quizSourceEntries.map(entry => ({ ...entry }));
       if (!queue.length) {
-        quizStatus.textContent = 'No words are queued for the quiz yet. Swipe right on cards to add them.';
+        quizStatus.textContent = 'No words are queued for the quiz yet.';
         return;
       }
       state.quizMode = 'normal';
       state.warOnWrongSet = null;
       beginRound(queue, `${queue.length} word(s) queued`);
+    }
+
+    function launchQuiz(entries) {
+      state.quizSourceEntries = entries;
+      openQuizModal();
+      startQuiz();
+    }
+
+    async function startSectionQuiz(entries) {
+      if (!entries.length) return;
+      try {
+        await Promise.all(entries.map(entry => wordsRef.child(entry.id).update({ starred: true })));
+      } catch (err) {
+        console.error('Failed to add section to quiz list', err);
+        window.alert('Failed to update quiz list. See console for details.');
+        return;
+      }
+      launchQuiz(entries.map(entry => ({ ...entry, starred: true })));
     }
 
     function beginRound(queue, statusText) {
@@ -1216,10 +1188,10 @@
       }
 
       if (entry && quizToggleMeaning.checked) {
-        const parts = [];
-        if (entry.englishMeaning) parts.push(`English: ${entry.englishMeaning}`);
-        if (entry.teluguMeaning) parts.push(`Telugu: ${entry.teluguMeaning}`);
-        quizMeaning.textContent = parts.join(' · ') || 'No meaning available';
+        const parts = [entry.englishMeaning, entry.teluguMeaning].filter(Boolean);
+        quizMeaning.innerHTML = parts.length
+          ? parts.map(part => escapeHtml(part)).join('<br>')
+          : 'No meaning available';
       } else {
         quizMeaning.textContent = '';
       }
@@ -1373,10 +1345,10 @@
         readingPronunciation.textContent = '';
         readingPronunciation.classList.add('hidden');
       }
-      const parts = [];
-      if (entry.englishMeaning) parts.push(`English: ${entry.englishMeaning}`);
-      if (entry.teluguMeaning) parts.push(`Telugu: ${entry.teluguMeaning}`);
-      readingMeaning.textContent = parts.join(' · ') || 'No meaning available';
+      const parts = [entry.englishMeaning, entry.teluguMeaning].filter(Boolean);
+      readingMeaning.innerHTML = parts.length
+        ? parts.map(part => escapeHtml(part)).join('<br>')
+        : 'No meaning available';
     }
 
     async function runReadingLoop() {
@@ -1389,17 +1361,27 @@
         const entry = state.readingQueue.shift();
         renderReadingCard(entry);
 
+        // Each piece is spoken with the voice that actually matches its language —
+        // reading the English meaning in a Japanese/Telugu voice mispronounces it.
         const nativeLang = langCodeMap[entry.language] || 'ja';
         const speechLanguage = entry.language === 'japanese' ? 'ja-JP' : entry.language === 'telugu' ? 'te-IN' : 'en-US';
         const spokenWord = entry.pronunciation
           ? normalizeSpeechText(entry.pronunciation, entry.language === 'japanese' ? 'ja' : entry.language === 'telugu' ? 'te' : 'en')
           : await toSpokenText(entry.word, nativeLang);
-        const spokenTelugu = await toSpokenText(entry.teluguMeaning, 'te');
-        const meaningParts = [entry.englishMeaning, spokenTelugu].filter(Boolean);
-        const speechText = meaningParts.length ? `${spokenWord} means ${meaningParts.join(', ')}` : spokenWord;
 
-        await speak(speechText, speechLanguage, entry.language === 'japanese' ? 0.9 : 0.95, entry.language === 'japanese' ? 1 : 1);
+        await speak(spokenWord, speechLanguage, entry.language === 'japanese' ? 0.9 : 0.95, 1);
         if (!state.readingActive) break;
+
+        if (entry.englishMeaning) {
+          await speak(entry.englishMeaning, 'en-US', 0.95, 1);
+          if (!state.readingActive) break;
+        }
+
+        if (entry.teluguMeaning) {
+          const spokenTelugu = await toSpokenText(entry.teluguMeaning, 'te');
+          await speak(spokenTelugu, 'te-IN', 0.95, 1);
+          if (!state.readingActive) break;
+        }
 
         await new Promise(resolve => {
           state.readingTimeoutId = setTimeout(resolve, 2000);
@@ -1408,18 +1390,33 @@
     }
 
     function openReadingModal() {
-      const pool = state.words.filter(entry => entry.readingEnabled);
-      if (!pool.length) {
-        window.alert('No words enabled for reading mode yet. Swipe left on a card to add it to read mode.');
+      if (!state.words.length) {
+        window.alert('No words in this dictionary yet.');
         return;
       }
+      beginReading(state.words.map(entry => ({ ...entry })));
+    }
+
+    function beginReading(entries) {
       readingModal.classList.add('open');
       readingWord.textContent = 'Read';
       readingPronunciation.classList.add('hidden');
       readingMeaning.textContent = 'Reading mode starting…';
       state.readingActive = true;
-      state.readingQueue = shuffle(pool);
+      state.readingQueue = shuffle(entries);
       runReadingLoop();
+    }
+
+    async function startSectionReading(entries) {
+      if (!entries.length) return;
+      try {
+        await Promise.all(entries.map(entry => wordsRef.child(entry.id).update({ readingEnabled: true })));
+      } catch (err) {
+        console.error('Failed to add section to reading list', err);
+        window.alert('Failed to update reading list. See console for details.');
+        return;
+      }
+      beginReading(entries.map(entry => ({ ...entry, readingEnabled: true })));
     }
 
     function closeReadingModal() {
@@ -1430,6 +1427,17 @@
         state.readingTimeoutId = null;
       }
       window.speechSynthesis.cancel();
+    }
+
+    function openScriptPracticeModal(scriptKey, label) {
+      scriptPracticeTitle.textContent = `${label} Practice`;
+      scriptPracticeFrame.src = `hiragana-karuta.html?script=${encodeURIComponent(scriptKey)}`;
+      scriptPracticeModal.classList.add('open');
+    }
+
+    function closeScriptPracticeModal() {
+      scriptPracticeModal.classList.remove('open');
+      scriptPracticeFrame.src = 'about:blank';
     }
 
     function handleNativeInput() {
@@ -1452,7 +1460,6 @@
 
     languageSelect.addEventListener('change', (event) => {
       state.language = event.target.value;
-      renderBoard();
       renderDictionary();
     });
 
@@ -1469,22 +1476,7 @@
       renderDictionary();
     });
 
-    dictionaryList.addEventListener('click', (event) => {
-      const actionButton = event.target.closest('[data-action]');
-      if (!actionButton) return;
-      const action = actionButton.getAttribute('data-action');
-      const id = actionButton.getAttribute('data-id');
-      const entry = state.words.find(item => item.id === id);
-      if (action === 'edit-mode') {
-        enterEditMode(entry);
-      } else if (action === 'toggle-star') {
-        toggleStarred(entry);
-      } else if (action === 'toggle-reading') {
-        toggleReadingEnabled(entry);
-      }
-    });
-
-    quizButton.addEventListener('click', () => openQuizModal());
+    quizButton.addEventListener('click', () => launchQuiz(state.words.map(entry => ({ ...entry }))));
     quizClose.addEventListener('click', () => closeQuizModal());
     quizStart.addEventListener('click', () => startQuiz());
     quizWrong.addEventListener('click', () => handleWrong());
@@ -1493,6 +1485,7 @@
     quizToggleMeaning.addEventListener('change', () => { if (state.quizCurrent) renderQuizCard(); });
     readingButton.addEventListener('click', () => openReadingModal());
     readingClose.addEventListener('click', () => closeReadingModal());
+    scriptPracticeClose.addEventListener('click', () => closeScriptPracticeModal());
     saveToDictionaryBtn.addEventListener('click', () => addCurrentEntryToDictionary());
     clearFormBtn.addEventListener('click', () => exitEditMode());
     deleteCurrentBtn.addEventListener('click', () => {
@@ -1534,17 +1527,8 @@
       updateCollapseToggleLabel();
     });
 
-    renderBoard();
     renderDictionary();
-
-    seedDefaultWordsIfNeeded()
-      .then(() => {
-        wireRealtimeListener();
-      })
-      .catch((error) => {
-        console.error('Firebase initialisation failed', error);
-        renderDictionary();
-      });
+    wireRealtimeListener();
   </script>
 </body>
 </html>

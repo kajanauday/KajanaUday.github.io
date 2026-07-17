@@ -71,6 +71,17 @@
       const firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
       const auth = firebase.auth();
 
+      // Pages that redirect here when signed out pass their own path via ?redirect=,
+      // so login sends you back to where you came from instead of always the main app.
+      // Only same-origin relative paths are honored — anything else falls back to the default.
+      function getRedirectTarget() {
+        const requested = new URLSearchParams(window.location.search).get('redirect');
+        if (requested && requested.startsWith('/') && !requested.startsWith('//')) {
+          return requested;
+        }
+        return '/language-studio.html';
+      }
+
       const googleBtn = document.getElementById('google-signin');
       googleBtn.addEventListener('click', async () => {
         try {
@@ -78,7 +89,7 @@
           await auth.signInWithPopup(provider);
           // Signed in — redirect to app. Role is resolved in language-studio.html
           // via the /admins/{uid} Realtime Database entry; everyone else is a viewer.
-          window.location.href = '/language-studio.html';
+          window.location.href = getRedirectTarget();
         } catch (err) {
           console.error('Google sign-in failed', err);
           alert('Google sign-in failed. See console.');
@@ -109,7 +120,7 @@
         const password = `${code}${ACCESS_CODE_PASSWORD_SUFFIX}`;
         try {
           await auth.signInWithEmailAndPassword(email, password);
-          window.location.href = '/language-studio.html';
+          window.location.href = getRedirectTarget();
         } catch (err) {
           console.error('Access code sign-in failed', err);
           alert('Invalid access code.');
