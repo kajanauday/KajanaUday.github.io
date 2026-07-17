@@ -69,30 +69,6 @@
       box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
     }
 
-    .dict-card::before,
-    .dict-card::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.15s ease;
-    }
-
-    .dict-card.quiz-active::after {
-      right: 0;
-      opacity: 1;
-      background: linear-gradient(180deg, #bfdbfe 0%, #2563eb 100%);
-    }
-
-    .dict-card.reading-active::before {
-      left: 0;
-      opacity: 1;
-      background: linear-gradient(180deg, #ddd6fe 0%, #7c3aed 100%);
-    }
-
     .pill {
       border: 1px solid var(--border);
       border-radius: 9999px;
@@ -444,10 +420,12 @@
       quizSourceEntries: [],
       readingActive: false,
       readingQueue: [],
+      readingPool: [],
       readingTimeoutId: null,
       groupMode: 'category',
       expandedSections: new Set(),
-      pendingSectionEntryId: null
+      pendingSectionEntryId: null,
+      pendingSectionOrigin: null
     };
 
     // auth state and admin flag
@@ -806,12 +784,28 @@
     const debouncedTranslateFromEnglish = debounce(() => autoTranslateFrom('english'), 700);
     const debouncedTranslateFromTelugu = debounce(() => autoTranslateFrom('telugu'), 700);
 
+    // Firebase shape: words/{language}/{section}/{id} -> { w, p, em, tm, c }.
+    // Flatten the current language's sections into the flat entry list the rest
+    // of the app works with.
     function getEntriesFromSnapshot(snapshot) {
-      const raw = snapshot.val() || {};
-      return Object.entries(raw)
-        .map(([id, entry]) => ({ id, ...(entry || {}) }))
-        .filter(entry => entry.language === state.language)
-        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+      const languageData = (snapshot.val() || {})[state.language] || {};
+      const entries = [];
+      Object.entries(languageData).forEach(([section, words]) => {
+        Object.entries(words || {}).forEach(([id, data]) => {
+          if (!data) return;
+          entries.push({
+            id,
+            word: data.w || '',
+            pronunciation: data.p || '',
+            englishMeaning: data.em || '',
+            teluguMeaning: data.tm || '',
+            language: state.language,
+            section,
+            createdAt: data.c || 0
+          });
+        });
+      });
+      return entries.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
     }
 
     function attachCardInteractions(card, entry) {
@@ -834,17 +828,14 @@
     function getDistinctSections() {
       const set = new Set();
       state.words.forEach(entry => {
-        if (entry.section && entry.section.trim()) set.add(entry.section.trim());
+        if (entry.section && entry.section !== 'Uncategorized') set.add(entry.section);
       });
       return Array.from(set).sort((a, b) => a.localeCompare(b));
     }
 
     function buildDictionaryCard(entry) {
       const card = document.createElement('article');
-      const cardClasses = ['compact-card', 'dict-card', 'transition-all', 'duration-150', 'flex', 'items-center', 'justify-between', 'py-2'];
-      if (entry.starred) cardClasses.push('quiz-active');
-      if (entry.readingEnabled) cardClasses.push('reading-active');
-      card.className = cardClasses.join(' ');
+      card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between py-2';
 
       const pronunciation = entry.pronunciation || '';
       const teluguMeaning = entry.teluguMeaning || '';
@@ -856,10 +847,6 @@
           <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left dark:text-slate-300">${escapeHtml(teluguMeaning)}</div>
           <div class="min-w-[120px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
           <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left dark:text-slate-300">${escapeHtml(englishMeaning)}</div>
-        </div>
-        <div class="ml-3 flex min-w-[88px] items-center justify-end text-[11px] font-medium text-slate-400 dark:text-slate-500">
-          <span class="mr-2">${entry.starred ? 'Quiz' : ''}</span>
-          <span>${entry.readingEnabled ? 'Read' : ''}</span>
         </div>
       `;
       attachCardInteractions(card, entry);
@@ -970,10 +957,13 @@
       sectionDropdown.classList.remove('hidden');
     }
 
-    function showSectionAssignPanel(entryId) {
+    // currentSection is passed explicitly by the caller (who just wrote or looked up
+    // the entry) rather than read back from state.words, since the realtime listener
+    // may not have caught up yet right after a push/update.
+    function showSectionAssignPanel(entryId, currentSection) {
       state.pendingSectionEntryId = entryId;
-      const entry = state.words.find(w => w.id === entryId);
-      sectionInput.value = (entry && entry.section) || '';
+      state.pendingSectionOrigin = currentSection;
+      sectionInput.value = currentSection === 'Uncategorized' ? '' : currentSection;
       sectionDropdown.classList.add('hidden');
       wordEntryRow.classList.add('hidden');
       sectionEntryRow.classList.remove('hidden');
@@ -982,6 +972,7 @@
 
     function hideSectionAssignPanel() {
       state.pendingSectionEntryId = null;
+      state.pendingSectionOrigin = null;
       sectionDropdown.classList.add('hidden');
       sectionEntryRow.classList.add('hidden');
       wordEntryRow.classList.remove('hidden');
@@ -990,16 +981,28 @@
 
     async function confirmSectionAssignment() {
       const id = state.pendingSectionEntryId;
-      if (!id) {
+      const origin = state.pendingSectionOrigin;
+      if (!id || !origin) {
         hideSectionAssignPanel();
         return;
       }
-      const value = sectionInput.value.trim();
-      try {
-        await wordsRef.child(id).update({ section: value });
-      } catch (err) {
-        console.error('Failed to update section', err);
-        window.alert('Failed to save section. See console for details.');
+      const newSection = sectionInput.value.trim() || 'Uncategorized';
+      if (newSection !== origin) {
+        try {
+          // Read straight from the known origin path rather than state.words, since
+          // the realtime listener may not have caught up with a just-made write yet.
+          const snapshot = await wordsRef.child(state.language).child(origin).child(id).once('value');
+          const data = snapshot.val();
+          if (data) {
+            await database.ref().update({
+              [`words/${state.language}/${origin}/${id}`]: null,
+              [`words/${state.language}/${newSection}/${id}`]: data
+            });
+          }
+        } catch (err) {
+          console.error('Failed to update section', err);
+          window.alert('Failed to save section. See console for details.');
+        }
       }
       hideSectionAssignPanel();
     }
@@ -1022,31 +1025,25 @@
         return;
       }
 
-      const newEntry = {
-        word,
-        pronunciation: pronunciationInput.value.trim(),
-        teluguMeaning: teluguMeaningInput.value.trim(),
-        englishMeaning: englishMeaningInput.value.trim(),
-        language: state.language,
-        section: '',
-        starred: false,
-        readingEnabled: false,
-        createdAt: Date.now()
+      const fields = {
+        w: word,
+        p: pronunciationInput.value.trim(),
+        tm: teluguMeaningInput.value.trim(),
+        em: englishMeaningInput.value.trim()
       };
 
       // If editing an existing entry, perform update
       if (state.editingId) {
         const editingId = state.editingId;
-        const updates = {
-          word: newEntry.word,
-          pronunciation: newEntry.pronunciation,
-          teluguMeaning: newEntry.teluguMeaning,
-          englishMeaning: newEntry.englishMeaning
-        };
+        const existing = state.words.find(entry => entry.id === editingId);
+        if (!existing) {
+          window.alert('Could not find this entry to update. See console.');
+          return;
+        }
         try {
-          await wordsRef.child(editingId).update(updates);
+          await wordsRef.child(state.language).child(existing.section).child(editingId).update(fields);
           exitEditMode();
-          showSectionAssignPanel(editingId);
+          showSectionAssignPanel(editingId, existing.section);
         } catch (err) {
           console.error('Failed to update entry', err);
           window.alert('Failed to update entry. See console.');
@@ -1054,10 +1051,10 @@
         return;
       }
 
-      // Otherwise add new entry
+      // Otherwise add new entry, filed under Uncategorized until a section is chosen
       try {
-        const ref = await wordsRef.push(newEntry);
-        showSectionAssignPanel(ref.key);
+        const ref = await wordsRef.child(state.language).child('Uncategorized').push({ ...fields, c: Date.now() });
+        showSectionAssignPanel(ref.key, 'Uncategorized');
       } catch (err) {
         console.error('Failed to add entry to Firebase', err);
         window.alert('Failed to add entry. See console for details.');
@@ -1071,8 +1068,10 @@
         window.alert('You are not authorized to delete this entry.');
         return;
       }
+      const entry = state.words.find(item => item.id === id);
+      if (!entry) return;
       try {
-        await wordsRef.child(id).remove();
+        await wordsRef.child(state.language).child(entry.section).child(id).remove();
         if (state.editingId === id) exitEditMode();
       } catch (err) {
         console.error('Failed to delete entry', err);
@@ -1151,16 +1150,9 @@
       startQuiz();
     }
 
-    async function startSectionQuiz(entries) {
+    function startSectionQuiz(entries) {
       if (!entries.length) return;
-      try {
-        await Promise.all(entries.map(entry => wordsRef.child(entry.id).update({ starred: true })));
-      } catch (err) {
-        console.error('Failed to add section to quiz list', err);
-        window.alert('Failed to update quiz list. See console for details.');
-        return;
-      }
-      launchQuiz(entries.map(entry => ({ ...entry, starred: true })));
+      launchQuiz(entries.map(entry => ({ ...entry })));
     }
 
     function beginRound(queue, statusText) {
@@ -1354,8 +1346,8 @@
     async function runReadingLoop() {
       while (state.readingActive) {
         if (!state.readingQueue.length) {
-          state.readingQueue = shuffle(state.words.filter(entry => entry.readingEnabled));
-          if (!state.readingQueue.length) break; // nothing enabled anymore
+          state.readingQueue = shuffle(state.readingPool);
+          if (!state.readingQueue.length) break; // nothing left to read
         }
 
         const entry = state.readingQueue.shift();
@@ -1403,20 +1395,14 @@
       readingPronunciation.classList.add('hidden');
       readingMeaning.textContent = 'Reading mode starting…';
       state.readingActive = true;
+      state.readingPool = entries;
       state.readingQueue = shuffle(entries);
       runReadingLoop();
     }
 
-    async function startSectionReading(entries) {
+    function startSectionReading(entries) {
       if (!entries.length) return;
-      try {
-        await Promise.all(entries.map(entry => wordsRef.child(entry.id).update({ readingEnabled: true })));
-      } catch (err) {
-        console.error('Failed to add section to reading list', err);
-        window.alert('Failed to update reading list. See console for details.');
-        return;
-      }
-      beginReading(entries.map(entry => ({ ...entry, readingEnabled: true })));
+      beginReading(entries.map(entry => ({ ...entry })));
     }
 
     function closeReadingModal() {
