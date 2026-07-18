@@ -230,66 +230,55 @@
     </header>
 
     <main class="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
-      <div id="add-word-panel" class="hidden mb-4 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div class="mb-2 hidden" id="search-panel">
-          <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-            <svg class="h-4 w-4 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="6"></circle>
-              <path d="m20 20-4.2-4.2"></path>
-            </svg>
-            <input id="dictionary-search" type="search" placeholder="Search words" class="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500" />
-          </label>
-        </div>
-        <div id="word-entry-row" class="flex flex-wrap items-end gap-2">
-          <label class="min-w-[140px] flex-1">
-            <input id="native-word" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" placeholder="Native" />
-          </label>
-
-          <label class="min-w-[140px] flex-1">
-            <input id="pronunciation" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" placeholder="Pronunciation" />
-          </label>
-
-          <label class="min-w-[140px] flex-1">
-            <input id="telugu-meaning" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" placeholder="Telugu" />
-          </label>
-
-          <label class="min-w-[140px] flex-1">
-            <input id="english-meaning" type="text" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" placeholder="English" />
-          </label>
-
-          <div class="flex gap-2 items-center">
-            <button id="save-to-dictionary" type="button" class="ml-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700" title="Add">+</button>
-            <button id="clear-form" type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" title="Clear">×</button>
-            <button id="delete-current" type="button" class="hidden rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/40" title="Delete">−</button>
-          </div>
-        </div>
-
-        <div id="section-entry-row" class="hidden flex flex-wrap items-end gap-2">
-          <label class="relative min-w-[200px] flex-1">
-            <input id="section-input" type="text" autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" placeholder="Enter Section" />
-            <div id="section-dropdown" class="hidden absolute left-0 right-0 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-800"></div>
-          </label>
-
-          <div class="flex gap-2 items-center">
-            <button id="section-confirm" type="button" class="ml-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700" title="Save section">✓</button>
-            <button id="section-skip" type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" title="Skip">×</button>
-          </div>
-        </div>
+      <div class="mb-4 hidden" id="search-panel">
+        <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <svg class="h-4 w-4 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="6"></circle>
+            <path d="m20 20-4.2-4.2"></path>
+          </svg>
+          <input id="dictionary-search" type="search" placeholder="Search sections" class="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500" />
+        </label>
       </div>
 
       <section class="glass-card overflow-hidden rounded-3xl border border-slate-200 shadow-[0_10px_40px_rgba(15,23,42,0.06)] dark:border-slate-700">
-        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          <div class="flex items-center gap-2">
+        <div class="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+          <div class="flex items-center gap-2 shrink-0">
             <button id="group-mode-toggle" type="button" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700" title="Toggle grouping">Group: Category</button>
-            <button id="collapse-toggle" type="button" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700" title="Expand or collapse all sections">Expand all</button>
           </div>
-          <span id="dictionary-count" class="rounded-full bg-white px-3 py-1 text-xs text-slate-500 dark:bg-slate-900 dark:text-slate-400">0 entries</span>
+
+          <div id="quick-add-container" class="hidden min-w-0 flex-1 items-center justify-center gap-2 px-2">
+            <div class="relative w-full max-w-[220px]">
+              <input id="quick-add-input" type="text" autocomplete="off" placeholder="Type a word…" class="w-full rounded-lg border border-transparent bg-transparent px-3 py-1.5 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 hover:bg-white/70 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-200 dark:text-slate-200 dark:placeholder:text-slate-500 dark:hover:bg-slate-900/50 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-900" />
+              <div id="quick-add-live-preview" class="hidden absolute left-0 top-full z-10 mt-1 max-w-xs truncate whitespace-nowrap rounded-md bg-white px-2 py-1 text-xs text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400"></div>
+            </div>
+            <div id="quick-add-category-inline" class="hidden w-full max-w-[160px]"></div>
+          </div>
+
+          <span id="dictionary-count" class="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-slate-500 dark:bg-slate-900 dark:text-slate-400">0 entries</span>
         </div>
 
         <div class="max-h-[520px] overflow-y-auto p-3">
           <div id="dictionary-list" class="space-y-2"></div>
         </div>
       </section>
+
+      <div id="quick-add-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
+        <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
+          <div class="flex items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
+            <span class="text-sm font-semibold text-slate-900 dark:text-slate-100">Review word</span>
+            <button id="quick-add-modal-close" type="button" class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600">Close</button>
+          </div>
+          <div id="quick-add-cards" class="mt-3 space-y-2"></div>
+          <div id="quick-add-category-popup" class="mt-3"></div>
+        </div>
+      </div>
+
+      <div id="section-input-home" class="hidden">
+        <label class="relative block">
+          <input id="section-input" type="text" autocomplete="off" placeholder="Category" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" />
+          <div id="section-dropdown" class="hidden absolute left-0 right-0 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-800"></div>
+        </label>
+      </div>
 
       <div id="quiz-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
         <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
@@ -408,24 +397,35 @@
     const state = {
       language: 'japanese',
       query: '',
-      words: [],
-      wordIndex: new Map(), // normalized word -> entry id, for O(1) duplicate lookups
-      editingId: null,
+      // mode: 'idle' | 'input' | 'category'; resolved: {direction, word, pronunciation, englishMeaning};
+      // editingId/editingOriginSection set only when this is an edit, not a new entry.
+      // lastResolvedText/resolved cache the most recent live-preview translation
+      // so pressing Enter right after typing doesn't re-run it from scratch.
+      quickAdd: { mode: 'entering', resolved: null, lastResolvedText: null, editingId: null, editingOriginSection: null },
       quizQueue: [],
       quizMissed: [],
       quizCurrent: null,
       quizTotal: 0,
       quizMode: 'idle',
       warOnWrongSet: null,
-      quizSourceEntries: [],
+      quizSectionQueue: [],
+      quizSectionIndex: -1,
+      quizCurrentSection: null,
+      quizRoundResolve: null,
       readingActive: false,
-      readingQueue: [],
-      readingPool: [],
       readingTimeoutId: null,
+      readingSectionQueue: [],
+      readingSectionIndex: -1,
       groupMode: 'category',
       expandedSections: new Set(),
-      pendingSectionEntryId: null,
-      pendingSectionOrigin: null
+      // Section headers + live counts for the current language only — this is all
+      // that's fetched on page load. Actual word entries are fetched lazily, one
+      // section at a time, in sectionCache below.
+      sectionSummary: {},
+      sectionSummaryRef: null,
+      sectionCache: new Map(),        // SECTION -> entries[]
+      sectionListeners: new Map(),    // SECTION -> firebase ref, so we can .off() on language switch
+      sectionHeaderDomRefs: new Map() // SECTION -> its <details> element, rebuilt on every renderSectionHeaders()
     };
 
     // auth state and admin flag
@@ -451,23 +451,25 @@
         }
       }
 
-      // Show the add/edit form only to admins; guests get read-only + quiz.
-      addWordPanel.classList.toggle('hidden', !state.isAdmin);
+      // Show the quick-add input only to admins; guests get read-only + quiz.
+      setQuickAddVisible(state.isAdmin);
 
-      // Re-render dictionary to reflect admin controls
-      renderDictionary();
+      // Only load the current language's data once admin status is known, so the
+      // very first load already knows whether to run the (admin-only) bootstrap.
+      switchLanguage(state.language);
     });
 
-    const addWordPanel = document.getElementById('add-word-panel');
+    function setQuickAddVisible(visible) {
+      quickAddContainer.classList.toggle('hidden', !visible);
+      quickAddContainer.classList.toggle('flex', visible);
+    }
+
     const languageSelect = document.getElementById('language-select');
     const searchInput = document.getElementById('dictionary-search');
     const searchToggle = document.getElementById('search-toggle');
     const searchPanel = document.getElementById('search-panel');
     const dictionaryList = document.getElementById('dictionary-list');
     const dictionaryCount = document.getElementById('dictionary-count');
-    const saveToDictionaryBtn = document.getElementById('save-to-dictionary');
-    const clearFormBtn = document.getElementById('clear-form');
-    const deleteCurrentBtn = document.getElementById('delete-current');
     const quizButton = document.getElementById('quiz-button');
     const quizModal = document.getElementById('quiz-modal');
     const quizClose = document.getElementById('quiz-close');
@@ -510,18 +512,19 @@
     const readingWord = document.getElementById('reading-word');
     const readingPronunciation = document.getElementById('reading-pronunciation');
     const readingMeaning = document.getElementById('reading-meaning');
-    const nativeWordInput = document.getElementById('native-word');
-    const pronunciationInput = document.getElementById('pronunciation');
-    const teluguMeaningInput = document.getElementById('telugu-meaning');
-    const englishMeaningInput = document.getElementById('english-meaning');
-    const wordEntryRow = document.getElementById('word-entry-row');
-    const sectionEntryRow = document.getElementById('section-entry-row');
+    const groupModeToggle = document.getElementById('group-mode-toggle');
+    const quickAddContainer = document.getElementById('quick-add-container');
+    const quickAddInput = document.getElementById('quick-add-input');
+    const quickAddLivePreview = document.getElementById('quick-add-live-preview');
+    const quickAddCategoryInline = document.getElementById('quick-add-category-inline');
+    const quickAddModal = document.getElementById('quick-add-modal');
+    const quickAddModalClose = document.getElementById('quick-add-modal-close');
+    const quickAddCards = document.getElementById('quick-add-cards');
+    const quickAddCategoryPopup = document.getElementById('quick-add-category-popup');
+    const sectionInputHome = document.getElementById('section-input-home');
+    const sectionInputWrapper = sectionInputHome.querySelector('label');
     const sectionInput = document.getElementById('section-input');
     const sectionDropdown = document.getElementById('section-dropdown');
-    const sectionConfirmBtn = document.getElementById('section-confirm');
-    const sectionSkipBtn = document.getElementById('section-skip');
-    const groupModeToggle = document.getElementById('group-mode-toggle');
-    const collapseToggle = document.getElementById('collapse-toggle');
 
     function getCurrentLanguageData() {
       return languageConfig[state.language] || languageConfig.japanese;
@@ -538,18 +541,6 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-    }
-
-    function rebuildWordIndex() {
-      state.wordIndex = new Map(state.words.map(entry => [normalize(entry.word), entry.id]));
-    }
-
-    function debounce(fn, delay) {
-      let timerId;
-      return (...args) => {
-        clearTimeout(timerId);
-        timerId = setTimeout(() => fn(...args), delay);
-      };
     }
 
     async function translateText(text, sourceLang, targetLang) {
@@ -724,88 +715,216 @@
       }
     }
 
-    async function fillPronunciationFromNative() {
+    // Romanizes a native word for languages other than Japanese (which has its
+    // own internal transliterator, tried first, for speed and to avoid a round
+    // trip when there's no kanji involved).
+    async function romanizeNativeWord(text, nativeLang) {
+      if (nativeLang === 'en' || !text) return '';
+      if (nativeLang === 'ja') {
+        const containsKanji = /[一-鿿]/.test(text);
+        if (!containsKanji) {
+          const internal = transliterateJapaneseToRomaji(text);
+          if (internal) return internal;
+        }
+      }
+      return getRomanization(text, nativeLang, 'en');
+    }
+
+    // Decides which direction a quick-add entry is being typed in. Only the
+    // Japanese dictionary gets this bidirectional smarts for now — other
+    // languages always treat the typed text as the native word.
+    function detectQuickAddDirection(text) {
+      if (state.language !== 'japanese') return 'toEnglish';
+      const isAllLatin = /^[a-zA-Z\s'".,!?-]+$/.test((text || '').trim());
+      return isAllLatin ? 'toNative' : 'toEnglish';
+    }
+
+    // Resolves a single typed string into {word, pronunciation, englishMeaning}
+    // (Firebase's actual w/p/em fields), regardless of which direction it was
+    // typed in — the direction only changes what's derived from what.
+    async function resolveQuickAddFields(text) {
+      const direction = detectQuickAddDirection(text);
       const nativeLang = langCodeMap[state.language] || 'ja';
-      if (nativeLang === 'en') return; // already Latin script, nothing to romanize
-      if (document.activeElement === pronunciationInput) return;
-      if (pronunciationInput.value.trim()) return;
 
-      const nativeText = nativeWordInput.value.trim();
-      if (!nativeText) return;
-
-      // Kanji can't be transliterated char-by-char (no kana mapping exists for it), so
-      // any kanji in the text routes straight to the Google romanization API below —
-      // the internal transliterator would otherwise silently skip those characters
-      // and return an incomplete, wrong result instead of falling through.
-      const containsKanji = /[一-鿿]/.test(nativeText);
-      if (nativeLang === 'ja' && !containsKanji) {
-        const internalRomanization = transliterateJapaneseToRomaji(nativeText);
-        if (internalRomanization && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
-          pronunciationInput.value = internalRomanization;
-          return;
-        }
+      if (direction === 'toNative') {
+        const englishMeaning = text;
+        const word = (await translateText(text, 'en', nativeLang)) || text;
+        const pronunciation = await romanizeNativeWord(word, nativeLang);
+        return { direction, word, pronunciation, englishMeaning };
       }
 
-      const romanized = await getRomanization(nativeText, nativeLang, 'en');
-      if (romanized && !pronunciationInput.value.trim() && document.activeElement !== pronunciationInput) {
-        pronunciationInput.value = romanized;
-      }
+      const word = text;
+      const [pronunciation, englishMeaning] = await Promise.all([
+        romanizeNativeWord(word, nativeLang),
+        translateText(word, nativeLang, 'en')
+      ]);
+      return { direction, word, pronunciation, englishMeaning };
     }
 
-    async function autoTranslateFrom(sourceKey) {
-      const fields = {
-        native: { input: nativeWordInput, lang: langCodeMap[state.language] || 'ja' },
-        english: { input: englishMeaningInput, lang: 'en' },
-        telugu: { input: teluguMeaningInput, lang: 'te' }
-      };
-
-      const source = fields[sourceKey];
-      const text = source.input.value.trim();
-      if (!text) return;
-
-      const targetKeys = Object.keys(fields).filter(key => key !== sourceKey);
-      await Promise.all(targetKeys.map(async (key) => {
-        const target = fields[key];
-        // Don't clobber text the user is actively typing or has already filled in.
-        if (document.activeElement === target.input) return;
-        if (target.input.value.trim()) return;
-        if (target.lang === source.lang) return;
-
-        const translated = await translateText(text, source.lang, target.lang);
-        if (translated && !target.input.value.trim() && document.activeElement !== target.input) {
-          target.input.value = translated;
-        }
-      }));
-
-      await fillPronunciationFromNative();
-    }
-
-    const debouncedTranslateFromNative = debounce(() => autoTranslateFrom('native'), 700);
-    const debouncedTranslateFromEnglish = debounce(() => autoTranslateFrom('english'), 700);
-    const debouncedTranslateFromTelugu = debounce(() => autoTranslateFrom('telugu'), 700);
-
-    // Firebase shape: words/{language}/{section}/{id} -> { w, p, em, tm, c }.
-    // Flatten the current language's sections into the flat entry list the rest
-    // of the app works with.
-    function getEntriesFromSnapshot(snapshot) {
-      const languageData = (snapshot.val() || {})[state.language] || {};
+    // Firebase shape: words/{language}/{section}/{id} -> { w, p, em, c }.
+    // Flattens ONE section's snapshot into the entry list the rest of the app
+    // works with — sections are always fetched individually, on demand, never
+    // as a whole-language read (see ensureSectionLoaded).
+    function flattenSectionSnapshot(language, section, snapshot) {
+      const val = snapshot.val() || {};
       const entries = [];
-      Object.entries(languageData).forEach(([section, words]) => {
-        Object.entries(words || {}).forEach(([id, data]) => {
-          if (!data) return;
-          entries.push({
-            id,
-            word: data.w || '',
-            pronunciation: data.p || '',
-            englishMeaning: data.em || '',
-            teluguMeaning: data.tm || '',
-            language: state.language,
-            section,
-            createdAt: data.c || 0
-          });
+      Object.entries(val).forEach(([id, data]) => {
+        if (!data) return;
+        entries.push({
+          id,
+          word: data.w || '',
+          pronunciation: data.p || '',
+          englishMeaning: data.em || '',
+          language,
+          section,
+          createdAt: data.c || 0
         });
       });
       return entries.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+    }
+
+    function normalizeSectionName(name) {
+      return (name || '').trim().toUpperCase() || 'UNCATEGORIZED';
+    }
+
+    function sectionSort(a, b) {
+      if (a === 'UNCATEGORIZED') return 1;
+      if (b === 'UNCATEGORIZED') return -1;
+      return a.localeCompare(b);
+    }
+
+    function getSortedSectionNames() {
+      return Object.keys(state.sectionSummary).sort(sectionSort);
+    }
+
+    // On-demand duplicate check when adding a brand-new word — a single direct
+    // read of this language's words, done only at the moment "Add" is clicked
+    // (not maintained as a standing index).
+    async function wordExistsInLanguage(normalizedWord) {
+      try {
+        const snapshot = await wordsRef.child(state.language).once('value');
+        const languageData = snapshot.val() || {};
+        return Object.values(languageData).some(sectionWords =>
+          Object.values(sectionWords || {}).some(data => data && normalize(data.w || '') === normalizedWord)
+        );
+      } catch (err) {
+        console.error('Duplicate check failed', err);
+        return false;
+      }
+    }
+
+    // Atomically bumps a section's live count in sectionSummary — this is how the
+    // header counts stay in sync with the actual data, without ever having to
+    // re-read the whole language to recompute them.
+    function bumpSectionCount(language, section, delta) {
+      return database.ref(`sectionSummary/${language}/${section}`).transaction(current => {
+        const next = (Number(current) || 0) + delta;
+        return next > 0 ? next : null;
+      });
+    }
+
+    // Runs at most once per language, ever (guarded by sectionSummary already
+    // existing): folds any legacy mixed-case section keys into their upper-case
+    // counterpart and (re)computes the section counts. This is the ONLY place
+    // that reads a language's entire word tree — everything else fetches one
+    // section at a time.
+    async function bootstrapLanguageIfNeeded(language) {
+      if (!state.isAdmin) return;
+      try {
+        const summarySnap = await database.ref(`sectionSummary/${language}`).once('value');
+        if (summarySnap.exists()) return;
+
+        const wordsSnap = await wordsRef.child(language).once('value');
+        const raw = wordsSnap.val() || {};
+        const updates = {};
+        const summary = {};
+
+        Object.entries(raw).forEach(([section, words]) => {
+          const upper = normalizeSectionName(section);
+          Object.entries(words || {}).forEach(([id, data]) => {
+            if (!data) return;
+            if (section !== upper) {
+              updates[`words/${language}/${upper}/${id}`] = data;
+              updates[`words/${language}/${section}/${id}`] = null;
+            }
+            summary[upper] = (summary[upper] || 0) + 1;
+          });
+        });
+
+        updates[`sectionSummary/${language}`] = summary;
+        await database.ref().update(updates);
+      } catch (err) {
+        console.error(`Failed to bootstrap language "${language}"`, err);
+      }
+    }
+
+    // Fetches (once) and live-subscribes to a single section's words. Resolves
+    // with whatever's cached already if this section was loaded before — the
+    // listener set up on first load keeps that cache fresh from then on.
+    function ensureSectionLoaded(section) {
+      const language = state.language;
+      if (state.sectionCache.has(section)) {
+        return Promise.resolve(state.sectionCache.get(section));
+      }
+      return new Promise((resolve) => {
+        const sectionRef = wordsRef.child(language).child(section);
+        let resolved = false;
+        sectionRef.on('value', (snapshot) => {
+          const entries = flattenSectionSnapshot(language, section, snapshot);
+          state.sectionCache.set(section, entries);
+          renderSectionBodyIfPresent(section, entries);
+          if (!resolved) {
+            resolved = true;
+            resolve(entries);
+          }
+        }, (err) => {
+          console.error(`Failed to load section "${section}"`, err);
+          if (!resolved) {
+            resolved = true;
+            resolve([]);
+          }
+        });
+        state.sectionListeners.set(section, sectionRef);
+      });
+    }
+
+    // Headers + counts only — this is the lightweight listener that drives the
+    // default page-load view. Actual word data is never pulled in here.
+    function subscribeSectionSummary(language) {
+      const ref = database.ref(`sectionSummary/${language}`);
+      ref.on('value', (snapshot) => {
+        state.sectionSummary = snapshot.val() || {};
+        renderCurrentView();
+      }, (err) => {
+        console.error('Failed to subscribe to section summary', err);
+      });
+      return ref;
+    }
+
+    function teardownLanguageData() {
+      if (state.sectionSummaryRef) {
+        state.sectionSummaryRef.off('value');
+        state.sectionSummaryRef = null;
+      }
+      state.sectionListeners.forEach(ref => ref.off('value'));
+      state.sectionListeners.clear();
+      state.sectionCache.clear();
+      state.sectionSummary = {};
+      state.expandedSections.clear();
+    }
+
+    function switchLanguage(language) {
+      teardownLanguageData();
+      state.language = language;
+      renderCurrentView(); // clears the list immediately instead of showing stale data
+
+      // Bootstrap is a background, best-effort, admin-only write — it must never
+      // block the summary subscription below (the lesson from the earlier bug
+      // where a blocked migration write kept the whole page from rendering).
+      bootstrapLanguageIfNeeded(language).catch(err => {
+        console.error('Failed to bootstrap language index', err);
+      });
+      state.sectionSummaryRef = subscribeSectionSummary(language);
     }
 
     function attachCardInteractions(card, entry) {
@@ -813,8 +932,7 @@
         event.preventDefault();
         event.stopPropagation();
         if (!state.isAdmin) return;
-        enterEditMode(entry);
-        addWordPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        startEditFromCard(entry);
       });
     }
 
@@ -826,67 +944,164 @@
     }
 
     function getDistinctSections() {
-      const set = new Set();
-      state.words.forEach(entry => {
-        if (entry.section && entry.section !== 'Uncategorized') set.add(entry.section);
-      });
-      return Array.from(set).sort((a, b) => a.localeCompare(b));
+      return Object.keys(state.sectionSummary)
+        .filter(section => section !== 'UNCATEGORIZED')
+        .sort((a, b) => a.localeCompare(b));
     }
 
     function buildDictionaryCard(entry) {
       const card = document.createElement('article');
-      card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between py-2';
+      card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between gap-2 py-2';
 
       const pronunciation = entry.pronunciation || '';
-      const teluguMeaning = entry.teluguMeaning || '';
       const englishMeaning = entry.englishMeaning || '';
 
       card.innerHTML = `
-        <div class="min-w-0 flex-1 grid grid-cols-2 gap-x-3 items-start">
-          <div class="min-w-[120px] truncate text-sm font-semibold text-slate-900 leading-tight dark:text-slate-100">${escapeHtml(entry.word)}</div>
-          <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left dark:text-slate-300">${escapeHtml(teluguMeaning)}</div>
-          <div class="min-w-[120px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
-          <div class="pl-4 truncate text-xs text-slate-600 leading-tight text-left dark:text-slate-300">${escapeHtml(englishMeaning)}</div>
+        <div class="min-w-0 flex-1 flex items-baseline gap-3">
+          <div class="min-w-[100px] truncate text-sm font-semibold text-slate-900 leading-tight dark:text-slate-100">${escapeHtml(entry.word)}</div>
+          <div class="min-w-[80px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
+          <div class="flex-1 truncate text-xs text-slate-600 leading-tight dark:text-slate-300">${escapeHtml(englishMeaning)}</div>
         </div>
+        <button type="button" class="card-delete-btn hidden shrink-0 rounded-lg border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/40" title="Delete">−</button>
       `;
+      const deleteBtn = card.querySelector('.card-delete-btn');
+      if (state.isAdmin) deleteBtn.classList.remove('hidden');
+      deleteBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteWordEntry(entry);
+      });
       attachCardInteractions(card, entry);
       return card;
     }
 
-    function renderDictionary() {
+    // Decides which view to show: search filters the section list itself down to
+    // matching section names (it never touches word content); the alpha-grouped
+    // view needs everything and is loaded on demand; otherwise it's the normal
+    // lazy per-section header view (the default, page-load-cheap case).
+    function renderCurrentView() {
+      if (!normalize(state.query) && state.groupMode === 'alpha') {
+        loadAllSectionsAndRenderAlpha();
+      } else {
+        renderSectionHeaders();
+      }
+    }
+
+    // Default view: section headers + counts only, straight from sectionSummary.
+    // A section's actual word cards are fetched (via ensureSectionLoaded) only
+    // when that section is expanded, or quizzed/read. A search query filters
+    // this list down to sections whose NAME matches — it never searches word
+    // content, so it never needs to fetch anything beyond the header list.
+    function renderSectionHeaders() {
       const query = normalize(state.query);
-      const filtered = state.words.filter(entry => {
-        const haystack = [entry.word, entry.pronunciation, entry.englishMeaning, entry.teluguMeaning]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(query);
+      const sections = getSortedSectionNames().filter(section => !query || section.toLowerCase().includes(query));
+      const totalCount = sections.reduce((sum, section) => sum + (state.sectionSummary[section] || 0), 0);
+      dictionaryCount.textContent = `${totalCount} ${totalCount === 1 ? 'entry' : 'entries'}`;
+      dictionaryList.innerHTML = '';
+      state.sectionHeaderDomRefs = new Map();
+
+      if (!sections.length) return;
+
+      sections.forEach(section => {
+        const details = buildSectionDetailsShell(section, state.sectionSummary[section] || 0);
+        state.sectionHeaderDomRefs.set(section, details);
+        dictionaryList.appendChild(details);
+        if (state.expandedSections.has(section)) {
+          details.open = true;
+          loadAndRenderSectionBody(section);
+        }
+      });
+    }
+
+    function buildSectionDetailsShell(section, count) {
+      const details = document.createElement('details');
+      details.className = 'section-group';
+
+      const summary = document.createElement('summary');
+      summary.innerHTML = `
+        <span class="section-label">${escapeHtml(section)} (${count})</span>
+        <span class="section-actions">
+          <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
+          <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
+        </span>
+      `;
+      summary.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startSectionQuiz(section);
+      });
+      summary.querySelector('[data-section-read]').addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startSectionReading(section);
+      });
+      details.appendChild(summary);
+
+      const body = document.createElement('div');
+      body.className = 'section-body space-y-2';
+      body.innerHTML = '<div class="text-xs text-slate-400 dark:text-slate-500 py-1">Loading…</div>';
+      details.appendChild(body);
+
+      details.addEventListener('toggle', () => {
+        if (details.open) {
+          state.expandedSections.add(section);
+          loadAndRenderSectionBody(section);
+        } else {
+          state.expandedSections.delete(section);
+        }
       });
 
-      dictionaryCount.textContent = `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`;
-      dictionaryList.innerHTML = '';
+      return details;
+    }
 
-      if (!filtered.length) {
-        updateCollapseToggleLabel();
+    function loadAndRenderSectionBody(section) {
+      ensureSectionLoaded(section).then(entries => renderSectionBodyIfPresent(section, entries));
+    }
+
+    // Called both right after a section's data first arrives and on every later
+    // live update to it — a no-op if that section isn't currently on screen
+    // (e.g. it's been filtered out by search, or the view is alpha-grouped).
+    function renderSectionBodyIfPresent(section, entries) {
+      const details = state.sectionHeaderDomRefs && state.sectionHeaderDomRefs.get(section);
+      if (!details || !dictionaryList.contains(details)) return;
+      const body = details.querySelector('.section-body');
+      if (!body) return;
+
+      body.innerHTML = '';
+      if (!entries.length) {
+        body.innerHTML = '<div class="text-xs text-slate-400 dark:text-slate-500 py-1">No words yet.</div>';
         return;
       }
+      entries.forEach(entry => body.appendChild(buildDictionaryCard(entry)));
+    }
+
+    // Alpha grouping cuts across sections, so it genuinely needs every section's
+    // data — this is the one deliberate action that triggers a full load.
+    async function loadAllSectionsAndRenderAlpha() {
+      const sections = getSortedSectionNames();
+      dictionaryList.innerHTML = '<div class="text-xs text-slate-400 dark:text-slate-500 py-2">Loading all sections…</div>';
+      dictionaryCount.textContent = '…';
+      await Promise.all(sections.map(section => ensureSectionLoaded(section)));
+      if (state.groupMode !== 'alpha') return; // user switched back before this resolved
+      renderAlphaGrouped();
+    }
+
+    function renderAlphaGrouped() {
+      const allEntries = [];
+      state.sectionCache.forEach(entries => allEntries.push(...entries));
+
+      dictionaryCount.textContent = `${allEntries.length} ${allEntries.length === 1 ? 'entry' : 'entries'}`;
+      dictionaryList.innerHTML = '';
+      if (!allEntries.length) return;
 
       const groups = new Map();
-      filtered.forEach(entry => {
-        const key = state.groupMode === 'alpha'
-          ? getAlphaGroupKey(entry.word)
-          : (entry.section && entry.section.trim() ? entry.section.trim() : 'Uncategorized');
+      allEntries.forEach(entry => {
+        const key = getAlphaGroupKey(entry.word);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(entry);
       });
 
-      const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
-        if (a === 'Uncategorized') return 1;
-        if (b === 'Uncategorized') return -1;
-        return a.localeCompare(b);
-      });
-
-      sortedKeys.forEach(key => {
+      Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(key => {
         const entries = groups.get(key);
         const details = document.createElement('details');
         details.className = 'section-group';
@@ -894,27 +1109,10 @@
         details.addEventListener('toggle', () => {
           if (details.open) state.expandedSections.add(key);
           else state.expandedSections.delete(key);
-          updateCollapseToggleLabel();
         });
 
         const summary = document.createElement('summary');
-        summary.innerHTML = `
-          <span class="section-label">${escapeHtml(key)} (${entries.length})</span>
-          <span class="section-actions">
-            <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
-            <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
-          </span>
-        `;
-        summary.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          startSectionQuiz(entries);
-        });
-        summary.querySelector('[data-section-read]').addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          startSectionReading(entries);
-        });
+        summary.innerHTML = `<span class="section-label">${escapeHtml(key)} (${entries.length})</span>`;
         details.appendChild(summary);
 
         const body = document.createElement('div');
@@ -924,23 +1122,6 @@
 
         dictionaryList.appendChild(details);
       });
-
-      updateCollapseToggleLabel();
-    }
-
-    function updateCollapseToggleLabel() {
-      const detailsEls = dictionaryList.querySelectorAll('details.section-group');
-      const anyCollapsed = Array.from(detailsEls).some(details => !details.open);
-      collapseToggle.textContent = anyCollapsed ? 'Expand all' : 'Collapse all';
-      collapseToggle.dataset.action = anyCollapsed ? 'expand' : 'collapse';
-    }
-
-    function clearForm() {
-      nativeWordInput.value = '';
-      pronunciationInput.value = '';
-      teluguMeaningInput.value = '';
-      englishMeaningInput.value = '';
-      nativeWordInput.focus();
     }
 
     function renderSectionDropdown(filterText) {
@@ -957,154 +1138,222 @@
       sectionDropdown.classList.remove('hidden');
     }
 
-    // currentSection is passed explicitly by the caller (who just wrote or looked up
-    // the entry) rather than read back from state.words, since the realtime listener
-    // may not have caught up yet right after a push/update.
-    function showSectionAssignPanel(entryId, currentSection) {
-      state.pendingSectionEntryId = entryId;
-      state.pendingSectionOrigin = currentSection;
-      sectionInput.value = currentSection === 'Uncategorized' ? '' : currentSection;
+    // ---- Quick add: single-field word entry ----
+    //
+    // Flow: type a word in quickAddInput, press Enter. The typed text is
+    // resolved (translated/romanized) based on its detected direction, then
+    // shown for review — inline next to the input if it fits, or in a popup
+    // with the pieces stacked as cards if it doesn't — alongside a category
+    // picker. Pressing Enter there commits the entry (or the edit) to Firebase.
+    // Escape cancels back to idle at any point.
+
+    let measureCanvas = null;
+    function measureTextWidth(text, referenceEl) {
+      if (!measureCanvas) measureCanvas = document.createElement('canvas');
+      const context = measureCanvas.getContext('2d');
+      const style = window.getComputedStyle(referenceEl);
+      context.font = `${style.fontStyle} ${style.fontVariant} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      return context.measureText(text).width;
+    }
+
+    function doesSummaryOverflow(summaryText, inputEl) {
+      const available = inputEl.clientWidth - 20; // rough padding allowance
+      return measureTextWidth(summaryText, inputEl) > available;
+    }
+
+    // Display order depends on which direction the word was typed in — the
+    // saved fields (w/p/em) are identical either way.
+    function buildQuickAddParts(resolved) {
+      const nativeLabel = getCurrentLanguageData().label;
+      if (resolved.direction === 'toNative') {
+        return [
+          { label: 'English', value: resolved.englishMeaning },
+          { label: nativeLabel, value: resolved.word },
+          { label: 'Pronunciation', value: resolved.pronunciation }
+        ];
+      }
+      return [
+        { label: nativeLabel, value: resolved.word },
+        { label: 'Pronunciation', value: resolved.pronunciation },
+        { label: 'English', value: resolved.englishMeaning }
+      ];
+    }
+
+    let quickAddPreviewTimer = null;
+
+    function hideLivePreview() {
+      quickAddLivePreview.classList.add('hidden');
+      quickAddLivePreview.textContent = '';
+    }
+
+    // Debounced live translation: fires ~600ms after the user stops typing (not
+    // on every keystroke, to avoid hammering the translation API), and shows
+    // the result under the input without disturbing what's being typed.
+    function scheduleLivePreview() {
+      clearTimeout(quickAddPreviewTimer);
+      const text = quickAddInput.value.trim();
+      if (!text) {
+        hideLivePreview();
+        return;
+      }
+      quickAddPreviewTimer = setTimeout(() => updateLivePreview(text), 600);
+    }
+
+    async function updateLivePreview(text) {
+      if (state.quickAdd.mode !== 'entering') return;
+      const resolved = await resolveQuickAddFields(text);
+      // Bail if the input moved on (kept typing, submitted, or was reset)
+      // while this resolution was in flight.
+      if (state.quickAdd.mode !== 'entering' || quickAddInput.value.trim() !== text) return;
+
+      state.quickAdd.resolved = resolved;
+      state.quickAdd.lastResolvedText = text;
+
+      const parts = buildQuickAddParts(resolved);
+      const preview = parts.map(p => p.value).filter(Boolean).join('   ·   ');
+      quickAddLivePreview.textContent = preview;
+      quickAddLivePreview.classList.toggle('hidden', !preview);
+    }
+
+    function resetQuickAdd() {
+      clearTimeout(quickAddPreviewTimer);
+      hideLivePreview();
+      state.quickAdd = { mode: 'entering', resolved: null, lastResolvedText: null, editingId: null, editingOriginSection: null };
+      quickAddInput.value = '';
+      quickAddInput.readOnly = false;
+      quickAddInput.disabled = false;
+      quickAddInput.placeholder = 'Type a word…';
+      quickAddCategoryInline.classList.add('hidden');
+      quickAddModal.classList.remove('open');
+      quickAddCards.innerHTML = '';
+      sectionInput.value = '';
       sectionDropdown.classList.add('hidden');
-      wordEntryRow.classList.add('hidden');
-      sectionEntryRow.classList.remove('hidden');
+      sectionInputHome.appendChild(sectionInputWrapper);
+    }
+
+    function showQuickAddCategoryStep(parts, summary, overflow) {
+      state.quickAdd.mode = 'category';
+      sectionInput.value = '';
+
+      if (overflow) {
+        quickAddCards.innerHTML = parts.filter(p => p.value).map(p => `
+          <div class="compact-card flex items-center justify-between gap-3 py-2">
+            <span class="text-xs text-slate-500 dark:text-slate-400">${escapeHtml(p.label)}</span>
+            <span class="min-w-0 truncate text-sm font-medium text-slate-900 dark:text-slate-100">${escapeHtml(p.value)}</span>
+          </div>
+        `).join('');
+        quickAddCategoryPopup.appendChild(sectionInputWrapper);
+        quickAddModal.classList.add('open');
+      } else {
+        quickAddInput.value = summary;
+        quickAddInput.readOnly = true;
+        quickAddCategoryInline.appendChild(sectionInputWrapper);
+        quickAddCategoryInline.classList.remove('hidden');
+      }
       sectionInput.focus();
     }
 
-    function hideSectionAssignPanel() {
-      state.pendingSectionEntryId = null;
-      state.pendingSectionOrigin = null;
-      sectionDropdown.classList.add('hidden');
-      sectionEntryRow.classList.add('hidden');
-      wordEntryRow.classList.remove('hidden');
-      clearForm();
-    }
+    async function handleQuickAddWordSubmit() {
+      if (state.quickAdd.mode !== 'entering') return;
+      const text = quickAddInput.value.trim();
+      if (!text) return;
 
-    async function confirmSectionAssignment() {
-      const id = state.pendingSectionEntryId;
-      const origin = state.pendingSectionOrigin;
-      if (!id || !origin) {
-        hideSectionAssignPanel();
-        return;
-      }
-      const newSection = sectionInput.value.trim() || 'Uncategorized';
-      if (newSection !== origin) {
-        try {
-          // Read straight from the known origin path rather than state.words, since
-          // the realtime listener may not have caught up with a just-made write yet.
-          const snapshot = await wordsRef.child(state.language).child(origin).child(id).once('value');
-          const data = snapshot.val();
-          if (data) {
-            await database.ref().update({
-              [`words/${state.language}/${origin}/${id}`]: null,
-              [`words/${state.language}/${newSection}/${id}`]: data
-            });
-          }
-        } catch (err) {
-          console.error('Failed to update section', err);
-          window.alert('Failed to save section. See console for details.');
-        }
-      }
-      hideSectionAssignPanel();
-    }
+      clearTimeout(quickAddPreviewTimer);
+      hideLivePreview();
 
-    async function addCurrentEntryToDictionary() {
-      if (!state.isAdmin) {
-        window.alert('You are not authorized to add or edit words.');
-        return;
+      // Reuse the live-preview translation if it's already resolved for this
+      // exact text (the common case — the user paused, saw the preview, then
+      // pressed Enter) instead of re-running it from scratch.
+      let resolved;
+      if (state.quickAdd.lastResolvedText === text && state.quickAdd.resolved) {
+        resolved = state.quickAdd.resolved;
+      } else {
+        quickAddInput.disabled = true;
+        quickAddInput.placeholder = 'Translating…';
+        resolved = await resolveQuickAddFields(text);
+        quickAddInput.disabled = false;
       }
 
-      const word = nativeWordInput.value.trim();
-      if (!word) {
-        window.alert('Please enter the native word first.');
-        return;
-      }
-
-      const duplicateId = state.wordIndex.get(normalize(word));
-      if (duplicateId && duplicateId !== state.editingId) {
-        window.alert(`"${word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
-        return;
-      }
-
-      const fields = {
-        w: word,
-        p: pronunciationInput.value.trim(),
-        tm: teluguMeaningInput.value.trim(),
-        em: englishMeaningInput.value.trim()
-      };
-
-      // If editing an existing entry, perform update
-      if (state.editingId) {
-        const editingId = state.editingId;
-        const existing = state.words.find(entry => entry.id === editingId);
-        if (!existing) {
-          window.alert('Could not find this entry to update. See console.');
+      if (!state.quickAdd.editingId) {
+        const exists = await wordExistsInLanguage(normalize(resolved.word));
+        if (exists) {
+          window.alert(`"${resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
+          resetQuickAdd();
           return;
         }
-        try {
-          await wordsRef.child(state.language).child(existing.section).child(editingId).update(fields);
-          exitEditMode();
-          showSectionAssignPanel(editingId, existing.section);
-        } catch (err) {
-          console.error('Failed to update entry', err);
-          window.alert('Failed to update entry. See console.');
-        }
-        return;
       }
 
-      // Otherwise add new entry, filed under Uncategorized until a section is chosen
-      try {
-        const ref = await wordsRef.child(state.language).child('Uncategorized').push({ ...fields, c: Date.now() });
-        showSectionAssignPanel(ref.key, 'Uncategorized');
-      } catch (err) {
-        console.error('Failed to add entry to Firebase', err);
-        window.alert('Failed to add entry. See console for details.');
-      }
+      state.quickAdd.resolved = resolved;
+
+      const parts = buildQuickAddParts(resolved);
+      const summary = parts.map(p => p.value).filter(Boolean).join('   ·   ');
+      showQuickAddCategoryStep(parts, summary, doesSummaryOverflow(summary, quickAddInput));
     }
 
-    async function deleteWordEntry(id) {
-      if (!id) return;
-      if (!window.confirm('Delete this word?')) return;
+    async function quickAddConfirmCategory() {
+      if (state.quickAdd.mode !== 'category') return;
+      const section = sectionInput.value.trim().toUpperCase() || 'UNCATEGORIZED';
+      const resolved = state.quickAdd.resolved;
+      const fields = { w: resolved.word, p: resolved.pronunciation, em: resolved.englishMeaning };
+      const { editingId, editingOriginSection } = state.quickAdd;
+
+      try {
+        if (editingId) {
+          await wordsRef.child(state.language).child(editingOriginSection).child(editingId).update(fields);
+          if (section !== editingOriginSection) {
+            const snapshot = await wordsRef.child(state.language).child(editingOriginSection).child(editingId).once('value');
+            const data = snapshot.val();
+            if (data) {
+              await database.ref().update({
+                [`words/${state.language}/${editingOriginSection}/${editingId}`]: null,
+                [`words/${state.language}/${section}/${editingId}`]: data
+              });
+              await Promise.all([
+                bumpSectionCount(state.language, editingOriginSection, -1),
+                bumpSectionCount(state.language, section, 1)
+              ]);
+            }
+          }
+        } else {
+          await wordsRef.child(state.language).child(section).push({ ...fields, c: Date.now() });
+          await bumpSectionCount(state.language, section, 1);
+        }
+      } catch (err) {
+        console.error('Failed to save word', err);
+        window.alert('Failed to save word. See console for details.');
+      }
+      resetQuickAdd();
+    }
+
+    function quickAddCancel() {
+      resetQuickAdd();
+    }
+
+    function startEditFromCard(entry) {
+      resetQuickAdd();
+      state.quickAdd.editingId = entry.id;
+      state.quickAdd.editingOriginSection = entry.section;
+      quickAddInput.value = entry.word;
+      quickAddContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      quickAddInput.focus();
+      scheduleLivePreview();
+    }
+
+    async function deleteWordEntry(entry) {
+      if (!entry) return;
+      if (!window.confirm(`Delete "${entry.word}"?`)) return;
       if (!state.isAdmin) {
         window.alert('You are not authorized to delete this entry.');
         return;
       }
-      const entry = state.words.find(item => item.id === id);
-      if (!entry) return;
       try {
-        await wordsRef.child(state.language).child(entry.section).child(id).remove();
-        if (state.editingId === id) exitEditMode();
+        await wordsRef.child(state.language).child(entry.section).child(entry.id).remove();
+        await bumpSectionCount(state.language, entry.section, -1);
+        if (state.quickAdd.editingId === entry.id) resetQuickAdd();
       } catch (err) {
         console.error('Failed to delete entry', err);
         window.alert('Failed to delete entry. See console for details.');
       }
-    }
-
-    function wireRealtimeListener() {
-      wordsRef.on('value', (snapshot) => {
-        state.words = getEntriesFromSnapshot(snapshot);
-        rebuildWordIndex();
-        renderDictionary();
-      });
-    }
-
-    function enterEditMode(entry) {
-      if (!entry) return;
-      state.editingId = entry.id;
-      addWordPanel.classList.remove('hidden');
-      nativeWordInput.value = entry.word || '';
-      pronunciationInput.value = entry.pronunciation || '';
-      teluguMeaningInput.value = entry.teluguMeaning || '';
-      englishMeaningInput.value = entry.englishMeaning || '';
-      saveToDictionaryBtn.textContent = 'Save';
-      deleteCurrentBtn.classList.remove('hidden');
-      nativeWordInput.focus();
-    }
-
-    function exitEditMode() {
-      state.editingId = null;
-      clearForm();
-      saveToDictionaryBtn.textContent = 'Add';
-      deleteCurrentBtn.classList.add('hidden');
     }
 
     function openQuizModal() {
@@ -1128,43 +1377,14 @@
 
     function closeQuizModal() {
       quizModal.classList.remove('open');
-    }
-
-    // Restarts using whichever entry set the quiz was last launched with — set by
-    // launchQuiz()/startSectionQuiz() so "Restart" reruns the same words, not a
-    // fixed starred-only subset.
-    function startQuiz() {
-      const queue = state.quizSourceEntries.map(entry => ({ ...entry }));
-      if (!queue.length) {
-        quizStatus.textContent = 'No words are queued for the quiz yet.';
-        return;
-      }
-      state.quizMode = 'normal';
-      state.warOnWrongSet = null;
-      beginRound(queue, `${queue.length} word(s) queued`);
-    }
-
-    function launchQuiz(entries) {
-      state.quizSourceEntries = entries;
-      openQuizModal();
-      startQuiz();
-    }
-
-    function startSectionQuiz(entries) {
-      if (!entries.length) return;
-      launchQuiz(entries.map(entry => ({ ...entry })));
-    }
-
-    function beginRound(queue, statusText) {
-      state.quizQueue = queue;
-      state.quizMissed = [];
-      state.quizTotal = queue.length;
-      quizStatus.textContent = statusText;
-      quizStart.textContent = 'Running...';
-      quizStart.disabled = true;
-      quizActions.classList.remove('hidden');
-      quizActions.classList.add('flex');
-      showNextQuizWord();
+      // Let any sequencer awaiting the current round unwind cleanly instead of
+      // hanging forever on a promise nobody will ever resolve.
+      const resolve = state.quizRoundResolve;
+      state.quizRoundResolve = null;
+      state.quizSectionQueue = [];
+      state.quizSectionIndex = -1;
+      state.quizCurrentSection = null;
+      if (resolve) resolve();
     }
 
     function renderQuizCard() {
@@ -1180,23 +1400,32 @@
       }
 
       if (entry && quizToggleMeaning.checked) {
-        const parts = [entry.englishMeaning, entry.teluguMeaning].filter(Boolean);
-        quizMeaning.innerHTML = parts.length
-          ? parts.map(part => escapeHtml(part)).join('<br>')
-          : 'No meaning available';
+        quizMeaning.textContent = entry.englishMeaning || 'No meaning available';
       } else {
         quizMeaning.textContent = '';
       }
     }
 
+    function beginRound(queue) {
+      state.quizQueue = queue;
+      state.quizMissed = [];
+      state.quizTotal = queue.length;
+      quizStart.textContent = 'Running...';
+      quizStart.disabled = true;
+      quizActions.classList.remove('hidden');
+      quizActions.classList.add('flex');
+      showNextQuizWord();
+    }
+
     function showNextQuizWord() {
+      const section = state.quizCurrentSection || 'UNCATEGORIZED';
       if (!state.quizQueue.length) {
         endRound();
         return;
       }
       state.quizCurrent = state.quizQueue.shift();
       renderQuizCard();
-      quizStatus.textContent = `Question ${state.quizTotal - state.quizQueue.length}/${state.quizTotal}`;
+      quizStatus.textContent = `${section} — Question ${state.quizTotal - state.quizQueue.length}/${state.quizTotal}`;
     }
 
     function advanceQuiz() {
@@ -1219,17 +1448,24 @@
       quizActions.classList.remove('flex');
       quizActions.classList.add('hidden');
       quizPronunciation.classList.add('hidden');
+      const section = state.quizCurrentSection || 'UNCATEGORIZED';
 
       if (!state.quizMissed.length) {
         quizStatus.textContent = state.quizMode === 'warOnWrong'
-          ? 'WarOnWrong cleared! Every missed word answered correctly.'
-          : 'Quiz complete! No missed words.';
+          ? `${section} — WarOnWrong cleared!`
+          : `${section} — Quiz complete! No missed words.`;
         quizWord.textContent = 'Done!';
         quizMeaning.textContent = '';
         quizStart.textContent = 'Restart';
         quizStart.disabled = false;
         state.quizMode = 'idle';
         state.warOnWrongSet = null;
+
+        // Resolve this section's round — this is what lets the app-level
+        // sequencer move on to the next section only once this one is clear.
+        const resolve = state.quizRoundResolve;
+        state.quizRoundResolve = null;
+        if (resolve) resolve();
         return;
       }
 
@@ -1241,7 +1477,76 @@
       // Do-or-die: every WarOnWrong attempt restarts from the same missed set
       // captured when we first entered it — a single miss resets the whole pass.
       const retryQueue = state.warOnWrongSet.map(entry => ({ ...entry }));
-      beginRound(retryQueue, `WarOnWrong: ${retryQueue.length} word(s) — get them all right to finish`);
+      quizStatus.textContent = `${section} — WarOnWrong: ${retryQueue.length} word(s) — get them all right to finish`;
+      beginRound(retryQueue);
+    }
+
+    // Reusable core: quizzes a single section (with WarOnWrong retries) to
+    // completion. Used both by the section-level Quiz button and as one step
+    // of the app-level sequential quiz below.
+    function runSectionQuiz(section, entries) {
+      return new Promise((resolve) => {
+        state.quizCurrentSection = section;
+        state.quizRoundResolve = resolve;
+        state.quizMode = 'normal';
+        state.warOnWrongSet = null;
+        beginRound(entries.map(entry => ({ ...entry })));
+      });
+    }
+
+    async function startSectionQuiz(section) {
+      openQuizModal();
+      state.quizSectionQueue = [section];
+      state.quizSectionIndex = 0;
+      quizStatus.textContent = `Loading ${section}…`;
+      const entries = await ensureSectionLoaded(section);
+      if (!quizModal.classList.contains('open')) return;
+      if (!entries.length) {
+        quizStatus.textContent = `${section} has no words yet.`;
+        return;
+      }
+      await runSectionQuiz(section, entries);
+    }
+
+    async function startAppLevelQuiz() {
+      openQuizModal();
+      const sections = getSortedSectionNames();
+      if (!sections.length) {
+        quizStatus.textContent = 'No sections to quiz yet.';
+        return;
+      }
+      state.quizSectionQueue = sections;
+      state.quizSectionIndex = 0;
+      await runQuizSectionQueue();
+    }
+
+    // Sequences through state.quizSectionQueue one section at a time — the next
+    // section is only fetched once the current one's round is fully cleared.
+    async function runQuizSectionQueue() {
+      for (; state.quizSectionIndex < state.quizSectionQueue.length; state.quizSectionIndex++) {
+        if (!quizModal.classList.contains('open')) return;
+        const section = state.quizSectionQueue[state.quizSectionIndex];
+        quizStatus.textContent = `Loading ${section}…`;
+        const entries = await ensureSectionLoaded(section);
+        if (!quizModal.classList.contains('open')) return;
+        if (!entries.length) continue; // nothing to quiz in this section, skip it
+        await runSectionQuiz(section, entries);
+        if (!quizModal.classList.contains('open')) return;
+      }
+      quizStatus.textContent = 'All sections complete!';
+      quizWord.textContent = 'Done!';
+      quizMeaning.textContent = '';
+      quizStart.textContent = 'Restart';
+      quizStart.disabled = false;
+    }
+
+    // The quiz-modal "Start quiz"/"Restart" button re-runs whichever section
+    // queue is currently loaded (a single section, or the full app-level list),
+    // starting again from the top.
+    function restartQuizSequence() {
+      if (!state.quizSectionQueue.length) return;
+      state.quizSectionIndex = 0;
+      runQuizSectionQueue();
     }
 
     function shuffle(array) {
@@ -1337,20 +1642,27 @@
         readingPronunciation.textContent = '';
         readingPronunciation.classList.add('hidden');
       }
-      const parts = [entry.englishMeaning, entry.teluguMeaning].filter(Boolean);
-      readingMeaning.innerHTML = parts.length
-        ? parts.map(part => escapeHtml(part)).join('<br>')
-        : 'No meaning available';
+      readingMeaning.textContent = entry.englishMeaning || 'No meaning available';
     }
 
-    async function runReadingLoop() {
-      while (state.readingActive) {
-        if (!state.readingQueue.length) {
-          state.readingQueue = shuffle(state.readingPool);
-          if (!state.readingQueue.length) break; // nothing left to read
-        }
+    // Announces a new section as reading moves into it — shown on screen and,
+    // since reading is a spoken-first interface, also spoken aloud in English
+    // (section names are always plain English/Latin text, regardless of which
+    // language's words are inside).
+    async function announceReadingSection(section) {
+      readingWord.textContent = section;
+      readingPronunciation.classList.add('hidden');
+      readingMeaning.textContent = 'Section';
+      await speak(section, 'en-US', 0.95, 1);
+    }
 
-        const entry = state.readingQueue.shift();
+    // Reusable core: one shuffled pass through a single section's words, each
+    // spoken in full (word, then meanings). Resolves once every word in the
+    // pass has been read, or immediately if reading is stopped mid-pass.
+    async function runSectionReadingPass(entries) {
+      const queue = shuffle(entries);
+      for (const entry of queue) {
+        if (!state.readingActive) return;
         renderReadingCard(entry);
 
         // Each piece is spoken with the voice that actually matches its language —
@@ -1362,17 +1674,11 @@
           : await toSpokenText(entry.word, nativeLang);
 
         await speak(spokenWord, speechLanguage, entry.language === 'japanese' ? 0.9 : 0.95, 1);
-        if (!state.readingActive) break;
+        if (!state.readingActive) return;
 
         if (entry.englishMeaning) {
           await speak(entry.englishMeaning, 'en-US', 0.95, 1);
-          if (!state.readingActive) break;
-        }
-
-        if (entry.teluguMeaning) {
-          const spokenTelugu = await toSpokenText(entry.teluguMeaning, 'te');
-          await speak(spokenTelugu, 'te-IN', 0.95, 1);
-          if (!state.readingActive) break;
+          if (!state.readingActive) return;
         }
 
         await new Promise(resolve => {
@@ -1382,27 +1688,11 @@
     }
 
     function openReadingModal() {
-      if (!state.words.length) {
-        window.alert('No words in this dictionary yet.');
-        return;
-      }
-      beginReading(state.words.map(entry => ({ ...entry })));
-    }
-
-    function beginReading(entries) {
       readingModal.classList.add('open');
       readingWord.textContent = 'Read';
       readingPronunciation.classList.add('hidden');
       readingMeaning.textContent = 'Reading mode starting…';
       state.readingActive = true;
-      state.readingPool = entries;
-      state.readingQueue = shuffle(entries);
-      runReadingLoop();
-    }
-
-    function startSectionReading(entries) {
-      if (!entries.length) return;
-      beginReading(entries.map(entry => ({ ...entry })));
     }
 
     function closeReadingModal() {
@@ -1413,6 +1703,66 @@
         state.readingTimeoutId = null;
       }
       window.speechSynthesis.cancel();
+      state.readingSectionQueue = [];
+      state.readingSectionIndex = -1;
+    }
+
+    // Section-level Read button: loads just this section, then loops it
+    // indefinitely (announcing it once, then repeating passes) until closed —
+    // the same standalone "keep reading this section" behavior as before.
+    async function startSectionReading(section) {
+      openReadingModal();
+      state.readingSectionQueue = [section];
+      state.readingSectionIndex = 0;
+      readingMeaning.textContent = `Loading ${section}…`;
+      const initial = await ensureSectionLoaded(section);
+      if (!state.readingActive) return;
+      if (!initial.length) {
+        readingMeaning.textContent = `${section} has no words yet.`;
+        return;
+      }
+
+      let announced = false;
+      while (state.readingActive) {
+        const entries = state.sectionCache.get(section) || [];
+        if (!entries.length) break;
+        if (!announced) {
+          await announceReadingSection(section);
+          announced = true;
+          if (!state.readingActive) break;
+        }
+        await runSectionReadingPass(entries);
+      }
+    }
+
+    // Toolbar Read button: cycles through every section in turn, indefinitely —
+    // the next section's words are only fetched once the current section's pass
+    // is fully done.
+    async function startAppLevelReading() {
+      openReadingModal();
+      const sections = getSortedSectionNames();
+      if (!sections.length) {
+        readingMeaning.textContent = 'No sections to read yet.';
+        return;
+      }
+      state.readingSectionQueue = sections;
+      state.readingSectionIndex = 0;
+
+      while (state.readingActive) {
+        const section = state.readingSectionQueue[state.readingSectionIndex];
+        readingMeaning.textContent = `Loading ${section}…`;
+        const entries = await ensureSectionLoaded(section);
+        if (!state.readingActive) break;
+
+        if (entries.length) {
+          await announceReadingSection(section);
+          if (!state.readingActive) break;
+          await runSectionReadingPass(entries);
+        }
+
+        if (!state.readingActive) break;
+        state.readingSectionIndex = (state.readingSectionIndex + 1) % state.readingSectionQueue.length;
+      }
     }
 
     function openScriptPracticeModal(scriptKey, label) {
@@ -1426,27 +1776,8 @@
       scriptPracticeFrame.src = 'about:blank';
     }
 
-    function handleNativeInput() {
-      if (state.language === 'japanese' && window.wanakana) {
-        const currentValue = nativeWordInput.value;
-        const looksLikeRomaji = /^[a-zA-Z\s-]+$/.test(currentValue);
-        if (looksLikeRomaji) {
-          const hiraganaValue = window.wanakana.toHiragana(currentValue);
-          if (hiraganaValue !== currentValue) {
-            nativeWordInput.value = hiraganaValue;
-          }
-        }
-      }
-      debouncedTranslateFromNative();
-    }
-
-    nativeWordInput.addEventListener('input', handleNativeInput);
-    englishMeaningInput.addEventListener('input', debouncedTranslateFromEnglish);
-    teluguMeaningInput.addEventListener('input', debouncedTranslateFromTelugu);
-
     languageSelect.addEventListener('change', (event) => {
-      state.language = event.target.value;
-      renderDictionary();
+      switchLanguage(event.target.value);
     });
 
     searchToggle.addEventListener('click', () => {
@@ -1459,37 +1790,48 @@
 
     searchInput.addEventListener('input', (event) => {
       state.query = event.target.value;
-      renderDictionary();
+      renderCurrentView();
     });
 
-    quizButton.addEventListener('click', () => launchQuiz(state.words.map(entry => ({ ...entry }))));
+    quizButton.addEventListener('click', () => startAppLevelQuiz());
     quizClose.addEventListener('click', () => closeQuizModal());
-    quizStart.addEventListener('click', () => startQuiz());
+    quizStart.addEventListener('click', () => restartQuizSequence());
     quizWrong.addEventListener('click', () => handleWrong());
     quizCorrect.addEventListener('click', () => handleCorrect());
     quizTogglePronunciation.addEventListener('change', () => { if (state.quizCurrent) renderQuizCard(); });
     quizToggleMeaning.addEventListener('change', () => { if (state.quizCurrent) renderQuizCard(); });
-    readingButton.addEventListener('click', () => openReadingModal());
+    readingButton.addEventListener('click', () => startAppLevelReading());
     readingClose.addEventListener('click', () => closeReadingModal());
     scriptPracticeClose.addEventListener('click', () => closeScriptPracticeModal());
-    saveToDictionaryBtn.addEventListener('click', () => addCurrentEntryToDictionary());
-    clearFormBtn.addEventListener('click', () => exitEditMode());
-    deleteCurrentBtn.addEventListener('click', () => {
-      if (!state.editingId) return;
-      deleteWordEntry(state.editingId);
-    });
 
-    sectionConfirmBtn.addEventListener('click', () => confirmSectionAssignment());
-    sectionSkipBtn.addEventListener('click', () => hideSectionAssignPanel());
+    quickAddInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handleQuickAddWordSubmit();
+      } else if (event.key === 'Escape') {
+        quickAddCancel();
+      }
+    });
+    quickAddInput.addEventListener('input', () => scheduleLivePreview());
+    quickAddModalClose.addEventListener('click', () => quickAddCancel());
+
     sectionInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        confirmSectionAssignment();
+        quickAddConfirmCategory();
       } else if (event.key === 'Escape') {
-        sectionDropdown.classList.add('hidden');
+        quickAddCancel();
       }
     });
-    sectionInput.addEventListener('input', () => renderSectionDropdown(sectionInput.value));
+    sectionInput.addEventListener('input', () => {
+      const cursor = sectionInput.selectionStart;
+      const upper = sectionInput.value.toUpperCase();
+      if (upper !== sectionInput.value) {
+        sectionInput.value = upper;
+        sectionInput.setSelectionRange(cursor, cursor);
+      }
+      renderSectionDropdown(sectionInput.value);
+    });
     sectionInput.addEventListener('focus', () => renderSectionDropdown(sectionInput.value));
     sectionInput.addEventListener('blur', () => sectionDropdown.classList.add('hidden'));
     sectionDropdown.addEventListener('mousedown', (event) => {
@@ -1503,18 +1845,8 @@
     groupModeToggle.addEventListener('click', () => {
       state.groupMode = state.groupMode === 'category' ? 'alpha' : 'category';
       groupModeToggle.textContent = state.groupMode === 'category' ? 'Group: Category' : 'Group: A–Z';
-      renderDictionary();
+      renderCurrentView();
     });
-
-    collapseToggle.addEventListener('click', () => {
-      const detailsEls = dictionaryList.querySelectorAll('details.section-group');
-      const shouldExpand = collapseToggle.dataset.action !== 'collapse';
-      detailsEls.forEach(details => { details.open = shouldExpand; });
-      updateCollapseToggleLabel();
-    });
-
-    renderDictionary();
-    wireRealtimeListener();
   </script>
 </body>
 </html>
