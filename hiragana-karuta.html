@@ -58,7 +58,7 @@
   }
   .stage{
     width:100%;
-    max-width:640px;
+    max-width:920px;
     margin:0 auto;
     min-width:0;
   }
@@ -101,18 +101,18 @@
   .script-tabs{
     display:flex;
     flex-wrap:wrap;
+    justify-content:center;
     gap:6px;
     margin-bottom:10px;
   }
   .script-tab{
-    flex:1;
-    min-width:90px;
-    padding:7px 6px;
+    flex:0 1 auto;
+    padding:5px 14px;
     border:1px solid var(--border);
-    border-radius:9px;
+    border-radius:8px;
     background: var(--panel-strong);
     color: var(--text);
-    font-size:12px;
+    font-size:11px;
     font-weight:600;
     cursor:pointer;
     transition: background .15s ease, color .15s ease;
@@ -154,28 +154,29 @@
     display:flex;
     flex-wrap:wrap;
     align-items:center;
-    gap:6px 14px;
-    margin-bottom:6px;
+    justify-content:center;
+    gap:6px 20px;
+    margin-bottom:8px;
     min-width:0;
   }
   .pair-right{
     display:flex;
     flex-direction:column;
-    gap:4px;
-    flex:1 1 140px;
+    gap:6px;
+    flex:0 1 340px;
     min-width:0;
-    max-width:230px;
+    max-width:340px;
   }
   .kana-table{
     display:grid;
     grid-template-columns:repeat(5, minmax(0, 1fr));
-    gap:min(1.2vw, 4px);
+    gap:min(1.4vw, 7px);
     width:100%;
-    max-width:230px;
+    max-width:340px;
     min-width:0;
   }
   .pair-row > .kana-table{
-    flex:1 1 140px;
+    flex:0 1 340px;
   }
   .pair-right > .kana-table{
     flex:0 0 auto;
@@ -183,13 +184,14 @@
   .yoon-wrap{
     display:flex;
     flex-wrap:wrap;
-    gap:10px;
+    justify-content:center;
+    gap:12px;
     margin-bottom:12px;
     min-width:0;
   }
   .yoon-wrap .kana-table{
     grid-template-columns:repeat(3, minmax(0, 1fr));
-    max-width:145px;
+    max-width:220px;
   }
   .chart-cell{
     position:relative;
@@ -197,34 +199,40 @@
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    border-radius:7px;
+    border-radius:8px;
     border:1px solid var(--border);
     background: var(--panel-strong);
     cursor:pointer;
     transition: background .15s ease, border-color .15s ease, transform .1s ease;
-    padding:3px 2px;
-    min-height:clamp(28px, 7vw, 46px);
+    padding:4px 2px;
+    aspect-ratio:1;
+    min-height:clamp(30px, 10vw, 66px);
   }
   .chart-cell.empty{ border:none; background:transparent; cursor:default; }
   .chart-cell:hover:not(.empty){ transform: translateY(-1px); border-color: var(--accent); }
   .chart-cell .k{
-    font-size:clamp(12px, 3vw, 16px);
+    font-size:clamp(14px, 4vw, 22px);
     font-weight:700;
     color: var(--text);
     line-height:1;
   }
-  .chart-cell .k.wide{ font-size:clamp(8px, 2.2vw, 11px); }
+  .chart-cell .k.wide{ font-size:clamp(9px, 2.8vw, 14px); }
   .chart-cell .r{
-    font-size:clamp(7px, 1.6vw, 8px);
+    font-size:clamp(8px, 2.1vw, 12px);
     color: var(--muted);
     margin-top:2px;
   }
   .chart-cell .telugu{
-    font-size:clamp(7px, 1.8vw, 9px);
+    font-size:clamp(8px, 2.3vw, 13px);
     color: var(--accent);
     margin-top:1px;
     line-height:1;
   }
+  /* Dark theme only: the default --muted/--accent shades read a bit dim
+     against these near-black cell backgrounds, so brighten just the chart
+     cell hint text without touching the shared variables used elsewhere. */
+  :root.dark .chart-cell .r{ color:#cbd5e1; }
+  :root.dark .chart-cell .telugu{ color:#7dd3fc; }
   .chart-cell.in-range{
     background: var(--success-soft);
     border-color: var(--success);
@@ -250,8 +258,9 @@
   }
   .mode-toggle{
     display:flex;
-    gap:6px;
-    margin-bottom:12px;
+    gap:5px;
+    margin:0 auto 12px;
+    max-width:460px;
     background: var(--panel-strong);
     border:1px solid var(--border);
     border-radius:10px;
@@ -259,23 +268,23 @@
   }
   .mode-btn{
     flex:1;
-    padding:7px 6px;
+    padding:5px 8px;
     border:none;
     border-radius:8px;
     background:transparent;
     color: var(--muted);
-    font-size:12px;
+    font-size:11px;
     font-weight:600;
     cursor:pointer;
     transition: background .15s ease, color .15s ease, box-shadow .15s ease;
-    line-height:1.25;
+    line-height:1.2;
   }
   .mode-btn .mode-sub{
     display:block;
     font-weight:400;
-    font-size:10px;
+    font-size:9px;
     opacity:.85;
-    margin-top:1px;
+    margin-top:0;
   }
   .mode-btn.active{
     background: var(--accent);

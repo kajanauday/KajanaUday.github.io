@@ -117,10 +117,21 @@
       display: flex;
     }
 
-    .section-group + .section-group {
+    .section-row + .section-row {
       margin-top: 0.6rem;
       padding-top: 0.6rem;
       border-top: 1px solid var(--border);
+    }
+
+    /* .section-actions is a sibling of <details> itself, positioned relative
+       to this wrapper — NOT a descendant of <details> at all (not even a
+       sibling of <summary> inside it). Chromium refuses to render or
+       hit-test any non-summary child of a closed <details>, and that isn't
+       something CSS can override (display/content-visibility overrides had
+       no effect in practice — the geometry gets reported but nothing paints
+       or receives clicks). A true sibling of <details> is unaffected. */
+    .section-row {
+      position: relative;
     }
 
     .section-group > summary {
@@ -132,11 +143,9 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--muted);
-      padding: 0.15rem 0;
+      padding: 0.15rem 2.75rem 0.15rem 0;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
     }
 
     .section-group > summary::marker {
@@ -150,6 +159,9 @@
     }
 
     .section-actions {
+      position: absolute;
+      top: 0.15rem;
+      right: 0;
       display: flex;
       align-items: center;
       gap: 0.35rem;
@@ -998,38 +1010,33 @@
       if (!sections.length) return;
 
       sections.forEach(section => {
-        const details = buildSectionDetailsShell(section, state.sectionSummary[section] || 0);
-        state.sectionHeaderDomRefs.set(section, details);
-        dictionaryList.appendChild(details);
+        const wrapper = buildSectionDetailsShell(section, state.sectionSummary[section] || 0);
+        state.sectionHeaderDomRefs.set(section, wrapper);
+        dictionaryList.appendChild(wrapper);
         if (state.expandedSections.has(section)) {
-          details.open = true;
+          wrapper.querySelector('details').open = true;
           loadAndRenderSectionBody(section);
         }
       });
     }
 
+    // Returns a wrapper <div> containing the <details> plus a sibling actions
+    // bar — the actions bar can't live inside the <details> at all (not even
+    // as a sibling of <summary>): Chromium refuses to render or hit-test any
+    // non-summary child of a closed <details>, and that isn't something CSS
+    // can override (display/content-visibility overrides had no effect). It
+    // also can't live inside <summary> — interactive controls nested there
+    // aren't reliably reachable by keyboard/assistive tech. A true sibling of
+    // <details> itself is unaffected by any of that.
     function buildSectionDetailsShell(section, count) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'section-row';
+
       const details = document.createElement('details');
       details.className = 'section-group';
 
       const summary = document.createElement('summary');
-      summary.innerHTML = `
-        <span class="section-label">${escapeHtml(section)} (${count})</span>
-        <span class="section-actions">
-          <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
-          <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
-        </span>
-      `;
-      summary.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        startSectionQuiz(section);
-      });
-      summary.querySelector('[data-section-read]').addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        startSectionReading(section);
-      });
+      summary.innerHTML = `<span class="section-label">${escapeHtml(section)} (${count})</span>`;
       details.appendChild(summary);
 
       const body = document.createElement('div');
@@ -1046,7 +1053,27 @@
         }
       });
 
-      return details;
+      wrapper.appendChild(details);
+
+      const actions = document.createElement('span');
+      actions.className = 'section-actions';
+      actions.innerHTML = `
+        <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
+        <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
+      `;
+      actions.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startSectionQuiz(section);
+      });
+      actions.querySelector('[data-section-read]').addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startSectionReading(section);
+      });
+      wrapper.appendChild(actions);
+
+      return wrapper;
     }
 
     function loadAndRenderSectionBody(section) {
