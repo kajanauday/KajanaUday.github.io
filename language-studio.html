@@ -249,9 +249,11 @@
           <div id="quick-add-container" class="hidden min-w-0 flex-1 items-center justify-center gap-2 px-2">
             <div class="relative w-full max-w-[220px]">
               <input id="quick-add-input" type="text" autocomplete="off" placeholder="Type a word…" class="w-full rounded-lg border border-transparent bg-transparent px-3 py-1.5 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 hover:bg-white/70 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-200 dark:text-slate-200 dark:placeholder:text-slate-500 dark:hover:bg-slate-900/50 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-900" />
-              <div id="quick-add-live-preview" class="hidden absolute left-0 top-full z-10 mt-1 max-w-xs truncate whitespace-nowrap rounded-md bg-white px-2 py-1 text-xs text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-400"></div>
+              <div id="quick-add-panel" class="hidden absolute left-0 top-full z-20 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                <div id="quick-add-preview-rows" class="space-y-1"></div>
+                <div id="quick-add-category-slot" class="mt-2 hidden"></div>
+              </div>
             </div>
-            <div id="quick-add-category-inline" class="hidden w-full max-w-[160px]"></div>
           </div>
 
           <span id="dictionary-count" class="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-slate-500 dark:bg-slate-900 dark:text-slate-400">0 entries</span>
@@ -261,17 +263,6 @@
           <div id="dictionary-list" class="space-y-2"></div>
         </div>
       </section>
-
-      <div id="quick-add-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
-        <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
-          <div class="flex items-center justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
-            <span class="text-sm font-semibold text-slate-900 dark:text-slate-100">Review word</span>
-            <button id="quick-add-modal-close" type="button" class="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600">Close</button>
-          </div>
-          <div id="quick-add-cards" class="mt-3 space-y-2"></div>
-          <div id="quick-add-category-popup" class="mt-3"></div>
-        </div>
-      </div>
 
       <div id="section-input-home" class="hidden">
         <label class="relative block">
@@ -399,9 +390,12 @@
       query: '',
       // mode: 'idle' | 'input' | 'category'; resolved: {direction, word, pronunciation, englishMeaning};
       // editingId/editingOriginSection set only when this is an edit, not a new entry.
-      // lastResolvedText/resolved cache the most recent live-preview translation
-      // so pressing Enter right after typing doesn't re-run it from scratch.
-      quickAdd: { mode: 'entering', resolved: null, lastResolvedText: null, editingId: null, editingOriginSection: null },
+      // mode: 'entering' | 'category'. stageIndex (0/1/2) tracks which of the
+      // three resolved fields (in this direction's display order) is currently
+      // loaded into quickAddInput as the user steps through them with Enter.
+      // lastCheckedText is what the field held the last time the 2s poller
+      // checked it, so it only reacts to genuine edits.
+      quickAdd: { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null, editingId: null, editingOriginSection: null },
       quizQueue: [],
       quizMissed: [],
       quizCurrent: null,
@@ -515,12 +509,9 @@
     const groupModeToggle = document.getElementById('group-mode-toggle');
     const quickAddContainer = document.getElementById('quick-add-container');
     const quickAddInput = document.getElementById('quick-add-input');
-    const quickAddLivePreview = document.getElementById('quick-add-live-preview');
-    const quickAddCategoryInline = document.getElementById('quick-add-category-inline');
-    const quickAddModal = document.getElementById('quick-add-modal');
-    const quickAddModalClose = document.getElementById('quick-add-modal-close');
-    const quickAddCards = document.getElementById('quick-add-cards');
-    const quickAddCategoryPopup = document.getElementById('quick-add-category-popup');
+    const quickAddPanel = document.getElementById('quick-add-panel');
+    const quickAddPreviewRows = document.getElementById('quick-add-preview-rows');
+    const quickAddCategorySlot = document.getElementById('quick-add-category-slot');
     const sectionInputHome = document.getElementById('section-input-home');
     const sectionInputWrapper = sectionInputHome.querySelector('label');
     const sectionInput = document.getElementById('section-input');
@@ -1138,156 +1129,167 @@
       sectionDropdown.classList.remove('hidden');
     }
 
-    // ---- Quick add: single-field word entry ----
+    // ---- Quick add: single-field word entry, traversed field by field ----
     //
-    // Flow: type a word in quickAddInput, press Enter. The typed text is
-    // resolved (translated/romanized) based on its detected direction, then
-    // shown for review — inline next to the input if it fits, or in a popup
-    // with the pieces stacked as cards if it doesn't — alongside a category
-    // picker. Pressing Enter there commits the entry (or the edit) to Firebase.
-    // Escape cancels back to idle at any point.
+    // Type a word (English or native script — direction is auto-detected),
+    // then Enter steps through the resolved fields one at a time, loading each
+    // into the same input in place of the last (word -> pronunciation ->
+    // meaning), editable at every stage. A floating panel below the input
+    // shows all three throughout, highlighting whichever one is currently
+    // loaded into the field. A final Enter (from the meaning stage) reveals
+    // the category picker in the same panel. Escape cancels at any point.
+    //
+    // Independently, a 2-second poll compares the field's current text to
+    // what it held at the last check: if it changed, that's treated as a
+    // fresh edit — a full re-translation at the word stage, or a direct
+    // correction to the current field at the pronunciation/meaning stages —
+    // and the panel is refreshed either way.
 
-    let measureCanvas = null;
-    function measureTextWidth(text, referenceEl) {
-      if (!measureCanvas) measureCanvas = document.createElement('canvas');
-      const context = measureCanvas.getContext('2d');
-      const style = window.getComputedStyle(referenceEl);
-      context.font = `${style.fontStyle} ${style.fontVariant} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-      return context.measureText(text).width;
+    // Matches the per-direction ordering the app already showed in the
+    // (now-removed) review popup — same fields, same order, just traversed
+    // one at a time instead of shown all at once.
+    function getQuickAddFieldOrder(direction) {
+      return direction === 'toNative'
+        ? ['englishMeaning', 'word', 'pronunciation']
+        : ['word', 'pronunciation', 'englishMeaning'];
     }
 
-    function doesSummaryOverflow(summaryText, inputEl) {
-      const available = inputEl.clientWidth - 20; // rough padding allowance
-      return measureTextWidth(summaryText, inputEl) > available;
-    }
-
-    // Display order depends on which direction the word was typed in — the
-    // saved fields (w/p/em) are identical either way.
     function buildQuickAddParts(resolved) {
-      const nativeLabel = getCurrentLanguageData().label;
-      if (resolved.direction === 'toNative') {
-        return [
-          { label: 'English', value: resolved.englishMeaning },
-          { label: nativeLabel, value: resolved.word },
-          { label: 'Pronunciation', value: resolved.pronunciation }
-        ];
-      }
-      return [
-        { label: nativeLabel, value: resolved.word },
-        { label: 'Pronunciation', value: resolved.pronunciation },
-        { label: 'English', value: resolved.englishMeaning }
-      ];
+      return getQuickAddFieldOrder(resolved.direction).map(key => ({ key, value: resolved[key] }));
     }
 
-    let quickAddPreviewTimer = null;
-
-    function hideLivePreview() {
-      quickAddLivePreview.classList.add('hidden');
-      quickAddLivePreview.textContent = '';
-    }
-
-    // Debounced live translation: fires ~600ms after the user stops typing (not
-    // on every keystroke, to avoid hammering the translation API), and shows
-    // the result under the input without disturbing what's being typed.
-    function scheduleLivePreview() {
-      clearTimeout(quickAddPreviewTimer);
-      const text = quickAddInput.value.trim();
-      if (!text) {
-        hideLivePreview();
+    // One line, no labels — just the typed word, its pronunciation, and the
+    // translated word, dot-separated, with whichever one is currently loaded
+    // into the input highlighted.
+    function renderQuickAddPanel() {
+      const resolved = state.quickAdd.resolved;
+      if (!resolved) {
+        quickAddPanel.classList.add('hidden');
         return;
       }
-      quickAddPreviewTimer = setTimeout(() => updateLivePreview(text), 600);
+      const parts = buildQuickAddParts(resolved);
+      const pieces = parts.map((part, index) => `<span class="${
+        index === state.quickAdd.stageIndex
+          ? 'rounded bg-blue-50 px-1 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200'
+          : 'text-slate-500 dark:text-slate-400'
+      }">${escapeHtml(part.value || '—')}</span>`);
+      quickAddPreviewRows.innerHTML = `
+        <div class="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs">
+          ${pieces.join('<span class="text-slate-300 dark:text-slate-600">·</span>')}
+        </div>
+      `;
+      quickAddPanel.classList.remove('hidden');
     }
 
-    async function updateLivePreview(text) {
+    let quickAddCheckTimer = null;
+
+    function startQuickAddChecker() {
+      if (quickAddCheckTimer) return;
+      quickAddCheckTimer = setInterval(checkQuickAddForChanges, 2000);
+    }
+
+    function stopQuickAddChecker() {
+      clearInterval(quickAddCheckTimer);
+      quickAddCheckTimer = null;
+    }
+
+    // The 2-second poll: only reacts when the field's text actually differs
+    // from what it held at the last check.
+    async function checkQuickAddForChanges() {
       if (state.quickAdd.mode !== 'entering') return;
-      const resolved = await resolveQuickAddFields(text);
-      // Bail if the input moved on (kept typing, submitted, or was reset)
-      // while this resolution was in flight.
-      if (state.quickAdd.mode !== 'entering' || quickAddInput.value.trim() !== text) return;
+      const text = quickAddInput.value.trim();
+      if (text === state.quickAdd.lastCheckedText) return;
+      if (!text) {
+        state.quickAdd.lastCheckedText = text;
+        return;
+      }
 
-      state.quickAdd.resolved = resolved;
-      state.quickAdd.lastResolvedText = text;
-
-      const parts = buildQuickAddParts(resolved);
-      const preview = parts.map(p => p.value).filter(Boolean).join('   ·   ');
-      quickAddLivePreview.textContent = preview;
-      quickAddLivePreview.classList.toggle('hidden', !preview);
+      const stageIndex = state.quickAdd.stageIndex;
+      if (stageIndex === 0) {
+        const resolved = await resolveQuickAddFields(text);
+        // Bail if the field moved on while this was resolving.
+        if (state.quickAdd.mode !== 'entering' || state.quickAdd.stageIndex !== 0 || quickAddInput.value.trim() !== text) return;
+        state.quickAdd.resolved = resolved;
+      } else if (state.quickAdd.resolved) {
+        const key = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[stageIndex];
+        state.quickAdd.resolved[key] = text;
+      }
+      state.quickAdd.lastCheckedText = text;
+      renderQuickAddPanel();
     }
 
     function resetQuickAdd() {
-      clearTimeout(quickAddPreviewTimer);
-      hideLivePreview();
-      state.quickAdd = { mode: 'entering', resolved: null, lastResolvedText: null, editingId: null, editingOriginSection: null };
+      stopQuickAddChecker();
+      state.quickAdd = { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null, editingId: null, editingOriginSection: null };
       quickAddInput.value = '';
       quickAddInput.readOnly = false;
       quickAddInput.disabled = false;
       quickAddInput.placeholder = 'Type a word…';
-      quickAddCategoryInline.classList.add('hidden');
-      quickAddModal.classList.remove('open');
-      quickAddCards.innerHTML = '';
+      quickAddPanel.classList.add('hidden');
+      quickAddPreviewRows.innerHTML = '';
+      quickAddCategorySlot.classList.add('hidden');
       sectionInput.value = '';
       sectionDropdown.classList.add('hidden');
       sectionInputHome.appendChild(sectionInputWrapper);
     }
 
-    function showQuickAddCategoryStep(parts, summary, overflow) {
+    function showQuickAddCategoryStep() {
       state.quickAdd.mode = 'category';
+      stopQuickAddChecker();
+      quickAddInput.readOnly = true;
       sectionInput.value = '';
-
-      if (overflow) {
-        quickAddCards.innerHTML = parts.filter(p => p.value).map(p => `
-          <div class="compact-card flex items-center justify-between gap-3 py-2">
-            <span class="text-xs text-slate-500 dark:text-slate-400">${escapeHtml(p.label)}</span>
-            <span class="min-w-0 truncate text-sm font-medium text-slate-900 dark:text-slate-100">${escapeHtml(p.value)}</span>
-          </div>
-        `).join('');
-        quickAddCategoryPopup.appendChild(sectionInputWrapper);
-        quickAddModal.classList.add('open');
-      } else {
-        quickAddInput.value = summary;
-        quickAddInput.readOnly = true;
-        quickAddCategoryInline.appendChild(sectionInputWrapper);
-        quickAddCategoryInline.classList.remove('hidden');
-      }
+      quickAddCategorySlot.appendChild(sectionInputWrapper);
+      quickAddCategorySlot.classList.remove('hidden');
       sectionInput.focus();
     }
 
-    async function handleQuickAddWordSubmit() {
+    // The Enter handler while composing (mode 'entering'): advances one stage
+    // at a time — word -> pronunciation -> meaning -> category — capturing
+    // any manual edit at the current stage before moving to the next.
+    async function advanceQuickAddStage() {
       if (state.quickAdd.mode !== 'entering') return;
       const text = quickAddInput.value.trim();
       if (!text) return;
 
-      clearTimeout(quickAddPreviewTimer);
-      hideLivePreview();
+      const stageIndex = state.quickAdd.stageIndex;
 
-      // Reuse the live-preview translation if it's already resolved for this
-      // exact text (the common case — the user paused, saw the preview, then
-      // pressed Enter) instead of re-running it from scratch.
-      let resolved;
-      if (state.quickAdd.lastResolvedText === text && state.quickAdd.resolved) {
-        resolved = state.quickAdd.resolved;
+      if (stageIndex === 0) {
+        // Reuse the poller's resolution if it already caught up with this
+        // exact text; otherwise resolve it now rather than make the user wait
+        // for the next 2-second tick.
+        if (!state.quickAdd.resolved || state.quickAdd.lastCheckedText !== text) {
+          quickAddInput.disabled = true;
+          quickAddInput.placeholder = 'Translating…';
+          state.quickAdd.resolved = await resolveQuickAddFields(text);
+          state.quickAdd.lastCheckedText = text;
+          quickAddInput.disabled = false;
+        }
       } else {
-        quickAddInput.disabled = true;
-        quickAddInput.placeholder = 'Translating…';
-        resolved = await resolveQuickAddFields(text);
-        quickAddInput.disabled = false;
+        const key = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[stageIndex];
+        state.quickAdd.resolved[key] = text;
+      }
+      renderQuickAddPanel();
+
+      if (stageIndex < 2) {
+        state.quickAdd.stageIndex = stageIndex + 1;
+        const nextKey = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[state.quickAdd.stageIndex];
+        const nextValue = state.quickAdd.resolved[nextKey] || '';
+        quickAddInput.value = nextValue;
+        state.quickAdd.lastCheckedText = nextValue;
+        quickAddInput.select();
+        renderQuickAddPanel();
+        return;
       }
 
       if (!state.quickAdd.editingId) {
-        const exists = await wordExistsInLanguage(normalize(resolved.word));
+        const exists = await wordExistsInLanguage(normalize(state.quickAdd.resolved.word));
         if (exists) {
-          window.alert(`"${resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
+          window.alert(`"${state.quickAdd.resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
           resetQuickAdd();
           return;
         }
       }
-
-      state.quickAdd.resolved = resolved;
-
-      const parts = buildQuickAddParts(resolved);
-      const summary = parts.map(p => p.value).filter(Boolean).join('   ·   ');
-      showQuickAddCategoryStep(parts, summary, doesSummaryOverflow(summary, quickAddInput));
+      showQuickAddCategoryStep();
     }
 
     async function quickAddConfirmCategory() {
@@ -1336,7 +1338,7 @@
       quickAddInput.value = entry.word;
       quickAddContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
       quickAddInput.focus();
-      scheduleLivePreview();
+      startQuickAddChecker();
     }
 
     async function deleteWordEntry(entry) {
@@ -1807,13 +1809,12 @@
     quickAddInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        handleQuickAddWordSubmit();
+        advanceQuickAddStage();
       } else if (event.key === 'Escape') {
         quickAddCancel();
       }
     });
-    quickAddInput.addEventListener('input', () => scheduleLivePreview());
-    quickAddModalClose.addEventListener('click', () => quickAddCancel());
+    quickAddInput.addEventListener('input', () => startQuickAddChecker());
 
     sectionInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
