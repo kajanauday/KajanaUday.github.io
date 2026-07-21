@@ -265,9 +265,6 @@
                 <div class="flex items-start gap-2">
                   <div id="quick-add-preview-rows" class="min-w-0 flex-1 space-y-1"></div>
                   <div class="flex shrink-0 items-center gap-1">
-                    <button id="quick-add-delete-btn" type="button" title="Delete this word" class="hidden rounded p-1 text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40">
-                      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482 41.03 41.03 0 00-2.365-.298V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/></svg>
-                    </button>
                     <button id="quick-add-clear-btn" type="button" title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
                       <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
                     </button>
@@ -411,13 +408,12 @@
       language: 'japanese',
       query: '',
       // mode: 'idle' | 'input' | 'category'; resolved: {direction, word, pronunciation, englishMeaning};
-      // editingId/editingOriginSection set only when this is an edit, not a new entry.
       // mode: 'entering' | 'category'. stageIndex (0/1/2) tracks which of the
       // three resolved fields (in this direction's display order) is currently
       // loaded into quickAddInput as the user steps through them with Enter.
       // lastCheckedText is what the field held the last time the 2s poller
       // checked it, so it only reacts to genuine edits.
-      quickAdd: { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null, editingId: null, editingOriginSection: null },
+      quickAdd: { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null },
       quizQueue: [],
       quizMissed: [],
       quizCurrent: null,
@@ -534,7 +530,6 @@
     const quickAddPanel = document.getElementById('quick-add-panel');
     const quickAddPreviewRows = document.getElementById('quick-add-preview-rows');
     const quickAddCategorySlot = document.getElementById('quick-add-category-slot');
-    const quickAddDeleteBtn = document.getElementById('quick-add-delete-btn');
     const quickAddClearBtn = document.getElementById('quick-add-clear-btn');
     const sectionInputHome = document.getElementById('section-input-home');
     const sectionInputWrapper = sectionInputHome.querySelector('label');
@@ -947,8 +942,91 @@
         event.preventDefault();
         event.stopPropagation();
         if (!state.isAdmin) return;
-        startEditFromCard(entry);
+        enterCardEditMode(card, entry);
       });
+    }
+
+    function buildDictionaryCardContent(entry) {
+      const pronunciation = entry.pronunciation || '';
+      const englishMeaning = entry.englishMeaning || '';
+      return `
+        <div class="min-w-0 flex-1 flex items-baseline gap-3">
+          <div class="min-w-[100px] truncate text-sm font-semibold text-slate-900 leading-tight dark:text-slate-100">${escapeHtml(entry.word)}</div>
+          <div class="min-w-[80px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
+          <div class="flex-1 truncate text-xs text-slate-600 leading-tight dark:text-slate-300">${escapeHtml(englishMeaning)}</div>
+        </div>
+      `;
+    }
+
+    // Turns a card in place into three inline text fields (word, pronunciation,
+    // meaning) plus save/delete/clear controls — the clear/delete icons match
+    // the quick-add panel's exactly. Editing happens directly on the field the
+    // user wants to change; Save persists all three, Clear exits without saving.
+    function enterCardEditMode(card, entry) {
+      if (card.dataset.editing === '1') return;
+      card.dataset.editing = '1';
+      card.innerHTML = `
+        <div class="min-w-0 flex-1 flex items-center gap-2">
+          <input type="text" data-field="word" value="${escapeHtml(entry.word)}" class="min-w-0 w-[100px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+          <input type="text" data-field="pronunciation" value="${escapeHtml(entry.pronunciation || '')}" class="min-w-0 w-[80px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400" />
+          <input type="text" data-field="englishMeaning" value="${escapeHtml(entry.englishMeaning || '')}" class="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-600 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300" />
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <button type="button" data-card-save title="Save" class="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          </button>
+          <button type="button" data-card-delete title="Delete this word" class="rounded p-1 text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482 41.03 41.03 0 00-2.365-.298V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/></svg>
+          </button>
+          <button type="button" data-card-clear title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+          </button>
+        </div>
+      `;
+
+      card.querySelectorAll('input').forEach(input => {
+        input.addEventListener('click', (event) => event.stopPropagation());
+        input.addEventListener('dblclick', (event) => event.stopPropagation());
+      });
+      card.querySelector('[data-card-clear]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        exitCardEditMode(card, entry);
+      });
+      card.querySelector('[data-card-delete]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteWordEntry(entry);
+      });
+      card.querySelector('[data-card-save]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        saveCardEdits(card, entry);
+      });
+    }
+
+    function exitCardEditMode(card, entry) {
+      card.dataset.editing = '';
+      card.innerHTML = buildDictionaryCardContent(entry);
+      attachCardInteractions(card, entry);
+    }
+
+    async function saveCardEdits(card, entry) {
+      const word = card.querySelector('[data-field="word"]').value.trim();
+      const pronunciation = card.querySelector('[data-field="pronunciation"]').value.trim();
+      const englishMeaning = card.querySelector('[data-field="englishMeaning"]').value.trim();
+      if (!word) {
+        window.alert('Word cannot be empty.');
+        return;
+      }
+      try {
+        await wordsRef.child(state.language).child(entry.section).child(entry.id).update({ w: word, p: pronunciation, em: englishMeaning });
+      } catch (err) {
+        console.error('Failed to save word', err);
+        window.alert('Failed to save word. See console for details.');
+        return;
+      }
+      entry.word = word;
+      entry.pronunciation = pronunciation;
+      entry.englishMeaning = englishMeaning;
+      exitCardEditMode(card, entry);
     }
 
     function getAlphaGroupKey(word) {
@@ -967,17 +1045,7 @@
     function buildDictionaryCard(entry) {
       const card = document.createElement('article');
       card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between gap-2 py-2';
-
-      const pronunciation = entry.pronunciation || '';
-      const englishMeaning = entry.englishMeaning || '';
-
-      card.innerHTML = `
-        <div class="min-w-0 flex-1 flex items-baseline gap-3">
-          <div class="min-w-[100px] truncate text-sm font-semibold text-slate-900 leading-tight dark:text-slate-100">${escapeHtml(entry.word)}</div>
-          <div class="min-w-[80px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
-          <div class="flex-1 truncate text-xs text-slate-600 leading-tight dark:text-slate-300">${escapeHtml(englishMeaning)}</div>
-        </div>
-      `;
+      card.innerHTML = buildDictionaryCardContent(entry);
       attachCardInteractions(card, entry);
       return card;
     }
@@ -1209,7 +1277,6 @@
           ${pieces.join('<span class="text-slate-300 dark:text-slate-600">·</span>')}
         </div>
       `;
-      quickAddDeleteBtn.classList.toggle('hidden', !state.quickAdd.editingId);
       quickAddPanel.classList.remove('hidden');
     }
 
@@ -1252,7 +1319,7 @@
 
     function resetQuickAdd() {
       stopQuickAddChecker();
-      state.quickAdd = { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null, editingId: null, editingOriginSection: null };
+      state.quickAdd = { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null };
       quickAddInput.value = '';
       quickAddInput.readOnly = false;
       quickAddInput.disabled = false;
@@ -1313,13 +1380,11 @@
         return;
       }
 
-      if (!state.quickAdd.editingId) {
-        const exists = await wordExistsInLanguage(normalize(state.quickAdd.resolved.word));
-        if (exists) {
-          window.alert(`"${state.quickAdd.resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
-          resetQuickAdd();
-          return;
-        }
+      const exists = await wordExistsInLanguage(normalize(state.quickAdd.resolved.word));
+      if (exists) {
+        window.alert(`"${state.quickAdd.resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
+        resetQuickAdd();
+        return;
       }
       showQuickAddCategoryStep();
     }
@@ -1329,29 +1394,10 @@
       const section = sectionInput.value.trim().toUpperCase() || 'UNCATEGORIZED';
       const resolved = state.quickAdd.resolved;
       const fields = { w: resolved.word, p: resolved.pronunciation, em: resolved.englishMeaning };
-      const { editingId, editingOriginSection } = state.quickAdd;
 
       try {
-        if (editingId) {
-          await wordsRef.child(state.language).child(editingOriginSection).child(editingId).update(fields);
-          if (section !== editingOriginSection) {
-            const snapshot = await wordsRef.child(state.language).child(editingOriginSection).child(editingId).once('value');
-            const data = snapshot.val();
-            if (data) {
-              await database.ref().update({
-                [`words/${state.language}/${editingOriginSection}/${editingId}`]: null,
-                [`words/${state.language}/${section}/${editingId}`]: data
-              });
-              await Promise.all([
-                bumpSectionCount(state.language, editingOriginSection, -1),
-                bumpSectionCount(state.language, section, 1)
-              ]);
-            }
-          }
-        } else {
-          await wordsRef.child(state.language).child(section).push({ ...fields, c: Date.now() });
-          await bumpSectionCount(state.language, section, 1);
-        }
+        await wordsRef.child(state.language).child(section).push({ ...fields, c: Date.now() });
+        await bumpSectionCount(state.language, section, 1);
       } catch (err) {
         console.error('Failed to save word', err);
         window.alert('Failed to save word. See console for details.');
@@ -1361,16 +1407,6 @@
 
     function quickAddCancel() {
       resetQuickAdd();
-    }
-
-    function startEditFromCard(entry) {
-      resetQuickAdd();
-      state.quickAdd.editingId = entry.id;
-      state.quickAdd.editingOriginSection = entry.section;
-      quickAddInput.value = entry.word;
-      quickAddContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      quickAddInput.focus();
-      startQuickAddChecker();
     }
 
     async function deleteWordEntry(entry) {
@@ -1383,7 +1419,6 @@
       try {
         await wordsRef.child(state.language).child(entry.section).child(entry.id).remove();
         await bumpSectionCount(state.language, entry.section, -1);
-        if (state.quickAdd.editingId === entry.id) resetQuickAdd();
       } catch (err) {
         console.error('Failed to delete entry', err);
         window.alert('Failed to delete entry. See console for details.');
@@ -1848,14 +1883,6 @@
     });
     quickAddInput.addEventListener('input', () => startQuickAddChecker());
     quickAddClearBtn.addEventListener('click', () => quickAddCancel());
-    quickAddDeleteBtn.addEventListener('click', () => {
-      if (!state.quickAdd.editingId || !state.quickAdd.resolved) return;
-      deleteWordEntry({
-        id: state.quickAdd.editingId,
-        section: state.quickAdd.editingOriginSection,
-        word: state.quickAdd.resolved.word
-      });
-    });
 
     sectionInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {

@@ -25,8 +25,6 @@
     --accent-dark: #1e3a8a;
     --success: #059669;
     --success-soft: rgba(5,150,105,0.12);
-    --danger: #e11d48;
-    --danger-soft: rgba(225,29,72,0.12);
   }
   :root.dark{
     color-scheme: dark;
@@ -40,8 +38,6 @@
     --accent-dark: #93c5fd;
     --success: #34d399;
     --success-soft: rgba(52,211,153,0.15);
-    --danger: #fb7185;
-    --danger-soft: rgba(251,113,133,0.15);
   }
   *{ box-sizing: border-box; }
   html{ -webkit-text-size-adjust:100%; overflow-x:hidden; }
@@ -276,7 +272,7 @@
     font-size:11px;
     font-weight:600;
     cursor:pointer;
-    transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+    transition: background .15s ease, color .15s ease;
     line-height:1.2;
   }
   .mode-btn .mode-sub{
@@ -294,27 +290,6 @@
   @media (max-width:380px){
     .mode-toggle{ flex-direction:column; }
   }
-  .choice-row{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0,1fr));
-    gap:8px;
-    margin-top:10px;
-  }
-  .choice-btn{
-    padding:10px 6px;
-    border-radius:9px;
-    border:1px solid var(--border);
-    background: var(--panel-strong);
-    font-size:clamp(15px, 4vw, 19px);
-    font-weight:700;
-    color: var(--text);
-    cursor:pointer;
-    transition: transform .1s ease, border-color .15s ease, background .15s ease;
-  }
-  .choice-btn:hover:not(:disabled){ transform: translateY(-1px); border-color: var(--accent); }
-  .choice-btn:disabled{ cursor:default; }
-  .choice-btn.correct-choice{ background: var(--success-soft); border-color: var(--success); color: var(--success); }
-  .choice-btn.wrong-choice{ background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
   button.primary{
     width:100%;
     padding:10px;
@@ -352,14 +327,6 @@
     color: var(--muted);
     margin-bottom:10px;
   }
-  .hud .tag{
-    padding:2px 8px;
-    border-radius:999px;
-    background: var(--success-soft);
-    color: var(--success);
-    font-weight:600;
-  }
-  .hud .tag.miss{ background: var(--danger-soft); color: var(--danger); }
   .progress-track{
     height:4px;
     border-radius:4px;
@@ -373,7 +340,7 @@
     border-radius:4px;
     transition: width .3s ease;
   }
-  /* --- Card --- */
+  /* --- Flip card --- */
   .card-wrap{
     height:clamp(100px, 22vw, 140px);
     position:relative;
@@ -383,15 +350,28 @@
   .card{
     position:absolute;
     inset:0;
-    background: var(--panel-strong);
-    border:2px solid var(--border);
-    border-radius:14px;
+    cursor:pointer;
+    transform-style: preserve-3d;
+    transition: transform .5s cubic-bezier(.4,.6,.3,1), opacity .45s ease;
+  }
+  .card-face{
+    position:absolute;
+    inset:0;
     display:flex;
     align-items:center;
     justify-content:center;
+    flex-direction:column;
+    background: var(--panel-strong);
+    border:2px solid var(--border);
+    border-radius:14px;
     box-shadow: 0 8px 20px rgba(15,23,42,0.06);
-    transition: transform .45s cubic-bezier(.4,.6,.3,1), opacity .45s ease, border-color .3s ease, box-shadow .3s ease;
+    backface-visibility: hidden;
   }
+  .card-face.card-back{
+    transform: rotateY(180deg);
+    border-color: var(--accent);
+  }
+  .card.flipped{ transform: rotateY(180deg); }
   .card .kana{
     font-size:clamp(36px, 9vw, 60px);
     font-weight:700;
@@ -400,81 +380,40 @@
   }
   .card .kana.wide{ font-size:clamp(26px, 6.5vw, 42px); }
   .card .kana.telugu-front{ font-weight:600; }
-  .card.correct{
-    border-color: var(--success);
-    box-shadow: 0 0 0 4px var(--success-soft), 0 8px 20px rgba(15,23,42,0.06);
+  .card-face .kana.romaji-reveal{
+    font-size:clamp(16px, 5vw, 28px);
+    line-height:1.2;
+    text-align:center;
+    padding:0 10px;
+    word-break:break-word;
   }
-  .card.correct.leaving{
+  .card-face .reveal-romaji{
+    margin-top:4px;
+    font-size:clamp(11px, 2.6vw, 13px);
+    font-weight:600;
+    color: var(--accent);
+  }
+  .card.leaving{
     transform: translateY(160px) rotate(6deg);
     opacity:0;
   }
-  .card.wrong{
-    border-color: var(--danger);
-    box-shadow: 0 0 0 4px var(--danger-soft), 0 8px 20px rgba(15,23,42,0.06);
-    animation: shake .4s ease;
+  .card.leaving.flipped{
+    transform: translateY(160px) rotate(6deg) rotateY(180deg);
   }
   .card.incoming{
     transform: translateY(28px);
     opacity:0;
   }
-  @keyframes shake{
-    0%,100%{ transform: translateX(0); }
-    20%{ transform: translateX(-6px); }
-    40%{ transform: translateX(5px); }
-    60%{ transform: translateX(-4px); }
-    80%{ transform: translateX(3px); }
-  }
-  .stamp{
-    position:absolute;
-    top:8px; right:10px;
-    font-size:12px;
-    font-weight:700;
-    padding:2px 8px;
-    border:2px solid currentColor;
-    border-radius:6px;
-    transform: rotate(6deg);
-    opacity:0;
-    transition:opacity .2s ease;
-  }
-  .stamp.show{ opacity:1; }
-  .stamp.ok{ color: var(--success); }
-  .stamp.no{ color: var(--danger); }
-  /* --- Feedback line --- */
+  /* --- Hint line --- */
   .feedback{
     min-height:34px;
     text-align:center;
     font-size:12px;
+    color: var(--muted);
     margin-bottom:10px;
     line-height:1.4;
   }
-  .feedback .entered{ color: var(--danger); font-weight:700; }
   .feedback .correct-ans{ color: var(--success); font-weight:700; }
-  /* --- Input row --- */
-  .input-row{
-    display:flex;
-    gap:8px;
-    min-width:0;
-  }
-  input[type=text]{
-    flex:1;
-    min-width:0;
-    padding:10px 12px;
-    font-size:14px;
-    border-radius:9px;
-    border:1px solid var(--border);
-    background: var(--panel-strong);
-    color: var(--text);
-  }
-  input[type=text]:focus{ outline:2px solid var(--accent); outline-offset:1px; }
-  input[type=text]:disabled{ opacity:.6; }
-  /* --- War on wrong theme --- */
-  .panel.war{
-    background: var(--panel-strong);
-    border-color: var(--accent-dark);
-  }
-  .panel.war h2, .panel.war .warlabel{ color: var(--text); }
-  .panel.war .hud{ color: var(--muted); }
-  .panel.war .progress-track{ background: var(--border); }
   .center-msg{
     text-align:center;
   }
@@ -485,21 +424,6 @@
   }
   .center-msg p{ color: var(--muted); font-size:13px; margin-bottom:14px; }
   .hidden{ display:none !important; }
-  .missed-list{
-    font-size:12px;
-    color: var(--muted);
-    text-align:center;
-    margin-bottom:12px;
-    line-height:1.7;
-  }
-  .missed-list span{
-    display:inline-block;
-    padding:2px 7px;
-    margin:2px;
-    border-radius:6px;
-    background: var(--danger-soft);
-    color: var(--danger);
-  }
 </style>
 </head>
 <body>
@@ -516,13 +440,13 @@
         <button type="button" class="script-tab" data-script="kanji">Kanji · N5</button>
       </div>
       <div class="mode-toggle" id="modeToggle">
-        <button type="button" class="mode-btn active" data-mode="forward">
-          <span class="mode-main">Hiragana → Romaji</span>
-          <span class="mode-sub">See the character, type the reading</span>
-        </button>
-        <button type="button" class="mode-btn" data-mode="reverse">
+        <button type="button" class="mode-btn active" data-mode="reverse">
           <span class="mode-main">Telugu → Hiragana</span>
-          <span class="mode-sub">See Telugu, pick the match</span>
+          <span class="mode-sub">See Telugu, reveal the character</span>
+        </button>
+        <button type="button" class="mode-btn" data-mode="forward">
+          <span class="mode-main">Hiragana → Romaji</span>
+          <span class="mode-sub">See the character, reveal the reading</span>
         </button>
       </div>
       <div id="kanaChartWrap">
@@ -542,82 +466,41 @@
     </div>
   </div>
 
-  <!-- SCREEN: QUIZ (main deck) -->
+  <!-- SCREEN: QUIZ (flip-card deck) -->
   <div id="screen-quiz" class="hidden">
-    <div class="eyebrow">Main Deck</div>
+    <div class="eyebrow">Flashcard Deck</div>
     <h1 id="quizTitle">Hiragana Flashcards</h1>
-    <div class="sub" id="quizSub">Type the reading, then press Enter</div>
+    <div class="sub" id="quizSub">Listen to the Telugu, then tap the card to reveal</div>
     <div class="panel">
       <div class="hud">
         <span id="hudCount">Card 1 / 10</span>
-        <span class="tag" id="hudMastered">Mastered 0</span>
-        <span class="tag miss" id="hudMissed">Missed 0</span>
       </div>
       <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       <div class="card-wrap">
         <div class="card" id="card">
-          <span class="stamp" id="stamp"></span>
-          <span class="kana" id="kanaChar">あ</span>
+          <div class="card-face card-front">
+            <span class="kana telugu-front" id="kanaChar">అ</span>
+          </div>
+          <div class="card-face card-back">
+            <span class="kana" id="revealChar">あ</span>
+            <span class="reveal-romaji" id="revealRomaji">a</span>
+          </div>
         </div>
       </div>
-      <div class="feedback" id="feedback"></div>
-      <div class="input-row" id="inputRow">
-        <input type="text" id="answerInput" placeholder="Type romaji and press Enter" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="choice-row hidden" id="choiceRow"></div>
+      <div class="feedback" id="feedback">Tap the card to reveal the answer</div>
     </div>
   </div>
 
   <!-- SCREEN: MAIN DECK RESULT -->
   <div id="screen-result" class="hidden">
-    <div class="eyebrow">Round Complete</div>
-    <h1>Deck cleared</h1>
+    <div class="eyebrow">Deck Complete</div>
+    <h1>Deck reviewed</h1>
     <div class="panel">
       <div class="center-msg">
-        <div class="big" id="resultBig">Round complete</div>
+        <div class="big" id="resultBig">Deck reviewed</div>
         <p id="resultSub"></p>
       </div>
-      <div class="missed-list" id="missedList"></div>
-      <button class="primary hidden" id="warBtn">Start WarOnWrong</button>
       <button class="ghost" id="restartBtn">Choose a new range</button>
-    </div>
-  </div>
-
-  <!-- SCREEN: WAR ON WRONG -->
-  <div id="screen-war" class="hidden">
-    <div class="eyebrow" style="color:#b8ade0;">WarOnWrong</div>
-    <h1 style="color:#f2ece0;">Clear the queue</h1>
-    <div class="sub" style="color:#a89fc4;">Every miss goes back in line — survive the rotation</div>
-    <div class="panel war">
-      <div class="hud">
-        <span id="warHud">Queue: 8 remaining</span>
-        <span class="tag" id="warCleared">Cleared 0</span>
-      </div>
-      <div class="progress-track"><div class="progress-fill" id="warProgressFill" style="width:0%"></div></div>
-      <div class="card-wrap">
-        <div class="card" id="warCard">
-          <span class="stamp" id="warStamp"></span>
-          <span class="kana" id="warKanaChar">そ</span>
-        </div>
-      </div>
-      <div class="feedback" id="warFeedback"></div>
-      <div class="input-row" id="warInputRow">
-        <input type="text" id="warInput" placeholder="Type romaji and press Enter" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="choice-row hidden" id="warChoiceRow"></div>
-    </div>
-  </div>
-
-  <!-- SCREEN: WAR ON WRONG WIN -->
-  <div id="screen-war-win" class="hidden">
-    <div class="eyebrow">WarOnWrong</div>
-    <h1>Queue cleared</h1>
-    <div class="panel">
-      <div class="center-msg">
-        <div class="big">All clear!</div>
-        <p>Every card that gave you trouble has now been answered correctly. Nothing left in the queue.</p>
-      </div>
-      <button class="primary" id="newRoundBtn">Choose a new range</button>
     </div>
   </div>
 
@@ -672,14 +555,6 @@ const SECTIONS = [
 
 const CHAR_MAP = new Map();
 SECTIONS.forEach(sec => sec.chars.forEach(c => CHAR_MAP.set(c.k, c)));
-
-function isCorrect(entry, guess){
-  const g = guess.trim().toLowerCase();
-  if(!g) return false;
-  if(g === entry.r) return true;
-  if(entry.alt && entry.alt.includes(g)) return true;
-  return false;
-}
 
 function shuffle(arr){
   const a = [...arr];
@@ -993,8 +868,8 @@ scriptTabs.querySelectorAll('.script-tab').forEach(btn => {
   });
 });
 
-// ---------- Mode toggle: forward (character -> romaji typing) vs reverse (Telugu -> character choice) ----------
-let quizMode = 'forward';
+// ---------- Mode toggle: reverse (Telugu -> character) vs forward (character -> romaji) ----------
+let quizMode = 'reverse';
 const modeToggle = document.getElementById('modeToggle');
 modeToggle.querySelectorAll('.mode-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1002,35 +877,6 @@ modeToggle.querySelectorAll('.mode-btn').forEach(btn => {
     modeToggle.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
   });
 });
-
-function buildChoices(entry, pool, fallbackDeck){
-  const seen = new Set([entry.k]);
-  const candidates = pool.filter(e => {
-    if(seen.has(e.k)) return false;
-    seen.add(e.k);
-    return true;
-  });
-  let distractors = shuffle(candidates).slice(0, 3);
-  if(distractors.length < 3){
-    const usedKeys = new Set([entry.k, ...distractors.map(d => d.k)]);
-    const source = fallbackDeck || pool;
-    const extra = shuffle(source.filter(e => !usedKeys.has(e.k))).slice(0, 3 - distractors.length);
-    distractors = distractors.concat(extra);
-  }
-  return shuffle([entry, ...distractors]);
-}
-
-function renderChoiceButtons(entry, pool, container, onSelect, fallbackDeck){
-  container.innerHTML = '';
-  buildChoices(entry, pool, fallbackDeck).forEach(opt => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'choice-btn';
-    btn.textContent = opt.k;
-    btn.addEventListener('click', () => onSelect(opt, btn, container));
-    container.appendChild(btn);
-  });
-}
 
 // ---------- Setup screen: range selection ----------
 const rangePreview = document.getElementById('rangePreview');
@@ -1060,213 +906,139 @@ const screens = {
   setup: document.getElementById('screen-setup'),
   quiz: document.getElementById('screen-quiz'),
   result: document.getElementById('screen-result'),
-  war: document.getElementById('screen-war'),
-  warWin: document.getElementById('screen-war-win'),
 };
 function show(name){
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
 }
 
-// ---------- Main quiz state ----------
+// ---------- Read-aloud: Telugu (reverse mode) or Japanese (forward mode) ----------
+let teluguVoice = null;
+let japaneseVoice = null;
+function pickSpeechVoices(){
+  if(!('speechSynthesis' in window)) return;
+  const voices = window.speechSynthesis.getVoices();
+  teluguVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('te')) || null;
+  japaneseVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ja')) || null;
+}
+if('speechSynthesis' in window){
+  pickSpeechVoices();
+  window.speechSynthesis.onvoiceschanged = pickSpeechVoices;
+}
+function speakText(text, lang, voice){
+  if(!text || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang;
+  if(voice) utter.voice = voice;
+  utter.rate = 0.9;
+  window.speechSynthesis.speak(utter);
+}
+function speakTelugu(text){ speakText(text, 'te-IN', teluguVoice); }
+function speakJapanese(text){ speakText(text, 'ja-JP', japaneseVoice); }
+
+// ---------- Main deck: flip-card review ----------
+// Reverse mode fronts with the Telugu symbol; forward mode fronts with the
+// Hiragana/Katakana/Kanji character — either way the front is read aloud
+// automatically, tapping the card flips it to reveal the answer, and the next
+// card loads on its own shortly after.
 let mainDeck = [];
 let mainIndex = 0;
-let mastered = 0;
-let wrongEntries = []; // {entry, wrongGuess} - unique entries (by kana) that were ever missed
-let wrongSet = new Set(); // kana chars already added to wrongEntries
-let awaitingNext = false;
+let flipped = false;
+let advanceTimer = null;
 
 const cardEl = document.getElementById('card');
 const kanaCharEl = document.getElementById('kanaChar');
-const stampEl = document.getElementById('stamp');
+const revealCharEl = document.getElementById('revealChar');
+const revealRomajiEl = document.getElementById('revealRomaji');
 const feedbackEl = document.getElementById('feedback');
-const answerInput = document.getElementById('answerInput');
-const inputRow = document.getElementById('inputRow');
-const choiceRow = document.getElementById('choiceRow');
 const quizSub = document.getElementById('quizSub');
 const hudCount = document.getElementById('hudCount');
-const hudMastered = document.getElementById('hudMastered');
-const hudMissed = document.getElementById('hudMissed');
 const progressFill = document.getElementById('progressFill');
 
 function startMainQuiz(){
   mainIndex = 0;
-  mastered = 0;
-  wrongEntries = [];
-  wrongSet = new Set();
   document.getElementById('quizTitle').textContent = `${SCRIPTS[activeScript].label} Flashcards`;
   quizSub.textContent = quizMode === 'reverse'
-    ? 'See the Telugu, tap the matching character'
-    : 'Type the reading, then press Enter';
+    ? 'Listen to the Telugu, then tap the card to reveal'
+    : 'Look at the character, then tap the card to reveal the reading';
   show('quiz');
   renderMainCard(false);
 }
 
 function renderMainCard(animateIn){
+  clearTimeout(advanceTimer);
   const entry = mainDeck[mainIndex];
+  flipped = false;
   cardEl.className = 'card' + (animateIn ? ' incoming' : '');
-  stampEl.className = 'stamp';
-  stampEl.textContent = '';
-  feedbackEl.innerHTML = '&nbsp;';
-  awaitingNext = false;
+  feedbackEl.textContent = 'Tap the card to reveal the answer';
 
   if(quizMode === 'reverse'){
     kanaCharEl.textContent = entry.t;
-    kanaCharEl.classList.remove('wide');
     kanaCharEl.classList.add('telugu-front');
     kanaCharEl.classList.toggle('wide', entry.t.length >= 3);
-    inputRow.classList.add('hidden');
-    choiceRow.classList.remove('hidden');
-    renderChoiceButtons(entry, mainDeck, choiceRow, handleMainChoice, SCRIPTS[activeScript].deck);
+    revealCharEl.textContent = entry.k;
+    revealCharEl.classList.remove('romaji-reveal');
+    revealCharEl.classList.toggle('wide', entry.k.length > 1);
+    revealRomajiEl.textContent = entry.r;
+    speakTelugu(entry.t);
   } else {
     kanaCharEl.textContent = entry.k;
     kanaCharEl.classList.remove('telugu-front');
+    kanaCharEl.classList.remove('wide');
     kanaCharEl.classList.toggle('wide', entry.k.length > 1);
-    inputRow.classList.remove('hidden');
-    choiceRow.classList.add('hidden');
-    answerInput.value = '';
-    answerInput.disabled = false;
-    answerInput.focus();
+    revealCharEl.textContent = entry.r;
+    revealCharEl.classList.remove('wide');
+    revealCharEl.classList.add('romaji-reveal');
+    revealRomajiEl.textContent = entry.t;
+    speakJapanese(entry.k);
   }
 
   hudCount.textContent = `Card ${mainIndex+1} / ${mainDeck.length}`;
-  hudMastered.textContent = `Mastered ${mastered}`;
-  hudMissed.textContent = `Missed ${wrongEntries.length}`;
   progressFill.style.width = `${(mainIndex/mainDeck.length)*100}%`;
 
   if(animateIn){
-    requestAnimationFrame(() => {
-      cardEl.classList.remove('incoming');
-    });
+    requestAnimationFrame(() => cardEl.classList.remove('incoming'));
   }
 }
 
-function handleMainChoice(selected, btnEl, container){
-  if(awaitingNext){
+function handleCardTap(){
+  if(flipped){
+    clearTimeout(advanceTimer);
     advanceMain();
     return;
   }
+  flipped = true;
+  cardEl.classList.add('flipped');
   const entry = mainDeck[mainIndex];
-  const buttons = [...container.querySelectorAll('.choice-btn')];
-  buttons.forEach(b => b.disabled = true);
-
-  if(selected.k === entry.k){
-    btnEl.classList.add('correct-choice');
-    mastered++;
-    cardEl.classList.add('correct');
-    stampEl.classList.add('show', 'ok');
-    stampEl.textContent = 'Correct';
-    feedbackEl.innerHTML = `<span class="correct-ans">Correct — ${entry.t} is “${entry.k}” (${entry.r})</span>`;
-    hudMastered.textContent = `Mastered ${mastered}`;
-    setTimeout(() => {
-      cardEl.classList.add('leaving');
-      setTimeout(() => {
-        mainIndex++;
-        if(mainIndex >= mainDeck.length){
-          finishMainDeck();
-        } else {
-          renderMainCard(true);
-        }
-      }, 420);
-    }, 500);
-  } else {
-    btnEl.classList.add('wrong-choice');
-    const correctBtn = buttons.find(b => b.textContent === entry.k);
-    if(correctBtn) correctBtn.classList.add('correct-choice');
-    if(!wrongSet.has(entry.k)){
-      wrongSet.add(entry.k);
-      wrongEntries.push(entry);
-    }
-    cardEl.classList.add('wrong');
-    stampEl.classList.add('show', 'no');
-    stampEl.textContent = 'Wrong';
-    feedbackEl.innerHTML = `You chose <span class="entered">${selected.k}</span> — this one is <span class="correct-ans">${entry.k} (${entry.r})</span>. Tap any option or press Enter to continue.`;
-    hudMissed.textContent = `Missed ${wrongEntries.length}`;
-    awaitingNext = true;
-    buttons.forEach(b => b.disabled = false);
-  }
+  feedbackEl.innerHTML = quizMode === 'reverse'
+    ? `<span class="correct-ans">${entry.t} is “${entry.k}” (${entry.r})</span>`
+    : `<span class="correct-ans">${entry.k} is “${entry.r}” (${entry.t})</span>`;
+  advanceTimer = setTimeout(advanceMain, 1400);
 }
 
-function handleMainSubmit(){
-  if(awaitingNext){
-    advanceMain();
-    return;
-  }
-  const entry = mainDeck[mainIndex];
-  const guess = answerInput.value;
-
-  if(isCorrect(entry, guess)){
-    answerInput.disabled = true;
-    mastered++;
-    cardEl.classList.add('correct');
-    stampEl.classList.add('show', 'ok');
-    stampEl.textContent = 'Correct';
-    feedbackEl.innerHTML = `<span class="correct-ans">Correct — ${entry.k} is “${entry.r}” (${entry.t})</span>`;
-    hudMastered.textContent = `Mastered ${mastered}`;
-    setTimeout(() => {
-      cardEl.classList.add('leaving');
-      setTimeout(() => {
-        mainIndex++;
-        if(mainIndex >= mainDeck.length){
-          finishMainDeck();
-        } else {
-          renderMainCard(true);
-        }
-      }, 420);
-    }, 500);
-  } else {
-    if(!wrongSet.has(entry.k)){
-      wrongSet.add(entry.k);
-      wrongEntries.push(entry);
-    }
-    cardEl.classList.add('wrong');
-    stampEl.classList.add('show', 'no');
-    stampEl.textContent = 'Wrong';
-    feedbackEl.innerHTML = `You entered <span class="entered">“${guess.trim() || '(blank)'}”</span> — this one is <span class="correct-ans">${entry.k} (${entry.r} / ${entry.t})</span>. Press Enter to continue.`;
-    hudMissed.textContent = `Missed ${wrongEntries.length}`;
-    awaitingNext = true;
-    answerInput.select();
-    answerInput.focus();
-  }
-}
+cardEl.addEventListener('click', handleCardTap);
 
 function advanceMain(){
-  mainIndex++;
-  if(mainIndex >= mainDeck.length){
-    finishMainDeck();
-  } else {
-    renderMainCard(true);
-  }
+  clearTimeout(advanceTimer);
+  cardEl.classList.add('leaving');
+  setTimeout(() => {
+    mainIndex++;
+    if(mainIndex >= mainDeck.length){
+      finishMainDeck();
+    } else {
+      renderMainCard(true);
+    }
+  }, 420);
 }
-
-answerInput.addEventListener('keydown', (e) => {
-  if(e.key === 'Enter') handleMainSubmit();
-});
 
 function finishMainDeck(){
   show('result');
-  const total = mainDeck.length;
-  const resultBig = document.getElementById('resultBig');
   const resultSub = document.getElementById('resultSub');
-  const missedListEl = document.getElementById('missedList');
-  const warBtn = document.getElementById('warBtn');
-
-  if(wrongEntries.length === 0){
-    resultBig.textContent = 'Perfect!';
-    resultSub.textContent = `Perfect run — all ${total} cards claimed on the first try.`;
-    missedListEl.innerHTML = '';
-    warBtn.classList.add('hidden');
-  } else {
-    resultBig.textContent = 'Deck complete';
-    resultSub.textContent = `${mastered}/${total} correct on the first try. ${wrongEntries.length} card(s) tripped you up — time for WarOnWrong.`;
-    missedListEl.innerHTML = wrongEntries.map(e => `<span>${e.k} (${e.r} / ${e.t})</span>`).join('');
-    warBtn.classList.remove('hidden');
-  }
+  resultSub.textContent = `Reviewed all ${mainDeck.length} card(s) in this range.`;
 }
 
-document.getElementById('warBtn').addEventListener('click', startWarOnWrong);
 document.getElementById('restartBtn').addEventListener('click', resetToSetup);
-document.getElementById('newRoundBtn').addEventListener('click', resetToSetup);
 
 function resetToSetup(){
   selectedEnd = -1;
@@ -1276,169 +1048,6 @@ function resetToSetup(){
     cell.classList.remove('in-range', 'selected');
   });
   show('setup');
-}
-
-// ---------- WarOnWrong state ----------
-let warQueue = [];
-let warTotal = 0;
-let warCleared = 0;
-let warAwaitingNext = false;
-
-const warCardEl = document.getElementById('warCard');
-const warKanaCharEl = document.getElementById('warKanaChar');
-const warStampEl = document.getElementById('warStamp');
-const warFeedbackEl = document.getElementById('warFeedback');
-const warInput = document.getElementById('warInput');
-const warInputRow = document.getElementById('warInputRow');
-const warChoiceRow = document.getElementById('warChoiceRow');
-const warHud = document.getElementById('warHud');
-const warClearedEl = document.getElementById('warCleared');
-const warProgressFill = document.getElementById('warProgressFill');
-
-function startWarOnWrong(){
-  warQueue = shuffle(wrongEntries); // rotating queue, front = index 0
-  warTotal = warQueue.length;
-  warCleared = 0;
-  show('war');
-  renderWarCard(false);
-}
-
-function renderWarCard(animateIn){
-  const entry = warQueue[0];
-  warCardEl.className = 'card' + (animateIn ? ' incoming' : '');
-  warStampEl.className = 'stamp';
-  warStampEl.textContent = '';
-  warFeedbackEl.innerHTML = '&nbsp;';
-  warAwaitingNext = false;
-
-  if(quizMode === 'reverse'){
-    warKanaCharEl.textContent = entry.t;
-    warKanaCharEl.classList.remove('wide');
-    warKanaCharEl.classList.add('telugu-front');
-    warKanaCharEl.classList.toggle('wide', entry.t.length >= 3);
-    warInputRow.classList.add('hidden');
-    warChoiceRow.classList.remove('hidden');
-    renderChoiceButtons(entry, mainDeck, warChoiceRow, handleWarChoice, SCRIPTS[activeScript].deck);
-  } else {
-    warKanaCharEl.textContent = entry.k;
-    warKanaCharEl.classList.remove('telugu-front');
-    warKanaCharEl.classList.toggle('wide', entry.k.length > 1);
-    warInputRow.classList.remove('hidden');
-    warChoiceRow.classList.add('hidden');
-    warInput.value = '';
-    warInput.disabled = false;
-    warInput.focus();
-  }
-
-  warHud.textContent = `Queue: ${warQueue.length} remaining`;
-  warClearedEl.textContent = `Cleared ${warCleared}/${warTotal}`;
-  warProgressFill.style.width = `${(warCleared/warTotal)*100}%`;
-
-  if(animateIn){
-    requestAnimationFrame(() => warCardEl.classList.remove('incoming'));
-  }
-}
-
-function handleWarChoice(selected, btnEl, container){
-  if(warAwaitingNext){
-    advanceWar();
-    return;
-  }
-  const entry = warQueue[0];
-  const buttons = [...container.querySelectorAll('.choice-btn')];
-  buttons.forEach(b => b.disabled = true);
-
-  if(selected.k === entry.k){
-    btnEl.classList.add('correct-choice');
-    warCleared++;
-    warCardEl.classList.add('correct');
-    warStampEl.classList.add('show', 'ok');
-    warStampEl.textContent = 'Correct';
-    warFeedbackEl.innerHTML = `<span class="correct-ans">Correct — ${entry.t} is “${entry.k}” (${entry.r})</span>`;
-    warClearedEl.textContent = `Cleared ${warCleared}/${warTotal}`;
-    setTimeout(() => {
-      warCardEl.classList.add('leaving');
-      setTimeout(() => {
-        warQueue.shift();
-        if(warQueue.length === 0){
-          finishWarOnWrong();
-        } else {
-          renderWarCard(true);
-        }
-      }, 420);
-    }, 500);
-  } else {
-    btnEl.classList.add('wrong-choice');
-    const correctBtn = buttons.find(b => b.textContent === entry.k);
-    if(correctBtn) correctBtn.classList.add('correct-choice');
-    warFeedbackEl.innerHTML = `You chose <span class="entered">${selected.k}</span> — this one is <span class="correct-ans">${entry.k} (${entry.r})</span>. Tap any option or press Enter — back of the queue.`;
-    warAwaitingNext = true;
-    buttons.forEach(b => b.disabled = false);
-  }
-}
-
-function handleWarSubmit(){
-  if(warAwaitingNext){
-    advanceWar();
-    return;
-  }
-  const entry = warQueue[0];
-  const guess = warInput.value;
-
-  if(isCorrect(entry, guess)){
-    warInput.disabled = true;
-    warCleared++;
-    warCardEl.classList.add('correct');
-    warStampEl.classList.add('show', 'ok');
-    warStampEl.textContent = 'Correct';
-    warFeedbackEl.innerHTML = `<span class="correct-ans">Correct — ${entry.k} is “${entry.r}” (${entry.t})</span>`;
-    warClearedEl.textContent = `Cleared ${warCleared}/${warTotal}`;
-    setTimeout(() => {
-      warCardEl.classList.add('leaving');
-      setTimeout(() => {
-        warQueue.shift(); // remove from front — mastered
-        if(warQueue.length === 0){
-          finishWarOnWrong();
-        } else {
-          renderWarCard(true);
-        }
-      }, 420);
-    }, 500);
-  } else {
-    warCardEl.classList.add('wrong');
-    warStampEl.classList.add('show', 'no');
-    warStampEl.textContent = 'Wrong';
-    warFeedbackEl.innerHTML = `You entered <span class="entered">“${guess.trim() || '(blank)'}”</span> — this one is <span class="correct-ans">${entry.k} (${entry.r} / ${entry.t})</span>. Press Enter to continue — back of the queue.`;
-    warAwaitingNext = true;
-    warInput.select();
-    warInput.focus();
-  }
-}
-
-function advanceWar(){
-  // move the missed card to the back of the queue, re-iterate
-  const missed = warQueue.shift();
-  warQueue.push(missed);
-  renderWarCard(true);
-}
-
-warInput.addEventListener('keydown', (e) => {
-  if(e.key === 'Enter') handleWarSubmit();
-});
-
-// Reverse mode has no focused text input, so Enter needs a document-level listener
-// to advance past a wrong choice (same "just press Enter" behavior as forward mode).
-document.addEventListener('keydown', (e) => {
-  if(e.key !== 'Enter' || quizMode !== 'reverse') return;
-  if(!screens.quiz.classList.contains('hidden') && awaitingNext){
-    advanceMain();
-  } else if(!screens.war.classList.contains('hidden') && warAwaitingNext){
-    advanceWar();
-  }
-});
-
-function finishWarOnWrong(){
-  show('warWin');
 }
 
 // ---------- Initial render + deep-link entry point ----------
