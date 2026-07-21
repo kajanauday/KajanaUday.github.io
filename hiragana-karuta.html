@@ -252,6 +252,29 @@
     margin-bottom:12px;
     min-height:16px;
   }
+  .timer-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+    font-size:12px;
+    color: var(--text);
+  }
+  .timer-row label{
+    margin-bottom:0;
+    flex:1;
+    min-width:0;
+  }
+  .timer-row input[type=range]{
+    flex:1.4;
+    accent-color: var(--accent);
+  }
+  .timer-row .timer-value{
+    font-weight:700;
+    color: var(--accent);
+    min-width:26px;
+    text-align:right;
+  }
   .mode-toggle{
     display:flex;
     gap:5px;
@@ -462,6 +485,11 @@
         <div id="kanjiSections"></div>
       </div>
       <div class="range-preview" id="rangePreview">Pick a character to begin</div>
+      <div class="timer-row">
+        <label for="cardTimerRange">Auto-advance if untouched</label>
+        <input type="range" id="cardTimerRange" min="1" max="10" step="1" value="5">
+        <span class="timer-value" id="cardTimerValue">5s</span>
+      </div>
       <button class="primary" id="startBtn" disabled>Start quiz</button>
     </div>
   </div>
@@ -878,6 +906,16 @@ modeToggle.querySelectorAll('.mode-btn').forEach(btn => {
   });
 });
 
+// ---------- Card auto-advance timer: how long a card waits, untouched, before
+// it auto-reveals and moves on — user-selectable from 1 to 10 seconds. ----------
+const cardTimerRange = document.getElementById('cardTimerRange');
+const cardTimerValue = document.getElementById('cardTimerValue');
+let cardDurationSeconds = parseInt(cardTimerRange.value, 10);
+cardTimerRange.addEventListener('input', () => {
+  cardDurationSeconds = parseInt(cardTimerRange.value, 10);
+  cardTimerValue.textContent = `${cardDurationSeconds}s`;
+});
+
 // ---------- Setup screen: range selection ----------
 const rangePreview = document.getElementById('rangePreview');
 const startBtn = document.getElementById('startBtn');
@@ -946,6 +984,7 @@ let mainDeck = [];
 let mainIndex = 0;
 let flipped = false;
 let advanceTimer = null;
+let autoRevealTimer = null;
 
 const cardEl = document.getElementById('card');
 const kanaCharEl = document.getElementById('kanaChar');
@@ -959,15 +998,17 @@ const progressFill = document.getElementById('progressFill');
 function startMainQuiz(){
   mainIndex = 0;
   document.getElementById('quizTitle').textContent = `${SCRIPTS[activeScript].label} Flashcards`;
-  quizSub.textContent = quizMode === 'reverse'
+  const baseSub = quizMode === 'reverse'
     ? 'Listen to the Telugu, then tap the card to reveal'
     : 'Look at the character, then tap the card to reveal the reading';
+  quizSub.textContent = `${baseSub} — auto-reveals after ${cardDurationSeconds}s if untouched`;
   show('quiz');
   renderMainCard(false);
 }
 
 function renderMainCard(animateIn){
   clearTimeout(advanceTimer);
+  clearTimeout(autoRevealTimer);
   const entry = mainDeck[mainIndex];
   flipped = false;
   cardEl.className = 'card' + (animateIn ? ' incoming' : '');
@@ -997,12 +1038,19 @@ function renderMainCard(animateIn){
   hudCount.textContent = `Card ${mainIndex+1} / ${mainDeck.length}`;
   progressFill.style.width = `${(mainIndex/mainDeck.length)*100}%`;
 
+  // If the card sits untouched for the selected duration, auto-reveal it —
+  // same as a manual tap — so the deck keeps moving on its own.
+  autoRevealTimer = setTimeout(() => {
+    if(!flipped) handleCardTap();
+  }, cardDurationSeconds * 1000);
+
   if(animateIn){
     requestAnimationFrame(() => cardEl.classList.remove('incoming'));
   }
 }
 
 function handleCardTap(){
+  clearTimeout(autoRevealTimer);
   if(flipped){
     clearTimeout(advanceTimer);
     advanceMain();
@@ -1021,6 +1069,7 @@ cardEl.addEventListener('click', handleCardTap);
 
 function advanceMain(){
   clearTimeout(advanceTimer);
+  clearTimeout(autoRevealTimer);
   cardEl.classList.add('leaving');
   setTimeout(() => {
     mainIndex++;
@@ -1041,6 +1090,8 @@ function finishMainDeck(){
 document.getElementById('restartBtn').addEventListener('click', resetToSetup);
 
 function resetToSetup(){
+  clearTimeout(advanceTimer);
+  clearTimeout(autoRevealTimer);
   selectedEnd = -1;
   startBtn.disabled = true;
   rangePreview.textContent = 'Pick a character to begin';
