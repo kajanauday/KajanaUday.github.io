@@ -290,6 +290,8 @@
         </label>
       </div>
 
+      <datalist id="card-section-options"></datalist>
+
       <div id="quiz-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
         <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
           <div class="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
@@ -959,12 +961,17 @@
     }
 
     // Turns a card in place into three inline text fields (word, pronunciation,
-    // meaning) plus save/delete/clear controls — the clear/delete icons match
-    // the quick-add panel's exactly. Editing happens directly on the field the
-    // user wants to change; Save persists all three, Clear exits without saving.
+    // meaning) plus move/save/delete/clear controls — the clear/delete icons
+    // match the quick-add panel's exactly. Editing happens directly on the
+    // field the user wants to change; Save persists all three, Clear exits
+    // without saving, and Move swaps in a section picker (see below).
     function enterCardEditMode(card, entry) {
       if (card.dataset.editing === '1') return;
       card.dataset.editing = '1';
+      renderCardEditFields(card, entry);
+    }
+
+    function renderCardEditFields(card, entry) {
       card.innerHTML = `
         <div class="min-w-0 flex-1 flex items-center gap-2">
           <input type="text" data-field="word" value="${escapeHtml(entry.word)}" class="min-w-0 w-[100px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
@@ -972,6 +979,9 @@
           <input type="text" data-field="englishMeaning" value="${escapeHtml(entry.englishMeaning || '')}" class="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-600 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300" />
         </div>
         <div class="flex shrink-0 items-center gap-1">
+          <button type="button" data-card-move title="Move to another section" class="rounded p-1 text-blue-500 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"/></svg>
+          </button>
           <button type="button" data-card-save title="Save" class="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
           </button>
@@ -988,6 +998,10 @@
         input.addEventListener('click', (event) => event.stopPropagation());
         input.addEventListener('dblclick', (event) => event.stopPropagation());
       });
+      card.querySelector('[data-card-move]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        renderCardSectionPicker(card, entry);
+      });
       card.querySelector('[data-card-clear]').addEventListener('click', (event) => {
         event.stopPropagation();
         exitCardEditMode(card, entry);
@@ -1000,6 +1014,88 @@
         event.stopPropagation();
         saveCardEdits(card, entry);
       });
+    }
+
+    // Swaps the card's fields row for a single section input (autocompleted
+    // against existing sections via the shared datalist) plus confirm/back
+    // controls — an arrow pair to mirror the move button that opened it.
+    function renderCardSectionPicker(card, entry) {
+      card.innerHTML = `
+        <div class="min-w-0 flex-1 flex items-center gap-2">
+          <input type="text" data-field="section" value="${escapeHtml(entry.section)}" list="card-section-options" placeholder="Section" class="min-w-0 flex-1 rounded-md border border-blue-300 bg-white px-1.5 py-1 text-sm font-medium text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-blue-700 dark:bg-slate-900 dark:text-slate-100" />
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <button type="button" data-card-move-confirm title="Move here" class="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          </button>
+          <button type="button" data-card-move-back title="Back" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59a.75.75 0 01.75.75z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+      `;
+
+      const datalist = document.getElementById('card-section-options');
+      datalist.innerHTML = getDistinctSections().map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
+
+      const sectionField = card.querySelector('[data-field="section"]');
+      sectionField.addEventListener('click', (event) => event.stopPropagation());
+      sectionField.addEventListener('dblclick', (event) => event.stopPropagation());
+      sectionField.addEventListener('input', () => {
+        const cursor = sectionField.selectionStart;
+        const upper = sectionField.value.toUpperCase();
+        if (upper !== sectionField.value) {
+          sectionField.value = upper;
+          sectionField.setSelectionRange(cursor, cursor);
+        }
+      });
+      sectionField.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          confirmCardMove(card, entry, sectionField.value);
+        } else if (event.key === 'Escape') {
+          renderCardEditFields(card, entry);
+        }
+      });
+      sectionField.focus();
+      sectionField.select();
+
+      card.querySelector('[data-card-move-confirm]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        confirmCardMove(card, entry, sectionField.value);
+      });
+      card.querySelector('[data-card-move-back]').addEventListener('click', (event) => {
+        event.stopPropagation();
+        renderCardEditFields(card, entry);
+      });
+    }
+
+    async function confirmCardMove(card, entry, rawSection) {
+      const section = (rawSection || '').trim().toUpperCase() || 'UNCATEGORIZED';
+      if (section === entry.section) {
+        renderCardEditFields(card, entry);
+        return;
+      }
+      try {
+        const snapshot = await wordsRef.child(state.language).child(entry.section).child(entry.id).once('value');
+        const data = snapshot.val();
+        if (data) {
+          await database.ref().update({
+            [`words/${state.language}/${entry.section}/${entry.id}`]: null,
+            [`words/${state.language}/${section}/${entry.id}`]: data
+          });
+          await Promise.all([
+            bumpSectionCount(state.language, entry.section, -1),
+            bumpSectionCount(state.language, section, 1)
+          ]);
+          entry.section = section;
+        }
+      } catch (err) {
+        console.error('Failed to move word to new section', err);
+        window.alert('Failed to move word. See console for details.');
+        return;
+      }
+      exitCardEditMode(card, entry);
     }
 
     function exitCardEditMode(card, entry) {
