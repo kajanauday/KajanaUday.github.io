@@ -29,6 +29,7 @@
       --body-grad-1: #f8fbff;
       --body-grad-2: #eef4ff;
       --glass-bg: rgba(255, 255, 255, 0.92);
+      --hairline: rgba(15, 23, 42, 0.07);
     }
 
     :root.dark {
@@ -44,6 +45,7 @@
       --body-grad-1: #0f172a;
       --body-grad-2: #111c33;
       --glass-bg: rgba(15, 23, 42, 0.85);
+      --hairline: rgba(226, 232, 240, 0.09);
     }
 
     body {
@@ -59,16 +61,6 @@
       -webkit-backdrop-filter: blur(8px);
     }
 
-    .dict-card {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .dict-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-    }
-
     .pill {
       border: 1px solid var(--border);
       border-radius: 9999px;
@@ -78,17 +70,23 @@
       color: var(--muted);
     }
 
+    /* Word rows: no box, no shadow, no radius — just the faintest possible
+       divider between entries, so a section reads as one continuous list.
+       Deliberately much fainter than the section-to-section divider below
+       (var(--border)) so the two levels never get visually confused. The
+       word-list wrapper (not this class) carries the vertical rhythm; the
+       last row in a list has no line under it (nothing to separate it from). */
+    .word-list > .compact-card + .compact-card {
+      border-top: 1px solid var(--hairline);
+    }
+
     .compact-card {
-      padding: 0.45rem 0.6rem;
-      border-radius: 0.75rem;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+      padding: 0.4rem 0.1rem;
+      background: transparent;
     }
 
     .compact-card:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+      background: var(--panel-strong);
     }
 
     .meaning-inline {
@@ -134,6 +132,12 @@
       position: relative;
     }
 
+    .section-row-sub {
+      margin-left: 1rem;
+      padding-left: 0.6rem;
+      border-left: 2px solid var(--border);
+    }
+
     .section-group > summary {
       cursor: pointer;
       user-select: none;
@@ -143,9 +147,75 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--muted);
-      padding: 0.15rem 2.75rem 0.15rem 0;
+      padding: 0.15rem 3.75rem 0.15rem 0;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
+    }
+
+    /* The section "+" add box mounts here, right after the label, so typing a
+       word feels like a continuation of the header line rather than a new
+       control — no border/background of its own, just inherits the row. The
+       preview/clear panel floats below it instead, so it never disturbs the
+       header's height. Falls back to its own full-width line on narrow
+       screens, where an inline box would crowd the label and action icons. */
+    .section-add-widget {
+      display: flex;
+      position: relative;
+      align-items: center;
+      flex: 1 1 140px;
+      min-width: 0;
+      margin-left: 0.6rem;
+    }
+
+    .section-add-input {
+      width: 100%;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      outline: none;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.78rem;
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+      color: var(--text);
+      cursor: text;
+    }
+
+    .section-add-input::placeholder {
+      color: var(--muted);
+      text-transform: none;
+    }
+
+    .section-add-panel {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      z-index: 20;
+      margin-top: 0.3rem;
+      width: 18rem;
+      max-width: calc(100vw - 2rem);
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 0.5rem;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: normal;
+      text-transform: none;
+      cursor: auto;
+    }
+
+    @media (max-width: 480px) {
+      .section-add-widget {
+        flex-basis: 100%;
+        margin-left: 0;
+        margin-top: 0.3rem;
+      }
     }
 
     .section-group > summary::marker {
@@ -199,23 +269,7 @@
         </div>
 
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div class="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <select id="language-select" class="bg-transparent text-sm font-medium text-slate-900 outline-none dark:text-slate-100">
-              <option value="japanese">Japanese</option>
-              <option value="telugu">Telugu</option>
-              <option value="hindi">Hindi</option>
-              <option value="tamil">Tamil</option>
-              <option value="english">English</option>
-            </select>
-          </div>
-
           <div class="flex items-center gap-2">
-            <button id="search-toggle" type="button" class="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" title="Search">
-              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="6"></circle>
-                <path d="m20 20-4.2-4.2"></path>
-              </svg>
-            </button>
             <button id="quiz-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Quiz">✦</button>
             <button id="reading-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Read">▶</button>
             <button id="script-practice-button" type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" title="Japanese script practice">あ</button>
@@ -241,53 +295,41 @@
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-6">
-      <div class="mb-4 hidden" id="search-panel">
-        <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <svg class="h-4 w-4 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="6"></circle>
-            <path d="m20 20-4.2-4.2"></path>
-          </svg>
-          <input id="dictionary-search" type="search" placeholder="Search sections" class="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500" />
-        </label>
-      </div>
+    <main class="mx-auto max-w-7xl px-4 py-4 lg:px-6 lg:py-5">
+      <section>
+        <div class="flex items-center justify-end gap-2 border-b border-slate-200 pb-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">
+          <input id="section-filter-input" type="text" autocomplete="off" placeholder="Filter the sections" class="w-full max-w-[180px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 hover:bg-slate-100 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-200 dark:text-slate-200 dark:placeholder:text-slate-500 dark:hover:bg-slate-800 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-900" />
 
-      <section class="glass-card overflow-hidden rounded-3xl border border-slate-200 shadow-[0_10px_40px_rgba(15,23,42,0.06)] dark:border-slate-700">
-        <div class="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          <div class="flex items-center gap-2 shrink-0">
-            <button id="group-mode-toggle" type="button" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700" title="Toggle grouping">Group: Category</button>
+          <div class="flex shrink-0 items-center gap-2">
+            <span id="dictionary-count" class="text-xs text-slate-500 dark:text-slate-400">0 hidden | 0 visible</span>
+            <button id="hidden-toggle" type="button" class="flex items-center justify-center rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-700" title="Showing enabled sections — click to view hidden ones">
+              <svg id="hidden-toggle-icon" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path>
+                <path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"></path>
+              </svg>
+            </button>
           </div>
-
-          <div id="quick-add-container" class="hidden min-w-0 flex-1 items-center justify-center gap-2 px-2">
-            <div class="relative w-full max-w-[220px]">
-              <input id="quick-add-input" type="text" autocomplete="off" placeholder="Type a word…" class="w-full rounded-lg border border-transparent bg-transparent px-3 py-1.5 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 hover:bg-white/70 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-200 dark:text-slate-200 dark:placeholder:text-slate-500 dark:hover:bg-slate-900/50 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-900" />
-              <div id="quick-add-panel" class="hidden absolute left-0 top-full z-20 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-600 dark:bg-slate-800">
-                <div class="flex items-start gap-2">
-                  <div id="quick-add-preview-rows" class="min-w-0 flex-1 space-y-1"></div>
-                  <div class="flex shrink-0 items-center gap-1">
-                    <button id="quick-add-clear-btn" type="button" title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
-                      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
-                    </button>
-                  </div>
-                </div>
-                <div id="quick-add-category-slot" class="mt-2 hidden"></div>
-              </div>
-            </div>
-          </div>
-
-          <span id="dictionary-count" class="shrink-0 rounded-full bg-white px-3 py-1 text-xs text-slate-500 dark:bg-slate-900 dark:text-slate-400">0 entries</span>
         </div>
 
-        <div class="max-h-[520px] overflow-y-auto p-3">
+        <div class="max-h-[520px] overflow-y-auto py-2">
           <div id="dictionary-list" class="space-y-2"></div>
         </div>
       </section>
 
-      <div id="section-input-home" class="hidden">
-        <label class="relative block">
-          <input id="section-input" type="text" autocomplete="off" placeholder="Category" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-400 dark:focus:ring-blue-900" />
-          <div id="section-dropdown" class="hidden absolute left-0 right-0 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-800"></div>
-        </label>
+      <div id="section-add-home" class="hidden">
+        <div id="section-add-widget" class="section-add-widget">
+          <input id="section-add-input" type="text" autocomplete="off" placeholder="Type a word…" class="section-add-input" />
+          <div id="section-add-panel" class="hidden section-add-panel">
+            <div class="flex items-start gap-2">
+              <div id="section-add-preview-rows" class="min-w-0 flex-1 space-y-1"></div>
+              <div class="flex shrink-0 items-center gap-1">
+                <button id="section-add-clear-btn" type="button" title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
+                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <datalist id="card-section-options"></datalist>
@@ -390,32 +432,25 @@
     
 
     const languageConfig = {
-      japanese: { label: 'Japanese' },
-      telugu: { label: 'Telugu' },
-      hindi: { label: 'Hindi' },
-      tamil: { label: 'Tamil' },
-      english: { label: 'English' }
+      japanese: { label: 'Japanese' }
     };
 
-    // ISO codes used by the translation API for each supported language.
+    // ISO code used by the translation API — this page is Japanese-only.
     const langCodeMap = {
-      japanese: 'ja',
-      telugu: 'te',
-      hindi: 'hi',
-      tamil: 'ta',
-      english: 'en'
+      japanese: 'ja'
     };
 
     const state = {
       language: 'japanese',
       query: '',
-      // mode: 'idle' | 'input' | 'category'; resolved: {direction, word, pronunciation, englishMeaning};
-      // mode: 'entering' | 'category'. stageIndex (0/1/2) tracks which of the
-      // three resolved fields (in this direction's display order) is currently
-      // loaded into quickAddInput as the user steps through them with Enter.
-      // lastCheckedText is what the field held the last time the 2s poller
-      // checked it, so it only reacts to genuine edits.
-      quickAdd: { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null },
+      // mode: 'idle' | 'entering'; section: which section this widget is
+      // scoped to (set when opened via that section's "+"). resolved:
+      // {direction, word, pronunciation, englishMeaning}. stageIndex (0/1/2)
+      // tracks which of the three resolved fields (in this direction's
+      // display order) is currently loaded into sectionAddInput as the user
+      // steps through them with Enter. lastCheckedText is what the field held
+      // the last time the 2s poller checked it, so it only reacts to genuine edits.
+      sectionAdd: { mode: 'idle', section: null, stageIndex: 0, resolved: null, lastCheckedText: null },
       quizQueue: [],
       quizMissed: [],
       quizCurrent: null,
@@ -430,13 +465,19 @@
       readingTimeoutId: null,
       readingSectionQueue: [],
       readingSectionIndex: -1,
-      groupMode: 'category',
+      // false = show enabled (non-hidden) sections, the default first-load view;
+      // true = show only sections that have been explicitly hidden, so they can
+      // be found/managed/un-hidden.
+      showHidden: false,
       expandedSections: new Set(),
       // Section headers + live counts for the current language only — this is all
       // that's fetched on page load. Actual word entries are fetched lazily, one
       // section at a time, in sectionCache below.
       sectionSummary: {},
       sectionSummaryRef: null,
+      // SECTION -> true for sections explicitly hidden from the default view.
+      hiddenSections: {},
+      hiddenSectionsRef: null,
       sectionCache: new Map(),        // SECTION -> entries[]
       sectionListeners: new Map(),    // SECTION -> firebase ref, so we can .off() on language switch
       sectionHeaderDomRefs: new Map() // SECTION -> its <details> element, rebuilt on every renderSectionHeaders()
@@ -465,23 +506,11 @@
         }
       }
 
-      // Show the quick-add input only to admins; guests get read-only + quiz.
-      setQuickAddVisible(state.isAdmin);
-
       // Only load the current language's data once admin status is known, so the
       // very first load already knows whether to run the (admin-only) bootstrap.
       switchLanguage(state.language);
     });
 
-    function setQuickAddVisible(visible) {
-      quickAddContainer.classList.toggle('hidden', !visible);
-      quickAddContainer.classList.toggle('flex', visible);
-    }
-
-    const languageSelect = document.getElementById('language-select');
-    const searchInput = document.getElementById('dictionary-search');
-    const searchToggle = document.getElementById('search-toggle');
-    const searchPanel = document.getElementById('search-panel');
     const dictionaryList = document.getElementById('dictionary-list');
     const dictionaryCount = document.getElementById('dictionary-count');
     const quizButton = document.getElementById('quiz-button');
@@ -526,17 +555,15 @@
     const readingWord = document.getElementById('reading-word');
     const readingPronunciation = document.getElementById('reading-pronunciation');
     const readingMeaning = document.getElementById('reading-meaning');
-    const groupModeToggle = document.getElementById('group-mode-toggle');
-    const quickAddContainer = document.getElementById('quick-add-container');
-    const quickAddInput = document.getElementById('quick-add-input');
-    const quickAddPanel = document.getElementById('quick-add-panel');
-    const quickAddPreviewRows = document.getElementById('quick-add-preview-rows');
-    const quickAddCategorySlot = document.getElementById('quick-add-category-slot');
-    const quickAddClearBtn = document.getElementById('quick-add-clear-btn');
-    const sectionInputHome = document.getElementById('section-input-home');
-    const sectionInputWrapper = sectionInputHome.querySelector('label');
-    const sectionInput = document.getElementById('section-input');
-    const sectionDropdown = document.getElementById('section-dropdown');
+    const hiddenToggle = document.getElementById('hidden-toggle');
+    const hiddenToggleIcon = document.getElementById('hidden-toggle-icon');
+    const sectionFilterInput = document.getElementById('section-filter-input');
+    const sectionAddHome = document.getElementById('section-add-home');
+    const sectionAddWidget = document.getElementById('section-add-widget');
+    const sectionAddInput = document.getElementById('section-add-input');
+    const sectionAddPanel = document.getElementById('section-add-panel');
+    const sectionAddPreviewRows = document.getElementById('section-add-preview-rows');
+    const sectionAddClearBtn = document.getElementById('section-add-clear-btn');
 
     function getCurrentLanguageData() {
       return languageConfig[state.language] || languageConfig.japanese;
@@ -742,11 +769,10 @@
       return getRomanization(text, nativeLang, 'en');
     }
 
-    // Decides which direction a quick-add entry is being typed in. Only the
-    // Japanese dictionary gets this bidirectional smarts for now — other
-    // languages always treat the typed text as the native word.
+    // Decides which direction a quick-add entry is being typed in: plain latin
+    // text is treated as the English meaning to translate into Japanese;
+    // anything else is treated as the Japanese word itself.
     function detectQuickAddDirection(text) {
-      if (state.language !== 'japanese') return 'toEnglish';
       const isAllLatin = /^[a-zA-Z\s'".,!?-]+$/.test((text || '').trim());
       return isAllLatin ? 'toNative' : 'toEnglish';
     }
@@ -807,6 +833,83 @@
 
     function getSortedSectionNames() {
       return Object.keys(state.sectionSummary).sort(sectionSort);
+    }
+
+    // Subsections are just ordinary sections whose Firebase key encodes a
+    // parent via a '>' separator, e.g. "FOOD>DESSERTS" is a child of "FOOD" —
+    // a single flat key (Firebase keys allow '>' fine), split apart only for
+    // display/behavior. Only one level deep is rendered; a '>' typed while
+    // already inside a subsection's own add-widget is rejected rather than
+    // silently building a confusing multi-level key.
+    function isSubsection(section) {
+      return section.includes('>');
+    }
+
+    function getParentSectionName(section) {
+      const idx = section.indexOf('>');
+      return idx === -1 ? null : section.slice(0, idx);
+    }
+
+    function getSubsectionLabel(section) {
+      const idx = section.indexOf('>');
+      return idx === -1 ? section : section.slice(idx + 1);
+    }
+
+    // Top-level sections only — used everywhere subsections must be excluded
+    // (the main list's own rows, and the quiz/reading "all sections" sweeps).
+    function getTopLevelSectionNames() {
+      return getSortedSectionNames().filter(section => !isSubsection(section));
+    }
+
+    function getSubsectionsOf(parentSection) {
+      return getSortedSectionNames().filter(section => getParentSectionName(section) === parentSection);
+    }
+
+    // A section is visible on the very first load unless explicitly hidden —
+    // presence in state.hiddenSections is the only thing that marks it hidden,
+    // so nothing needs writing for the (default) enabled case. Only top-level
+    // sections carry this flag; subsections always follow their parent.
+    function isSectionHidden(section) {
+      return !!state.hiddenSections[section];
+    }
+
+    async function toggleSectionHidden(section) {
+      const nextHidden = !isSectionHidden(section);
+      try {
+        await database.ref(`hiddenSections/${state.language}/${section}`).set(nextHidden ? true : null);
+      } catch (err) {
+        console.error('Failed to toggle section visibility', err);
+        window.alert('Failed to update section visibility. See console for details.');
+      }
+    }
+
+    // On-screen label for a section — subsections show as "PARENT → CHILD" so
+    // it's clear which parent they're nested under even out of context (e.g.
+    // in the quiz/reading status line).
+    function getSectionDisplayLabel(section) {
+      return isSubsection(section) ? `${getParentSectionName(section)} → ${getSubsectionLabel(section)}` : section;
+    }
+
+    // Spoken form for reading mode's section announcement — just the child
+    // name on its own reads far more naturally than repeating the full path.
+    function getSectionSpokenLabel(section) {
+      return isSubsection(section) ? getSubsectionLabel(section) : section;
+    }
+
+    // Expands each section into itself followed by its own subsections (never
+    // recursing further) — this is what makes quizzing/reading a top-level
+    // section, or the app-level "quiz/read everything" sweep, also cover
+    // whatever's nested under it. A subsection passed in expands to itself
+    // alone, since it has none of its own.
+    function expandWithSubsections(sections) {
+      const expanded = [];
+      sections.forEach(section => {
+        expanded.push(section);
+        if (!isSubsection(section)) {
+          getSubsectionsOf(section).forEach(sub => expanded.push(sub));
+        }
+      });
+      return expanded;
     }
 
     // On-demand duplicate check when adding a brand-new word — a single direct
@@ -913,15 +1016,32 @@
       return ref;
     }
 
+    function subscribeHiddenSections(language) {
+      const ref = database.ref(`hiddenSections/${language}`);
+      ref.on('value', (snapshot) => {
+        state.hiddenSections = snapshot.val() || {};
+        renderCurrentView();
+      }, (err) => {
+        console.error('Failed to subscribe to hidden sections', err);
+      });
+      return ref;
+    }
+
     function teardownLanguageData() {
+      closeSectionAdd();
       if (state.sectionSummaryRef) {
         state.sectionSummaryRef.off('value');
         state.sectionSummaryRef = null;
+      }
+      if (state.hiddenSectionsRef) {
+        state.hiddenSectionsRef.off('value');
+        state.hiddenSectionsRef = null;
       }
       state.sectionListeners.forEach(ref => ref.off('value'));
       state.sectionListeners.clear();
       state.sectionCache.clear();
       state.sectionSummary = {};
+      state.hiddenSections = {};
       state.expandedSections.clear();
     }
 
@@ -937,6 +1057,7 @@
         console.error('Failed to bootstrap language index', err);
       });
       state.sectionSummaryRef = subscribeSectionSummary(language);
+      state.hiddenSectionsRef = subscribeHiddenSections(language);
     }
 
     function attachCardInteractions(card, entry) {
@@ -1125,13 +1246,6 @@
       exitCardEditMode(card, entry);
     }
 
-    function getAlphaGroupKey(word) {
-      const trimmed = (word || '').trim();
-      if (!trimmed) return '#';
-      const first = trimmed[0];
-      return /[a-zA-Z]/.test(first) ? first.toUpperCase() : first;
-    }
-
     function getDistinctSections() {
       return Object.keys(state.sectionSummary)
         .filter(section => section !== 'UNCATEGORIZED')
@@ -1140,22 +1254,17 @@
 
     function buildDictionaryCard(entry) {
       const card = document.createElement('article');
-      card.className = 'compact-card dict-card transition-all duration-150 flex items-center justify-between gap-2 py-2';
+      card.className = 'compact-card transition-colors duration-150 flex items-center justify-between gap-2';
       card.innerHTML = buildDictionaryCardContent(entry);
       attachCardInteractions(card, entry);
       return card;
     }
 
-    // Decides which view to show: search filters the section list itself down to
-    // matching section names (it never touches word content); the alpha-grouped
-    // view needs everything and is loaded on demand; otherwise it's the normal
-    // lazy per-section header view (the default, page-load-cheap case).
+    // Always the section-wise view now — search filters the section list
+    // itself down to matching names (it never touches word content); a
+    // section's actual word cards are fetched lazily, only once expanded.
     function renderCurrentView() {
-      if (!normalize(state.query) && state.groupMode === 'alpha') {
-        loadAllSectionsAndRenderAlpha();
-      } else {
-        renderSectionHeaders();
-      }
+      renderSectionHeaders();
     }
 
     // Default view: section headers + counts only, straight from sectionSummary.
@@ -1163,11 +1272,33 @@
     // when that section is expanded, or quizzed/read. A search query filters
     // this list down to sections whose NAME matches — it never searches word
     // content, so it never needs to fetch anything beyond the header list.
+    // Word count for one section plus its subsections — used both for the
+    // rendered rows' own counts and for the hidden/visible overview totals.
+    function getSectionWordTotal(section) {
+      const ownCount = state.sectionSummary[section] || 0;
+      const subCount = getSubsectionsOf(section).reduce((s, sub) => s + (state.sectionSummary[sub] || 0), 0);
+      return ownCount + subCount;
+    }
+
+    // Always reflects the full corpus (not the current search filter), so it
+    // reads as a stable "here's everything" overview next to the eye toggle.
+    function updateEntryCounts() {
+      let hiddenTotal = 0;
+      let visibleTotal = 0;
+      getTopLevelSectionNames().forEach(section => {
+        const total = getSectionWordTotal(section);
+        if (isSectionHidden(section)) hiddenTotal += total;
+        else visibleTotal += total;
+      });
+      dictionaryCount.textContent = `${hiddenTotal} hidden | ${visibleTotal} visible`;
+    }
+
     function renderSectionHeaders() {
       const query = normalize(state.query);
-      const sections = getSortedSectionNames().filter(section => !query || section.toLowerCase().includes(query));
-      const totalCount = sections.reduce((sum, section) => sum + (state.sectionSummary[section] || 0), 0);
-      dictionaryCount.textContent = `${totalCount} ${totalCount === 1 ? 'entry' : 'entries'}`;
+      const sections = getTopLevelSectionNames()
+        .filter(section => !query || section.toLowerCase().includes(query))
+        .filter(section => isSectionHidden(section) === state.showHidden);
+      updateEntryCounts();
       dictionaryList.innerHTML = '';
       state.sectionHeaderDomRefs = new Map();
 
@@ -1182,6 +1313,54 @@
           loadAndRenderSectionBody(section);
         }
       });
+
+      reattachSectionAddWidgetIfNeeded();
+    }
+
+    // A section list re-render (filtering, live count updates, etc.) tears down
+    // and rebuilds every wrapper — if the add-word widget was open for one of
+    // these sections, it just got orphaned along with the old wrapper. Re-home
+    // it into the freshly built wrapper (keeping whatever was typed so far), or
+    // close it if that section no longer has a wrapper at all (e.g. filtered out).
+    function reattachSectionAddWidgetIfNeeded() {
+      if (state.sectionAdd.mode === 'idle') return;
+      const wrapper = state.sectionHeaderDomRefs.get(state.sectionAdd.section);
+      const summary = wrapper && wrapper.querySelector('summary');
+      if (!summary) {
+        closeSectionAdd();
+        return;
+      }
+      summary.appendChild(sectionAddWidget);
+    }
+
+    // Enter in the section filter box: if the typed name doesn't match any
+    // existing section, it creates a new (empty) one instead of just filtering
+    // down to nothing — admins only, since this writes to the dictionary.
+    function handleSectionFilterEnter() {
+      if (!state.isAdmin) return;
+      const raw = sectionFilterInput.value.trim();
+      if (!raw) return;
+      const normalized = raw.toUpperCase();
+      if (Object.keys(state.sectionSummary).includes(normalized)) return;
+      createNewSection(normalized);
+    }
+
+    async function createNewSection(section) {
+      try {
+        // Only seed a count if this section doesn't already exist — avoids a
+        // race clobbering a concurrent admin's count with a stale 0.
+        await database.ref(`sectionSummary/${state.language}/${section}`).transaction(current => (current === null ? 0 : current));
+      } catch (err) {
+        console.error('Failed to create section', err);
+        window.alert('Failed to create section. See console for details.');
+        return;
+      }
+      sectionFilterInput.value = '';
+      state.query = '';
+      state.expandedSections.add(section);
+      renderCurrentView();
+      const wrapper = state.sectionHeaderDomRefs.get(section);
+      if (wrapper) wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     // Returns a wrapper <div> containing the <details> plus a sibling actions
@@ -1193,14 +1372,17 @@
     // aren't reliably reachable by keyboard/assistive tech. A true sibling of
     // <details> itself is unaffected by any of that.
     function buildSectionDetailsShell(section, count) {
+      const sub = isSubsection(section);
+
       const wrapper = document.createElement('div');
-      wrapper.className = 'section-row';
+      wrapper.className = sub ? 'section-row section-row-sub' : 'section-row';
 
       const details = document.createElement('details');
       details.className = 'section-group';
 
       const summary = document.createElement('summary');
-      summary.innerHTML = `<span class="section-label">${escapeHtml(section)} (${count})</span>`;
+      const label = sub ? getSubsectionLabel(section) : section;
+      summary.innerHTML = `<span class="section-label">${escapeHtml(label)} (${count})</span>`;
       details.appendChild(summary);
 
       const body = document.createElement('div');
@@ -1221,19 +1403,44 @@
 
       const actions = document.createElement('span');
       actions.className = 'section-actions';
+      const addTitle = sub ? 'Add a word to this subsection' : 'Add a word (or type > name for a subsection)';
+      const quizTitle = sub ? 'Quiz this subsection' : 'Quiz this section (and its subsections)';
+      const readTitle = sub ? 'Read this subsection' : 'Read this section (and its subsections)';
+      // Its icon just mirrors whichever list is currently on screen: in the
+      // default view every row shown is enabled (plain eye, click to hide); in
+      // the hidden view every row shown is hidden (eye-slash, click to un-hide).
+      const eyeTitle = state.showHidden ? 'Un-hide this' : 'Hide this';
       actions.innerHTML = `
-        <button type="button" class="section-action-btn" data-section-quiz title="Quiz this section">✦</button>
-        <button type="button" class="section-action-btn" data-section-read title="Read this section">▶</button>
+        ${state.isAdmin ? `<button type="button" class="section-action-btn" data-section-add title="${addTitle}">+</button>` : ''}
+        <button type="button" class="section-action-btn" data-section-quiz title="${quizTitle}">✦</button>
+        <button type="button" class="section-action-btn" data-section-read title="${readTitle}">▶</button>
+        ${state.isAdmin ? `<button type="button" class="section-action-btn" data-section-eye title="${eyeTitle}"><svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">${state.showHidden ? EYE_SLASH_ICON_PATHS : EYE_ICON_PATHS}</svg></button>` : ''}
       `;
-      actions.querySelector('[data-section-quiz]').addEventListener('click', (event) => {
+      const addBtn = actions.querySelector('[data-section-add]');
+      if (addBtn) {
+        addBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleSectionAddWidget(section, wrapper);
+        });
+      }
+      const quizBtn = actions.querySelector('[data-section-quiz]');
+      if (quizBtn) quizBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         startSectionQuiz(section);
       });
-      actions.querySelector('[data-section-read]').addEventListener('click', (event) => {
+      const readBtn = actions.querySelector('[data-section-read]');
+      if (readBtn) readBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         startSectionReading(section);
+      });
+      const eyeBtn = actions.querySelector('[data-section-eye]');
+      if (eyeBtn) eyeBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSectionHidden(section);
       });
       wrapper.appendChild(actions);
 
@@ -1247,92 +1454,61 @@
     // Called both right after a section's data first arrives and on every later
     // live update to it — a no-op if that section isn't currently on screen
     // (e.g. it's been filtered out by search, or the view is alpha-grouped).
+    // Subsections render nested, at the top of their parent's body, ahead of
+    // that parent's own word cards — a subsection never gets nested further.
     function renderSectionBodyIfPresent(section, entries) {
-      const details = state.sectionHeaderDomRefs && state.sectionHeaderDomRefs.get(section);
-      if (!details || !dictionaryList.contains(details)) return;
-      const body = details.querySelector('.section-body');
+      const wrapper = state.sectionHeaderDomRefs && state.sectionHeaderDomRefs.get(section);
+      if (!wrapper || !dictionaryList.contains(wrapper)) return;
+      const body = wrapper.querySelector('.section-body');
       if (!body) return;
 
       body.innerHTML = '';
+
+      const subsections = isSubsection(section)
+        ? []
+        : getSubsectionsOf(section).filter(sub => isSectionHidden(sub) === state.showHidden);
+      subsections.forEach(sub => {
+        const subWrapper = buildSectionDetailsShell(sub, state.sectionSummary[sub] || 0);
+        state.sectionHeaderDomRefs.set(sub, subWrapper);
+        body.appendChild(subWrapper);
+        if (state.expandedSections.has(sub)) {
+          subWrapper.querySelector('details').open = true;
+          loadAndRenderSectionBody(sub);
+        }
+      });
+
       if (!entries.length) {
-        body.innerHTML = '<div class="text-xs text-slate-400 dark:text-slate-500 py-1">No words yet.</div>';
-        return;
+        if (!subsections.length) {
+          const empty = document.createElement('div');
+          empty.className = 'text-xs text-slate-400 dark:text-slate-500 py-1';
+          empty.textContent = 'No words yet.';
+          body.appendChild(empty);
+        }
+      } else {
+        // A dedicated wrapper (no space-y gap) so entries butt up against each
+        // other with just the hairline divider between them, instead of the
+        // section-body's normal item spacing (which still applies to the
+        // subsection rows above, and between this list and them).
+        const wordList = document.createElement('div');
+        wordList.className = 'word-list';
+        entries.forEach(entry => wordList.appendChild(buildDictionaryCard(entry)));
+        body.appendChild(wordList);
       }
-      entries.forEach(entry => body.appendChild(buildDictionaryCard(entry)));
+
+      reattachSectionAddWidgetIfNeeded();
     }
 
-    // Alpha grouping cuts across sections, so it genuinely needs every section's
-    // data — this is the one deliberate action that triggers a full load.
-    async function loadAllSectionsAndRenderAlpha() {
-      const sections = getSortedSectionNames();
-      dictionaryList.innerHTML = '<div class="text-xs text-slate-400 dark:text-slate-500 py-2">Loading all sections…</div>';
-      dictionaryCount.textContent = '…';
-      await Promise.all(sections.map(section => ensureSectionLoaded(section)));
-      if (state.groupMode !== 'alpha') return; // user switched back before this resolved
-      renderAlphaGrouped();
-    }
-
-    function renderAlphaGrouped() {
-      const allEntries = [];
-      state.sectionCache.forEach(entries => allEntries.push(...entries));
-
-      dictionaryCount.textContent = `${allEntries.length} ${allEntries.length === 1 ? 'entry' : 'entries'}`;
-      dictionaryList.innerHTML = '';
-      if (!allEntries.length) return;
-
-      const groups = new Map();
-      allEntries.forEach(entry => {
-        const key = getAlphaGroupKey(entry.word);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(entry);
-      });
-
-      Array.from(groups.keys()).sort((a, b) => a.localeCompare(b)).forEach(key => {
-        const entries = groups.get(key);
-        const details = document.createElement('details');
-        details.className = 'section-group';
-        if (state.expandedSections.has(key)) details.open = true;
-        details.addEventListener('toggle', () => {
-          if (details.open) state.expandedSections.add(key);
-          else state.expandedSections.delete(key);
-        });
-
-        const summary = document.createElement('summary');
-        summary.innerHTML = `<span class="section-label">${escapeHtml(key)} (${entries.length})</span>`;
-        details.appendChild(summary);
-
-        const body = document.createElement('div');
-        body.className = 'section-body space-y-2';
-        entries.forEach(entry => body.appendChild(buildDictionaryCard(entry)));
-        details.appendChild(body);
-
-        dictionaryList.appendChild(details);
-      });
-    }
-
-    function renderSectionDropdown(filterText) {
-      const query = (filterText || '').trim().toLowerCase();
-      const options = getDistinctSections().filter(name => name.toLowerCase().includes(query));
-      if (!options.length) {
-        sectionDropdown.classList.add('hidden');
-        sectionDropdown.innerHTML = '';
-        return;
-      }
-      sectionDropdown.innerHTML = options.map(name => `
-        <button type="button" data-section-option="${escapeHtml(name)}" class="block w-full truncate px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700">${escapeHtml(name)}</button>
-      `).join('');
-      sectionDropdown.classList.remove('hidden');
-    }
-
-    // ---- Quick add: single-field word entry, traversed field by field ----
+    // ---- Section add: single-field word entry, traversed field by field,
+    // scoped to one fixed section (opened via that section's "+") ----
     //
     // Type a word (English or native script — direction is auto-detected),
     // then Enter steps through the resolved fields one at a time, loading each
     // into the same input in place of the last (word -> pronunciation ->
-    // meaning), editable at every stage. A floating panel below the input
-    // shows all three throughout, highlighting whichever one is currently
-    // loaded into the field. A final Enter (from the meaning stage) reveals
-    // the category picker in the same panel. Escape cancels at any point.
+    // meaning), editable at every stage. A panel below the input shows all
+    // three throughout, highlighting whichever one is currently loaded into
+    // the field. A final Enter (from the meaning stage) saves straight into
+    // the section this widget was opened for — there's no category step here,
+    // since the section is already fixed. Escape/Clear cancels at any point.
     //
     // Independently, a 2-second poll compares the field's current text to
     // what it held at the last check: if it changed, that's treated as a
@@ -1353,156 +1529,213 @@
       return getQuickAddFieldOrder(resolved.direction).map(key => ({ key, value: resolved[key] }));
     }
 
+    function isSectionAddOpenFor(section) {
+      return state.sectionAdd.mode !== 'idle' && state.sectionAdd.section === section;
+    }
+
+    function toggleSectionAddWidget(section, wrapper) {
+      if (isSectionAddOpenFor(section)) {
+        closeSectionAdd();
+        return;
+      }
+      openSectionAdd(section, wrapper);
+    }
+
+    function openSectionAdd(section, wrapper) {
+      closeSectionAdd();
+      const summary = wrapper.querySelector('summary');
+      if (!summary) return;
+      state.sectionAdd = { mode: 'entering', section, stageIndex: 0, resolved: null, lastCheckedText: null };
+      sectionAddInput.value = '';
+      sectionAddInput.disabled = false;
+      sectionAddInput.placeholder = 'Type a word…';
+      sectionAddPanel.classList.add('hidden');
+      sectionAddPreviewRows.innerHTML = '';
+      summary.appendChild(sectionAddWidget);
+      startSectionAddChecker();
+      sectionAddInput.focus();
+    }
+
+    function closeSectionAdd() {
+      stopSectionAddChecker();
+      state.sectionAdd = { mode: 'idle', section: null, stageIndex: 0, resolved: null, lastCheckedText: null };
+      sectionAddInput.value = '';
+      sectionAddInput.disabled = false;
+      sectionAddInput.placeholder = 'Type a word…';
+      sectionAddPanel.classList.add('hidden');
+      sectionAddPreviewRows.innerHTML = '';
+      sectionAddHome.appendChild(sectionAddWidget);
+    }
+
     // One line, no labels — just the typed word, its pronunciation, and the
     // translated word, dot-separated, with whichever one is currently loaded
     // into the input highlighted.
-    function renderQuickAddPanel() {
-      const resolved = state.quickAdd.resolved;
+    function renderSectionAddPanel() {
+      const resolved = state.sectionAdd.resolved;
       if (!resolved) {
-        quickAddPanel.classList.add('hidden');
+        sectionAddPanel.classList.add('hidden');
         return;
       }
       const parts = buildQuickAddParts(resolved);
       const pieces = parts.map((part, index) => `<span class="${
-        index === state.quickAdd.stageIndex
+        index === state.sectionAdd.stageIndex
           ? 'rounded bg-blue-50 px-1 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200'
           : 'text-slate-500 dark:text-slate-400'
       }">${escapeHtml(part.value || '—')}</span>`);
-      quickAddPreviewRows.innerHTML = `
+      sectionAddPreviewRows.innerHTML = `
         <div class="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs">
           ${pieces.join('<span class="text-slate-300 dark:text-slate-600">·</span>')}
         </div>
       `;
-      quickAddPanel.classList.remove('hidden');
+      sectionAddPanel.classList.remove('hidden');
     }
 
-    let quickAddCheckTimer = null;
+    let sectionAddCheckTimer = null;
 
-    function startQuickAddChecker() {
-      if (quickAddCheckTimer) return;
-      quickAddCheckTimer = setInterval(checkQuickAddForChanges, 2000);
+    function startSectionAddChecker() {
+      if (sectionAddCheckTimer) return;
+      sectionAddCheckTimer = setInterval(checkSectionAddForChanges, 2000);
     }
 
-    function stopQuickAddChecker() {
-      clearInterval(quickAddCheckTimer);
-      quickAddCheckTimer = null;
+    function stopSectionAddChecker() {
+      clearInterval(sectionAddCheckTimer);
+      sectionAddCheckTimer = null;
     }
 
     // The 2-second poll: only reacts when the field's text actually differs
     // from what it held at the last check.
-    async function checkQuickAddForChanges() {
-      if (state.quickAdd.mode !== 'entering') return;
-      const text = quickAddInput.value.trim();
-      if (text === state.quickAdd.lastCheckedText) return;
+    async function checkSectionAddForChanges() {
+      if (state.sectionAdd.mode !== 'entering') return;
+      const text = sectionAddInput.value.trim();
+      if (text.startsWith('>')) return; // handled instantly by the input handler instead
+      if (text === state.sectionAdd.lastCheckedText) return;
       if (!text) {
-        state.quickAdd.lastCheckedText = text;
+        state.sectionAdd.lastCheckedText = text;
         return;
       }
 
-      const stageIndex = state.quickAdd.stageIndex;
+      const stageIndex = state.sectionAdd.stageIndex;
       if (stageIndex === 0) {
         const resolved = await resolveQuickAddFields(text);
         // Bail if the field moved on while this was resolving.
-        if (state.quickAdd.mode !== 'entering' || state.quickAdd.stageIndex !== 0 || quickAddInput.value.trim() !== text) return;
-        state.quickAdd.resolved = resolved;
-      } else if (state.quickAdd.resolved) {
-        const key = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[stageIndex];
-        state.quickAdd.resolved[key] = text;
+        if (state.sectionAdd.mode !== 'entering' || state.sectionAdd.stageIndex !== 0 || sectionAddInput.value.trim() !== text) return;
+        state.sectionAdd.resolved = resolved;
+      } else if (state.sectionAdd.resolved) {
+        const key = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[stageIndex];
+        state.sectionAdd.resolved[key] = text;
       }
-      state.quickAdd.lastCheckedText = text;
-      renderQuickAddPanel();
+      state.sectionAdd.lastCheckedText = text;
+      renderSectionAddPanel();
     }
 
-    function resetQuickAdd() {
-      stopQuickAddChecker();
-      state.quickAdd = { mode: 'entering', stageIndex: 0, resolved: null, lastCheckedText: null };
-      quickAddInput.value = '';
-      quickAddInput.readOnly = false;
-      quickAddInput.disabled = false;
-      quickAddInput.placeholder = 'Type a word…';
-      quickAddPanel.classList.add('hidden');
-      quickAddPreviewRows.innerHTML = '';
-      quickAddCategorySlot.classList.add('hidden');
-      sectionInput.value = '';
-      sectionDropdown.classList.add('hidden');
-      sectionInputHome.appendChild(sectionInputWrapper);
+    // A '>' prefix (only meaningful at the very first stage, before any
+    // translation has started) means "create a subsection" instead of "add a
+    // word" — shows a live preview of the name as it's typed, no translation
+    // involved.
+    function renderSubsectionHint(name) {
+      sectionAddPreviewRows.innerHTML = `
+        <div class="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs">
+          <span class="text-slate-400 dark:text-slate-500">New subsection:</span>
+          <span class="rounded bg-blue-50 px-1 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">${escapeHtml(name || '—')}</span>
+        </div>
+      `;
+      sectionAddPanel.classList.remove('hidden');
     }
 
-    function showQuickAddCategoryStep() {
-      state.quickAdd.mode = 'category';
-      stopQuickAddChecker();
-      quickAddInput.readOnly = true;
-      sectionInput.value = '';
-      quickAddCategorySlot.appendChild(sectionInputWrapper);
-      quickAddCategorySlot.classList.remove('hidden');
-      sectionInput.focus();
+    async function createSubsectionUnder(parentSection, rawName) {
+      if (isSubsection(parentSection)) {
+        window.alert('Subsections can\'t be nested further.');
+        closeSectionAdd();
+        return;
+      }
+      const childLabel = rawName.trim().toUpperCase();
+      if (!childLabel) {
+        window.alert('Type a name for the subsection after ">".');
+        return;
+      }
+      const fullName = `${parentSection}>${childLabel}`;
+      if (Object.keys(state.sectionSummary).includes(fullName)) {
+        window.alert(`"${childLabel}" already exists under ${parentSection}.`);
+        closeSectionAdd();
+        return;
+      }
+      try {
+        // Only seed a count if this subsection doesn't already exist — avoids
+        // a race clobbering a concurrent admin's count with a stale 0.
+        await database.ref(`sectionSummary/${state.language}/${fullName}`).transaction(current => (current === null ? 0 : current));
+      } catch (err) {
+        console.error('Failed to create subsection', err);
+        window.alert('Failed to create subsection. See console for details.');
+        return;
+      }
+      state.expandedSections.add(parentSection);
+      state.expandedSections.add(fullName);
+      closeSectionAdd();
+      renderCurrentView();
+      const parentWrapper = state.sectionHeaderDomRefs.get(parentSection);
+      if (parentWrapper) parentWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // The Enter handler while composing (mode 'entering'): advances one stage
-    // at a time — word -> pronunciation -> meaning -> category — capturing
-    // any manual edit at the current stage before moving to the next.
-    async function advanceQuickAddStage() {
-      if (state.quickAdd.mode !== 'entering') return;
-      const text = quickAddInput.value.trim();
+    // The Enter handler while composing: advances one stage at a time — word
+    // -> pronunciation -> meaning — capturing any manual edit at the current
+    // stage before moving to the next. After the meaning stage, saves
+    // directly into the fixed section (no category step to pass through).
+    async function advanceSectionAddStage() {
+      if (state.sectionAdd.mode !== 'entering') return;
+      const text = sectionAddInput.value.trim();
       if (!text) return;
 
-      const stageIndex = state.quickAdd.stageIndex;
+      const stageIndex = state.sectionAdd.stageIndex;
+
+      if (stageIndex === 0 && text.startsWith('>')) {
+        await createSubsectionUnder(state.sectionAdd.section, text.slice(1));
+        return;
+      }
 
       if (stageIndex === 0) {
         // Reuse the poller's resolution if it already caught up with this
         // exact text; otherwise resolve it now rather than make the user wait
         // for the next 2-second tick.
-        if (!state.quickAdd.resolved || state.quickAdd.lastCheckedText !== text) {
-          quickAddInput.disabled = true;
-          quickAddInput.placeholder = 'Translating…';
-          state.quickAdd.resolved = await resolveQuickAddFields(text);
-          state.quickAdd.lastCheckedText = text;
-          quickAddInput.disabled = false;
+        if (!state.sectionAdd.resolved || state.sectionAdd.lastCheckedText !== text) {
+          sectionAddInput.disabled = true;
+          sectionAddInput.placeholder = 'Translating…';
+          state.sectionAdd.resolved = await resolveQuickAddFields(text);
+          state.sectionAdd.lastCheckedText = text;
+          sectionAddInput.disabled = false;
         }
       } else {
-        const key = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[stageIndex];
-        state.quickAdd.resolved[key] = text;
+        const key = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[stageIndex];
+        state.sectionAdd.resolved[key] = text;
       }
-      renderQuickAddPanel();
+      renderSectionAddPanel();
 
       if (stageIndex < 2) {
-        state.quickAdd.stageIndex = stageIndex + 1;
-        const nextKey = getQuickAddFieldOrder(state.quickAdd.resolved.direction)[state.quickAdd.stageIndex];
-        const nextValue = state.quickAdd.resolved[nextKey] || '';
-        quickAddInput.value = nextValue;
-        state.quickAdd.lastCheckedText = nextValue;
-        quickAddInput.select();
-        renderQuickAddPanel();
+        state.sectionAdd.stageIndex = stageIndex + 1;
+        const nextKey = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[state.sectionAdd.stageIndex];
+        const nextValue = state.sectionAdd.resolved[nextKey] || '';
+        sectionAddInput.value = nextValue;
+        state.sectionAdd.lastCheckedText = nextValue;
+        sectionAddInput.select();
+        renderSectionAddPanel();
         return;
       }
 
-      const exists = await wordExistsInLanguage(normalize(state.quickAdd.resolved.word));
+      const resolved = state.sectionAdd.resolved;
+      const section = state.sectionAdd.section;
+      const exists = await wordExistsInLanguage(normalize(resolved.word));
       if (exists) {
-        window.alert(`"${state.quickAdd.resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
-        resetQuickAdd();
+        window.alert(`"${resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
+        closeSectionAdd();
         return;
       }
-      showQuickAddCategoryStep();
-    }
-
-    async function quickAddConfirmCategory() {
-      if (state.quickAdd.mode !== 'category') return;
-      const section = sectionInput.value.trim().toUpperCase() || 'UNCATEGORIZED';
-      const resolved = state.quickAdd.resolved;
-      const fields = { w: resolved.word, p: resolved.pronunciation, em: resolved.englishMeaning };
-
       try {
-        await wordsRef.child(state.language).child(section).push({ ...fields, c: Date.now() });
+        await wordsRef.child(state.language).child(section).push({ w: resolved.word, p: resolved.pronunciation, em: resolved.englishMeaning, c: Date.now() });
         await bumpSectionCount(state.language, section, 1);
       } catch (err) {
         console.error('Failed to save word', err);
         window.alert('Failed to save word. See console for details.');
       }
-      resetQuickAdd();
-    }
-
-    function quickAddCancel() {
-      resetQuickAdd();
+      closeSectionAdd();
     }
 
     async function deleteWordEntry(entry) {
@@ -1583,7 +1816,7 @@
     }
 
     function showNextQuizWord() {
-      const section = state.quizCurrentSection || 'UNCATEGORIZED';
+      const section = getSectionDisplayLabel(state.quizCurrentSection || 'UNCATEGORIZED');
       if (!state.quizQueue.length) {
         endRound();
         return;
@@ -1613,7 +1846,7 @@
       quizActions.classList.remove('flex');
       quizActions.classList.add('hidden');
       quizPronunciation.classList.add('hidden');
-      const section = state.quizCurrentSection || 'UNCATEGORIZED';
+      const section = getSectionDisplayLabel(state.quizCurrentSection || 'UNCATEGORIZED');
 
       if (!state.quizMissed.length) {
         quizStatus.textContent = state.quizMode === 'warOnWrong'
@@ -1659,28 +1892,24 @@
       });
     }
 
+    // Quizzing a section also covers its subsections (announced/tracked as
+    // their own queue entries) — a subsection quizzed directly just expands
+    // to itself, since it has none of its own.
     async function startSectionQuiz(section) {
       openQuizModal();
-      state.quizSectionQueue = [section];
+      state.quizSectionQueue = expandWithSubsections([section]);
       state.quizSectionIndex = 0;
-      quizStatus.textContent = `Loading ${section}…`;
-      const entries = await ensureSectionLoaded(section);
-      if (!quizModal.classList.contains('open')) return;
-      if (!entries.length) {
-        quizStatus.textContent = `${section} has no words yet.`;
-        return;
-      }
-      await runSectionQuiz(section, entries);
+      await runQuizSectionQueue();
     }
 
     async function startAppLevelQuiz() {
       openQuizModal();
-      const sections = getSortedSectionNames();
+      const sections = getTopLevelSectionNames();
       if (!sections.length) {
         quizStatus.textContent = 'No sections to quiz yet.';
         return;
       }
-      state.quizSectionQueue = sections;
+      state.quizSectionQueue = expandWithSubsections(sections);
       state.quizSectionIndex = 0;
       await runQuizSectionQueue();
     }
@@ -1691,7 +1920,7 @@
       for (; state.quizSectionIndex < state.quizSectionQueue.length; state.quizSectionIndex++) {
         if (!quizModal.classList.contains('open')) return;
         const section = state.quizSectionQueue[state.quizSectionIndex];
-        quizStatus.textContent = `Loading ${section}…`;
+        quizStatus.textContent = `Loading ${getSectionDisplayLabel(section)}…`;
         const entries = await ensureSectionLoaded(section);
         if (!quizModal.classList.contains('open')) return;
         if (!entries.length) continue; // nothing to quiz in this section, skip it
@@ -1813,12 +2042,14 @@
     // Announces a new section as reading moves into it — shown on screen and,
     // since reading is a spoken-first interface, also spoken aloud in English
     // (section names are always plain English/Latin text, regardless of which
-    // language's words are inside).
+    // language's words are inside). A subsection is spoken by its own name
+    // alone — repeating the full "PARENT → CHILD" path aloud every time reads
+    // awkwardly once you're already mid-pass through that parent.
     async function announceReadingSection(section) {
-      readingWord.textContent = section;
+      readingWord.textContent = getSectionDisplayLabel(section);
       readingPronunciation.classList.add('hidden');
       readingMeaning.textContent = 'Section';
-      await speak(section, 'en-US', 0.95, 1);
+      await speak(getSectionSpokenLabel(section), 'en-US', 0.95, 1);
     }
 
     // Reusable core: one shuffled pass through a single section's words, each
@@ -1831,14 +2062,12 @@
         renderReadingCard(entry);
 
         // Each piece is spoken with the voice that actually matches its language —
-        // reading the English meaning in a Japanese/Telugu voice mispronounces it.
-        const nativeLang = langCodeMap[entry.language] || 'ja';
-        const speechLanguage = entry.language === 'japanese' ? 'ja-JP' : entry.language === 'telugu' ? 'te-IN' : 'en-US';
+        // reading the English meaning in a Japanese voice mispronounces it.
         const spokenWord = entry.pronunciation
-          ? normalizeSpeechText(entry.pronunciation, entry.language === 'japanese' ? 'ja' : entry.language === 'telugu' ? 'te' : 'en')
-          : await toSpokenText(entry.word, nativeLang);
+          ? normalizeSpeechText(entry.pronunciation, 'ja')
+          : await toSpokenText(entry.word, 'ja');
 
-        await speak(spokenWord, speechLanguage, entry.language === 'japanese' ? 0.9 : 0.95, 1);
+        await speak(spokenWord, 'ja-JP', 0.9, 1);
         if (!state.readingActive) return;
 
         if (entry.englishMeaning) {
@@ -1872,62 +2101,64 @@
       state.readingSectionIndex = -1;
     }
 
-    // Section-level Read button: loads just this section, then loops it
-    // indefinitely (announcing it once, then repeating passes) until closed —
-    // the same standalone "keep reading this section" behavior as before.
-    async function startSectionReading(section) {
-      openReadingModal();
-      state.readingSectionQueue = [section];
-      state.readingSectionIndex = 0;
-      readingMeaning.textContent = `Loading ${section}…`;
-      const initial = await ensureSectionLoaded(section);
-      if (!state.readingActive) return;
-      if (!initial.length) {
-        readingMeaning.textContent = `${section} has no words yet.`;
-        return;
-      }
-
-      let announced = false;
-      while (state.readingActive) {
-        const entries = state.sectionCache.get(section) || [];
-        if (!entries.length) break;
-        if (!announced) {
-          await announceReadingSection(section);
-          announced = true;
-          if (!state.readingActive) break;
-        }
-        await runSectionReadingPass(entries);
-      }
-    }
-
-    // Toolbar Read button: cycles through every section in turn, indefinitely —
-    // the next section's words are only fetched once the current section's pass
-    // is fully done.
-    async function startAppLevelReading() {
-      openReadingModal();
-      const sections = getSortedSectionNames();
-      if (!sections.length) {
+    // Cycles indefinitely through a queue of sections (looping back to the
+    // start), announcing each one by name only when it actually changes from
+    // the last one read — so a single-section queue announces once and just
+    // keeps repeating, while a multi-section queue (e.g. a parent followed by
+    // its subsections) announces every time it moves to a different one. If a
+    // full lap turns up no words anywhere, it stops instead of spinning
+    // silently forever.
+    async function runReadingSectionQueue(queue) {
+      if (!queue.length) {
         readingMeaning.textContent = 'No sections to read yet.';
         return;
       }
-      state.readingSectionQueue = sections;
+      state.readingSectionQueue = queue;
       state.readingSectionIndex = 0;
+      let lastAnnounced = null;
+      let consecutiveEmpty = 0;
 
       while (state.readingActive) {
         const section = state.readingSectionQueue[state.readingSectionIndex];
-        readingMeaning.textContent = `Loading ${section}…`;
+        readingMeaning.textContent = `Loading ${getSectionDisplayLabel(section)}…`;
         const entries = await ensureSectionLoaded(section);
         if (!state.readingActive) break;
 
         if (entries.length) {
-          await announceReadingSection(section);
-          if (!state.readingActive) break;
+          consecutiveEmpty = 0;
+          if (section !== lastAnnounced) {
+            await announceReadingSection(section);
+            lastAnnounced = section;
+            if (!state.readingActive) break;
+          }
           await runSectionReadingPass(entries);
+        } else {
+          consecutiveEmpty++;
+          if (consecutiveEmpty >= state.readingSectionQueue.length) {
+            readingMeaning.textContent = `${getSectionDisplayLabel(queue[0])} has no words yet.`;
+            return;
+          }
         }
 
         if (!state.readingActive) break;
         state.readingSectionIndex = (state.readingSectionIndex + 1) % state.readingSectionQueue.length;
       }
+    }
+
+    // Section-level Read button — also covers this section's subsections
+    // (announced/tracked as their own queue entries) — a subsection read
+    // directly just expands to itself, since it has none of its own.
+    async function startSectionReading(section) {
+      openReadingModal();
+      await runReadingSectionQueue(expandWithSubsections([section]));
+    }
+
+    // Toolbar Read button: cycles through every section (and its subsections)
+    // in turn, indefinitely — the next one's words are only fetched once the
+    // current one's pass is fully done.
+    async function startAppLevelReading() {
+      openReadingModal();
+      await runReadingSectionQueue(expandWithSubsections(getTopLevelSectionNames()));
     }
 
     function openScriptPracticeModal(scriptKey, label) {
@@ -1941,21 +2172,15 @@
       scriptPracticeFrame.src = 'about:blank';
     }
 
-    languageSelect.addEventListener('change', (event) => {
-      switchLanguage(event.target.value);
-    });
-
-    searchToggle.addEventListener('click', () => {
-      const isOpen = !searchPanel.classList.contains('hidden');
-      searchPanel.classList.toggle('hidden', isOpen);
-      if (!isOpen) {
-        searchInput.focus();
-      }
-    });
-
-    searchInput.addEventListener('input', (event) => {
+    sectionFilterInput.addEventListener('input', (event) => {
       state.query = event.target.value;
       renderCurrentView();
+    });
+
+    sectionFilterInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      handleSectionFilterEnter();
     });
 
     quizButton.addEventListener('click', () => startAppLevelQuiz());
@@ -1969,47 +2194,62 @@
     readingClose.addEventListener('click', () => closeReadingModal());
     scriptPracticeClose.addEventListener('click', () => closeScriptPracticeModal());
 
-    quickAddInput.addEventListener('keydown', (event) => {
+    // The widget now lives inside <summary> so it sits right after the header
+    // text — but a click anywhere in <summary> normally toggles the <details>
+    // open/closed by default, which would fight with clicking into the field
+    // or the clear button. preventDefault() anywhere along the bubble path
+    // suppresses just that default action without blocking focus or typing,
+    // so one listener on the whole widget covers the input, the panel, and
+    // the clear button inside it.
+    sectionAddWidget.addEventListener('click', (event) => event.preventDefault());
+    sectionAddInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        advanceQuickAddStage();
+        advanceSectionAddStage();
       } else if (event.key === 'Escape') {
-        quickAddCancel();
+        closeSectionAdd();
       }
     });
-    quickAddInput.addEventListener('input', () => startQuickAddChecker());
-    quickAddClearBtn.addEventListener('click', () => quickAddCancel());
+    sectionAddInput.addEventListener('input', () => {
+      const text = sectionAddInput.value;
+      if (state.sectionAdd.stageIndex === 0 && text.trim().startsWith('>')) {
+        stopSectionAddChecker();
+        renderSubsectionHint(text.trim().slice(1).trim());
+        return;
+      }
+      if (state.sectionAdd.stageIndex === 0 && !state.sectionAdd.resolved) {
+        // Clear any subsection hint left over from a moment ago.
+        sectionAddPanel.classList.add('hidden');
+        sectionAddPreviewRows.innerHTML = '';
+      }
+      startSectionAddChecker();
+    });
+    sectionAddClearBtn.addEventListener('click', () => closeSectionAdd());
 
-    sectionInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        quickAddConfirmCategory();
-      } else if (event.key === 'Escape') {
-        quickAddCancel();
-      }
-    });
-    sectionInput.addEventListener('input', () => {
-      const cursor = sectionInput.selectionStart;
-      const upper = sectionInput.value.toUpperCase();
-      if (upper !== sectionInput.value) {
-        sectionInput.value = upper;
-        sectionInput.setSelectionRange(cursor, cursor);
-      }
-      renderSectionDropdown(sectionInput.value);
-    });
-    sectionInput.addEventListener('focus', () => renderSectionDropdown(sectionInput.value));
-    sectionInput.addEventListener('blur', () => sectionDropdown.classList.add('hidden'));
-    sectionDropdown.addEventListener('mousedown', (event) => {
-      const optionBtn = event.target.closest('[data-section-option]');
-      if (!optionBtn) return;
-      event.preventDefault();
-      sectionInput.value = optionBtn.getAttribute('data-section-option');
-      sectionDropdown.classList.add('hidden');
-    });
+    const EYE_ICON_PATHS = `
+      <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path>
+      <path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"></path>
+    `;
+    const EYE_SLASH_ICON_PATHS = `
+      <path fill-rule="evenodd" d="M3.28 2.22a.75.75 0 00-1.06 1.06l14.5 14.5a.75.75 0 101.06-1.06l-1.745-1.745a10.029 10.029 0 003.3-4.38 1.651 1.651 0 000-1.185A10.004 10.004 0 009.999 3a9.956 9.956 0 00-4.744 1.194L3.28 2.22zM7.752 6.69l1.092 1.092a2.5 2.5 0 013.374 3.373l1.091 1.092a4 4 0 00-5.557-5.557z" clip-rule="evenodd"></path>
+      <path d="M10.748 13.93l2.523 2.523a9.987 9.987 0 01-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.65 1.65 0 010-1.186A10.007 10.007 0 012.839 6.02L6.07 9.252a4 4 0 004.678 4.678z"></path>
+    `;
 
-    groupModeToggle.addEventListener('click', () => {
-      state.groupMode = state.groupMode === 'category' ? 'alpha' : 'category';
-      groupModeToggle.textContent = state.groupMode === 'category' ? 'Group: Category' : 'Group: A–Z';
+    // Plain eye = showing enabled (non-hidden) sections, the default. Eye with
+    // a strike = showing only sections that have been explicitly hidden, so
+    // they can be found again and un-hidden.
+    function updateHiddenToggleUI() {
+      hiddenToggleIcon.innerHTML = state.showHidden ? EYE_SLASH_ICON_PATHS : EYE_ICON_PATHS;
+      hiddenToggle.title = state.showHidden
+        ? 'Showing hidden sections — click to view enabled ones'
+        : 'Showing enabled sections — click to view hidden ones';
+    }
+    updateHiddenToggleUI();
+
+    hiddenToggle.addEventListener('click', () => {
+      state.showHidden = !state.showHidden;
+      updateHiddenToggleUI();
+      closeSectionAdd();
       renderCurrentView();
     });
   </script>
