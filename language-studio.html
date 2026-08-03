@@ -89,6 +89,72 @@
       background: var(--panel-strong);
     }
 
+    .compact-card {
+      position: relative;
+    }
+
+    /* The card being dragged stays in place (so its section doesn't jump
+       around while you're deciding where to drop it) but fades, leaving the
+       floating ghost as the only thing that visibly follows the pointer. */
+    .compact-card-dragging {
+      opacity: 0.35;
+    }
+
+    /* The floating word that follows the pointer during a drag — a small
+       pill rather than a full card, since all it needs to convey is "this
+       is what's being moved." */
+    .card-drag-ghost {
+      position: fixed;
+      z-index: 60;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--accent);
+      background: var(--panel);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .card-drag-ghost .card-drag-ghost-meaning {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    /* Whichever section/subsection row is currently under the pointer during
+       a drag — the only valid drop targets, since a word can't be dropped
+       onto another word. */
+    .section-row-drop-hover > details > summary {
+      background: var(--accent-soft);
+      border-radius: 0.5rem;
+      outline: 2px dashed var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* Fills over the ~1s hold — released early cancels the delete (and the
+       fill resets); completing it deletes the word. */
+    .card-delete-hold-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(225, 29, 72, 0.16);
+      border-radius: 0.375rem;
+      transform-origin: left;
+      transform: scaleX(0);
+      pointer-events: none;
+    }
+
+    .card-delete-hold-overlay.card-delete-hold-active {
+      transform: scaleX(1);
+      transition: transform 1s linear;
+    }
+
     .meaning-inline {
       display: flex;
       flex-wrap: wrap;
@@ -153,71 +219,6 @@
       align-items: center;
     }
 
-    /* The section "+" add box mounts here, right after the label, so typing a
-       word feels like a continuation of the header line rather than a new
-       control — no border/background of its own, just inherits the row. The
-       preview/clear panel floats below it instead, so it never disturbs the
-       header's height. Falls back to its own full-width line on narrow
-       screens, where an inline box would crowd the label and action icons. */
-    .section-add-widget {
-      display: flex;
-      position: relative;
-      align-items: center;
-      flex: 1 1 140px;
-      min-width: 0;
-      margin-left: 0.6rem;
-    }
-
-    .section-add-input {
-      width: 100%;
-      min-width: 0;
-      border: none;
-      background: transparent;
-      outline: none;
-      box-shadow: none;
-      padding: 0;
-      margin: 0;
-      font-size: 0.78rem;
-      font-weight: 400;
-      letter-spacing: normal;
-      text-transform: none;
-      color: var(--text);
-      cursor: text;
-    }
-
-    .section-add-input::placeholder {
-      color: var(--muted);
-      text-transform: none;
-    }
-
-    .section-add-panel {
-      position: absolute;
-      left: 0;
-      top: 100%;
-      z-index: 20;
-      margin-top: 0.3rem;
-      width: 18rem;
-      max-width: calc(100vw - 2rem);
-      border-radius: 0.75rem;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      padding: 0.5rem;
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-      font-size: 0.75rem;
-      font-weight: 400;
-      letter-spacing: normal;
-      text-transform: none;
-      cursor: auto;
-    }
-
-    @media (max-width: 480px) {
-      .section-add-widget {
-        flex-basis: 100%;
-        margin-left: 0;
-        margin-top: 0.3rem;
-      }
-    }
-
     .section-group > summary::marker {
       font-size: 0.6rem;
     }
@@ -226,6 +227,10 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .section-star-mark {
+      color: #d97706;
     }
 
     .section-actions {
@@ -318,6 +323,10 @@
 
     .section-menu-icon-btn.section-menu-icon-danger:hover {
       background: rgba(225, 29, 72, 0.08);
+    }
+
+    .section-menu-icon-btn.section-menu-icon-starred {
+      color: #d97706;
     }
 
     .section-menu-item {
@@ -440,24 +449,49 @@
         </div>
       </section>
 
-      <div id="section-add-home" class="hidden">
-        <div id="section-add-widget" class="section-add-widget">
-          <input id="section-add-input" type="text" autocomplete="off" placeholder="Type a word…" class="section-add-input" />
-          <div id="section-add-panel" class="hidden section-add-panel">
-            <div class="flex items-start gap-2">
-              <div id="section-add-preview-rows" class="min-w-0 flex-1 space-y-1"></div>
-              <div class="flex shrink-0 items-center gap-1">
-                <button id="section-add-clear-btn" type="button" title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
-                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
-                </button>
-              </div>
+      <datalist id="section-merge-options"></datalist>
+
+      <!-- Quick-add: a real modal rather than a widget embedded in a
+           section's <summary> — that embedding was the whole reason a
+           spacebar keypress could ever be mistaken for a <details> disclosure
+           toggle. As a modal it also has one fixed home in the DOM, so it
+           needs no reattach-after-rerender dance the way the old widget did. -->
+      <div id="quick-add-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
+        <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
+          <div class="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
+            <div class="min-w-0">
+              <p id="quick-add-section-label" class="truncate text-xs text-slate-500 dark:text-slate-400">—</p>
+            </div>
+            <button id="quick-add-close" type="button" title="Close" class="shrink-0 rounded-full border border-slate-200 bg-slate-100 p-1.5 text-slate-500 hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+            </button>
+          </div>
+
+          <label class="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+            <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-slate-200 transition [&:has(:checked)]:bg-blue-600 dark:bg-slate-700">
+              <input id="quick-add-meaning-toggle" type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+              <span class="inline-block h-4 w-4 translate-x-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-4"></span>
+            </span>
+            <span id="quick-add-toggle-label">Typing the English meaning (translates to Japanese)</span>
+          </label>
+
+          <div class="mt-3">
+            <div class="flex items-center gap-1.5">
+              <button id="quick-add-back-btn" type="button" title="Back to the previous stage" class="hidden shrink-0 rounded p-1.5 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59a.75.75 0 01.75.75z" clip-rule="evenodd"/></svg>
+              </button>
+              <input id="quick-add-input" type="text" autocomplete="off" placeholder="Type a word to add…" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+            </div>
+            <div id="quick-add-panel" class="hidden mt-2 flex items-start gap-2">
+              <div id="quick-add-preview-rows" class="min-w-0 flex-1 space-y-1"></div>
+              <button id="quick-add-clear-btn" type="button" title="Clear" class="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+              </button>
             </div>
           </div>
+          <p class="mt-2 text-[11px] leading-snug text-slate-400 dark:text-slate-500">Enter advances, Shift+Enter (or the ‹ button, or clicking a field below) goes back — edit any of the three and continue from there.</p>
         </div>
       </div>
-
-      <datalist id="card-section-options"></datalist>
-      <datalist id="section-merge-options"></datalist>
 
       <div id="quiz-modal" class="modal-backdrop fixed inset-0 z-30 items-center justify-center bg-slate-900/60 px-4 py-6">
         <div class="w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-800">
@@ -536,7 +570,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/wanakana@5.3.1/dist/wanakana.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wanakana@5.3.1/wanakana.min.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAcahdEVwVPQc5J5ejAvFIAP7zu5ciiOqc",
@@ -554,12 +588,6 @@
     const auth = firebase.auth();
     const wordsRef = database.ref('words');
 
-    
-
-    const languageConfig = {
-      japanese: { label: 'Japanese' }
-    };
-
     // ISO code used by the translation API — this page is Japanese-only.
     const langCodeMap = {
       japanese: 'ja'
@@ -568,14 +596,30 @@
     const state = {
       language: 'japanese',
       query: '',
-      // mode: 'idle' | 'entering'; section: which section this widget is
-      // scoped to (set when opened via that section's "+"). resolved:
-      // {direction, word, pronunciation, englishMeaning}. stageIndex (0/1/2)
-      // tracks which of the three resolved fields (in this direction's
-      // display order) is currently loaded into sectionAddInput as the user
-      // steps through them with Enter. lastCheckedText is what the field held
-      // the last time the 2s poller checked it, so it only reacts to genuine edits.
-      sectionAdd: { mode: 'idle', section: null, stageIndex: 0, resolved: null, lastCheckedText: null },
+      // open: is the quick-add modal up. section: which section it's scoped
+      // to (set when opened, via a section's "+", the space-bar shortcut, or
+      // a swipe). resolved: {word, pronunciation, englishMeaning}. stageIndex
+      // (0/1/2) tracks which of the three resolved fields (in
+      // quickAddMeaningMode's display order) is currently loaded into
+      // quickAddInput as the user steps through them with Enter.
+      // lastCheckedText is what the field held the last time the 2s poller
+      // checked it, so it only reacts to genuine edits.
+      quickAdd: { open: false, section: null, stageIndex: 0, resolved: null, lastCheckedText: null },
+      // Persisted across sessions. false (default): the input is romaji,
+      // phonetically converted to kana via wanakana — no network call. true:
+      // the input is the English meaning, translated into real Japanese
+      // (kanji-capable, since it's an actual translation, not a phonetic
+      // conversion).
+      quickAddMeaningMode: localStorage.getItem('quickAddMeaningMode') === '1',
+      // The section a space-bar press or swipe gesture should target: the
+      // one last hovered (desktop) or last expanded/added-to (either
+      // platform) — never written to Firebase, purely a UI convenience.
+      hoveredSection: null,
+      lastActiveSection: null,
+      // Non-null exactly while a word card is being dragged to move it:
+      // {entry, card, ghost, hoverSection, hoverRow, hoverTimer}. Purely a
+      // UI-session concern — never persisted, never written to Firebase.
+      cardDrag: null,
       // Which section's kebab dropdown is open, and in what mode: 'closed',
       // the action list ('menu'), or the merge-target picker ('merge').
       sectionMenu: { section: null, mode: 'closed' },
@@ -610,6 +654,10 @@
       // SECTION -> true for sections explicitly hidden from the default view.
       hiddenSections: {},
       hiddenSectionsRef: null,
+      // SECTION -> true for a starred ("top 5") section — capped at
+      // MAX_STARRED_SECTIONS, sorted ahead of everything else.
+      starredSections: {},
+      starredSectionsRef: null,
       sectionCache: new Map(),        // SECTION -> entries[]
       sectionListeners: new Map(),    // SECTION -> firebase ref, so we can .off() on language switch
       sectionHeaderDomRefs: new Map() // SECTION -> its <details> element, rebuilt on every renderSectionHeaders()
@@ -690,19 +738,26 @@
     const hiddenToggle = document.getElementById('hidden-toggle');
     const hiddenToggleIcon = document.getElementById('hidden-toggle-icon');
     const sectionFilterInput = document.getElementById('section-filter-input');
-    const sectionAddHome = document.getElementById('section-add-home');
-    const sectionAddWidget = document.getElementById('section-add-widget');
-    const sectionAddInput = document.getElementById('section-add-input');
-    const sectionAddPanel = document.getElementById('section-add-panel');
-    const sectionAddPreviewRows = document.getElementById('section-add-preview-rows');
-    const sectionAddClearBtn = document.getElementById('section-add-clear-btn');
-
-    function getCurrentLanguageData() {
-      return languageConfig[state.language] || languageConfig.japanese;
-    }
+    const quickAddModal = document.getElementById('quick-add-modal');
+    const quickAddClose = document.getElementById('quick-add-close');
+    const quickAddSectionLabel = document.getElementById('quick-add-section-label');
+    const quickAddMeaningToggle = document.getElementById('quick-add-meaning-toggle');
+    const quickAddToggleLabel = document.getElementById('quick-add-toggle-label');
+    const quickAddInput = document.getElementById('quick-add-input');
+    const quickAddBackBtn = document.getElementById('quick-add-back-btn');
+    const quickAddPanel = document.getElementById('quick-add-panel');
+    const quickAddPreviewRows = document.getElementById('quick-add-preview-rows');
+    const quickAddClearBtn = document.getElementById('quick-add-clear-btn');
 
     function normalize(text) {
       return (text || '').trim().toLowerCase();
+    }
+
+    // The English meaning is always stored init-capped ("good morning" ->
+    // "Good Morning") — every word's first letter capitalized, the rest
+    // lowercased, regardless of however it was typed.
+    function toInitCap(text) {
+      return (text || '').trim().replace(/\S+/g, word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
     }
 
     function escapeHtml(text) {
@@ -901,34 +956,77 @@
       return getRomanization(text, nativeLang, 'en');
     }
 
-    // Decides which direction a quick-add entry is being typed in: plain latin
-    // text is treated as the English meaning to translate into Japanese;
-    // anything else is treated as the Japanese word itself.
-    function detectQuickAddDirection(text) {
-      const isAllLatin = /^[a-zA-Z\s'".,!?-]+$/.test((text || '').trim());
-      return isAllLatin ? 'toNative' : 'toEnglish';
+    // Converts romaji text to hiragana via wanakana (the same battle-tested
+    // library the app already loads) — deterministic, no network round-trip,
+    // and correctly handles sokuon (small tsu / doubled consonants: "gakkou"
+    // -> "がっこう"), long vowels ("koukou" -> "こうこう"), combo kana
+    // ("kya"/"sho"/etc.), and both "n"-before-a-vowel conventions ("kin'en"
+    // and "kinen" alike). It can only ever produce hiragana/katakana, never
+    // kanji — kanji selection isn't derivable from sound alone, it requires
+    // an actual dictionary/translation (see the meaning-mode branch below).
+    //
+    // Confirmed against real output (not just documentation) before shipping:
+    // wanakana leaves traditional-Hepburn "m" (used before b/p/m instead of
+    // "n" — "tempura", "sempai", "shimbun", "gambaru") completely unconverted
+    // as a literal ASCII "m", which silently corrupts very common words.
+    // That's unlike, say, "konnichiwa" -> こんにちわ (not こんにちは) — a
+    // real but inherent ambiguity of phonetic conversion, since the topic
+    // marker は is pronounced "wa" but there's no way to tell "you meant the
+    // grammatical particle" from sound alone. The "m"-before-labial case has
+    // no such ambiguity (it always means ん), so it's corrected here rather
+    // than left as a rough edge — every other combination wanakana already
+    // gets right on its own.
+    function convertRomajiToHiragana(text) {
+      const raw = (text || '').trim();
+      if (!raw) return '';
+      if (typeof wanakana === 'undefined') {
+        console.error('wanakana failed to load — using the raw romaji text as-is');
+        return raw;
+      }
+      const normalized = raw.replace(/m(?=[bpm])/gi, 'n');
+      return wanakana.toHiragana(normalized, { IMEMode: false });
+    }
+
+    // The reverse direction — used to derive a canonical romaji pronunciation
+    // from the (already-converted) word, since the word stage's input is
+    // live-bound to wanakana (see updateQuickAddImeBinding): by the time
+    // Enter is pressed there, the box already shows kana, not your original
+    // romaji keystrokes, so there's nothing left to "preserve as typed"
+    // there anymore — this instead gives back a clean, consistently-spelled
+    // romaji reading no matter how you originally typed it (e.g. "kekkonn"
+    // or "kekkon" both land on the same けっこん -> "kekkon").
+    function convertKanaToRomaji(text) {
+      const raw = (text || '').trim();
+      if (!raw) return '';
+      if (typeof wanakana === 'undefined') return raw;
+      return wanakana.toRomaji(raw);
     }
 
     // Resolves a single typed string into {word, pronunciation, englishMeaning}
-    // (Firebase's actual w/p/em fields), regardless of which direction it was
-    // typed in — the direction only changes what's derived from what.
+    // (Firebase's actual w/p/em fields). Which one you typed is an explicit
+    // choice (state.quickAddMeaningMode, the modal's toggle) rather than
+    // guessed from the text:
+    //  - meaning mode (toggle on): you typed the English meaning — it's
+    //    translated into the real Japanese word (kanji-capable, since it's
+    //    an actual translation, not a phonetic conversion).
+    //  - romaji mode (toggle off, default): you typed the word's sound in
+    //    romaji — phonetically converted to hiragana (no translation
+    //    involved), so the suggested meaning is just that: a suggestion,
+    //    editable like every other field at its own stage.
     async function resolveQuickAddFields(text) {
-      const direction = detectQuickAddDirection(text);
       const nativeLang = langCodeMap[state.language] || 'ja';
 
-      if (direction === 'toNative') {
+      if (state.quickAddMeaningMode) {
         const englishMeaning = text;
         const word = (await translateText(text, 'en', nativeLang)) || text;
         const pronunciation = await romanizeNativeWord(word, nativeLang);
-        return { direction, word, pronunciation, englishMeaning };
+        return { word, pronunciation, englishMeaning };
       }
 
-      const word = text;
-      const [pronunciation, englishMeaning] = await Promise.all([
-        romanizeNativeWord(word, nativeLang),
-        translateText(word, nativeLang, 'en')
-      ]);
-      return { direction, word, pronunciation, englishMeaning };
+      const word = convertRomajiToHiragana(text);
+      const pronunciation = convertKanaToRomaji(word);
+      const englishMeaning = await translateText(word, nativeLang, 'en');
+      return { word, pronunciation, englishMeaning };
     }
 
     // Firebase shape: words/{language}/{section}/{id} -> { w, p, em, c }.
@@ -958,6 +1056,9 @@
     }
 
     function sectionSort(a, b) {
+      const aStarred = isSectionStarred(a);
+      const bStarred = isSectionStarred(b);
+      if (aStarred !== bStarred) return aStarred ? -1 : 1;
       if (a === 'UNCATEGORIZED') return 1;
       if (b === 'UNCATEGORIZED') return -1;
       return a.localeCompare(b);
@@ -1023,6 +1124,29 @@
       }
     }
 
+    // Starring a section ("top 5") pins it ahead of everything else in
+    // sectionSort — capped at MAX_STARRED_SECTIONS total (top-level sections
+    // and subsections share the one cap) so it stays a genuine shortlist.
+    const MAX_STARRED_SECTIONS = 5;
+
+    function isSectionStarred(section) {
+      return !!state.starredSections[section];
+    }
+
+    async function toggleSectionStarred(section) {
+      const nextStarred = !isSectionStarred(section);
+      if (nextStarred && Object.keys(state.starredSections).length >= MAX_STARRED_SECTIONS) {
+        window.alert(`You can only star up to ${MAX_STARRED_SECTIONS} sections — un-star one first.`);
+        return;
+      }
+      try {
+        await database.ref(`starredSections/${state.language}/${section}`).set(nextStarred ? true : null);
+      } catch (err) {
+        console.error('Failed to toggle starred section', err);
+        window.alert('Failed to update starred section. See console for details.');
+      }
+    }
+
     // On-screen label for a section — subsections show as "PARENT → CHILD" so
     // it's clear which parent they're nested under even out of context (e.g.
     // in the quiz/reading status line).
@@ -1054,17 +1178,24 @@
 
     // On-demand duplicate check when adding a brand-new word — a single direct
     // read of this language's words, done only at the moment "Add" is clicked
-    // (not maintained as a standing index).
-    async function wordExistsInLanguage(normalizedWord) {
+    // (not maintained as a standing index). Returns where the first match
+    // lives (section, id, and its raw stored fields) so the caller can offer
+    // to move it instead of just refusing the add, or null if there's no match.
+    async function findExistingWordLocation(normalizedWord) {
       try {
         const snapshot = await wordsRef.child(state.language).once('value');
         const languageData = snapshot.val() || {};
-        return Object.values(languageData).some(sectionWords =>
-          Object.values(sectionWords || {}).some(data => data && normalize(data.w || '') === normalizedWord)
-        );
+        for (const [section, sectionWords] of Object.entries(languageData)) {
+          for (const [id, data] of Object.entries(sectionWords || {})) {
+            if (data && normalize(data.w || '') === normalizedWord) {
+              return { section, id, data };
+            }
+          }
+        }
+        return null;
       } catch (err) {
         console.error('Duplicate check failed', err);
-        return false;
+        return null;
       }
     }
 
@@ -1167,8 +1298,19 @@
       return ref;
     }
 
+    function subscribeStarredSections(language) {
+      const ref = database.ref(`starredSections/${language}`);
+      ref.on('value', (snapshot) => {
+        state.starredSections = snapshot.val() || {};
+        renderCurrentView();
+      }, (err) => {
+        console.error('Failed to subscribe to starred sections', err);
+      });
+      return ref;
+    }
+
     function teardownLanguageData() {
-      closeSectionAdd();
+      closeQuickAdd();
       state.sectionMenu = { section: null, mode: 'closed' };
       if (state.sectionSummaryRef) {
         state.sectionSummaryRef.off('value');
@@ -1178,11 +1320,16 @@
         state.hiddenSectionsRef.off('value');
         state.hiddenSectionsRef = null;
       }
+      if (state.starredSectionsRef) {
+        state.starredSectionsRef.off('value');
+        state.starredSectionsRef = null;
+      }
       state.sectionListeners.forEach(ref => ref.off('value'));
       state.sectionListeners.clear();
       state.sectionCache.clear();
       state.sectionSummary = {};
       state.hiddenSections = {};
+      state.starredSections = {};
       state.expandedSections.clear();
       state.expandedUnsectionedGroups.clear();
     }
@@ -1200,21 +1347,92 @@
       });
       state.sectionSummaryRef = subscribeSectionSummary(language);
       state.hiddenSectionsRef = subscribeHiddenSections(language);
+      state.starredSectionsRef = subscribeStarredSections(language);
     }
 
+    // Timing for the three pointer gestures on a word card. Kept deliberately
+    // apart so they can never be mistaken for one another: a real
+    // double-click always completes both releases well inside
+    // DOUBLE_CLICK_WINDOW_MS, long before DELETE_HOLD_MS could ever fire.
+    //  - two releases within DOUBLE_CLICK_WINDOW_MS of each other -> edit.
+    //  - a second press that ISN'T released within DELETE_HOLD_MS -> delete.
+    //  - a lone press (no preceding click) held past DRAG_HOLD_MS -> drag.
+    const DOUBLE_CLICK_WINDOW_MS = 300;
+    const DELETE_HOLD_MS = 1000;
+    const DRAG_HOLD_MS = 450;
+
+    // Pointer Events unify mouse and touch, so this one state machine drives
+    // both desktop clicking and mobile tapping/holding without separate code
+    // paths. Re-attached fresh on every view-mode render (see
+    // exitCardEditMode) rather than persisted, so there's nothing to leak
+    // between a card's edit and view states.
     function attachCardInteractions(card, entry) {
-      card.addEventListener('dblclick', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!state.isAdmin) return;
-        enterCardEditMode(card, entry);
+      let lastPointerUpAt = 0;
+      let secondPressDownAt = 0;
+      let holdTimer = null;
+      let holdKind = null; // 'delete' | 'drag'
+      const overlay = card.querySelector('.card-delete-hold-overlay');
+
+      function cancelHold() {
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+        holdKind = null;
+        if (overlay) overlay.classList.remove('card-delete-hold-active');
+      }
+
+      card.addEventListener('pointerdown', (event) => {
+        if (!state.isAdmin || card.dataset.editing === '1' || event.button !== 0) return;
+        const isSecondPress = (event.timeStamp - lastPointerUpAt) <= DOUBLE_CLICK_WINDOW_MS;
+        if (isSecondPress) {
+          holdKind = 'delete';
+          secondPressDownAt = event.timeStamp;
+          if (overlay) overlay.classList.add('card-delete-hold-active');
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            if (overlay) overlay.classList.remove('card-delete-hold-active');
+            deleteWordEntry(entry, { skipConfirm: true });
+          }, DELETE_HOLD_MS);
+        } else {
+          holdKind = 'drag';
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            startCardDrag(card, entry, event);
+          }, DRAG_HOLD_MS);
+        }
       });
+
+      card.addEventListener('pointerup', (event) => {
+        lastPointerUpAt = event.timeStamp;
+        if (holdKind === 'delete' && holdTimer) {
+          // The second press released before the delete hold completed — but
+          // only counts as a genuine double-click if THAT release was ALSO
+          // fast. Held past the double-click window but released before the
+          // delete threshold lands in a deliberate dead zone: not a fast
+          // enough double-click to edit, not a long enough hold to delete.
+          const heldFor = event.timeStamp - secondPressDownAt;
+          cancelHold();
+          if (heldFor <= DOUBLE_CLICK_WINDOW_MS) {
+            enterCardEditMode(card, entry);
+          }
+        } else {
+          cancelHold();
+        }
+      });
+
+      // Moving off the card before a hold completes cancels it — a
+      // press that started here but drifted off before the threshold
+      // shouldn't fire a delete or a drag.
+      card.addEventListener('pointerleave', cancelHold);
+      card.addEventListener('pointercancel', cancelHold);
     }
 
     function buildDictionaryCardContent(entry) {
       const pronunciation = entry.pronunciation || '';
       const englishMeaning = entry.englishMeaning || '';
       return `
+        <div class="card-delete-hold-overlay"></div>
         <div class="min-w-0 flex-1 flex items-baseline gap-3">
           <div class="min-w-[100px] truncate text-sm font-semibold text-slate-900 leading-tight dark:text-slate-100">${escapeHtml(entry.word)}</div>
           <div class="min-w-[80px] truncate text-xs text-slate-500 leading-tight dark:text-slate-400">${escapeHtml(pronunciation)}</div>
@@ -1223,17 +1441,23 @@
       `;
     }
 
-    // Turns a card in place into three inline text fields (word, pronunciation,
-    // meaning) plus move/save/delete/clear controls — the clear/delete icons
-    // match the quick-add panel's exactly. Editing happens directly on the
-    // field the user wants to change; Save persists all three, Clear exits
-    // without saving, and Move swaps in a section picker (see below).
     function enterCardEditMode(card, entry) {
       if (card.dataset.editing === '1') return;
       card.dataset.editing = '1';
       renderCardEditFields(card, entry);
     }
 
+    const CARD_EDIT_FIELD_ORDER = ['word', 'pronunciation', 'englishMeaning'];
+
+    // Turns a card in place into three inline text fields — no buttons at
+    // all: Enter is the only way through it. Starts on the word field with
+    // its text pre-selected; each Enter both captures whatever's in the
+    // current field and steps to the next one (word -> pronunciation ->
+    // meaning), forward only — there's no going back once you've moved on
+    // (unlike the quick-add modal's traversal). Enter from the last field
+    // saves all three. Escape, or a pointerdown anywhere outside the card,
+    // discards the edit and reverts to the original values (replacing what
+    // the old Clear button used to do).
     function renderCardEditFields(card, entry) {
       card.innerHTML = `
         <div class="min-w-0 flex-1 flex items-center gap-2">
@@ -1241,124 +1465,47 @@
           <input type="text" data-field="pronunciation" value="${escapeHtml(entry.pronunciation || '')}" class="min-w-0 w-[80px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-500 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400" />
           <input type="text" data-field="englishMeaning" value="${escapeHtml(entry.englishMeaning || '')}" class="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-600 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300" />
         </div>
-        <div class="flex shrink-0 items-center gap-1">
-          <button type="button" data-card-move title="Move to another section" class="rounded p-1 text-blue-500 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"/></svg>
-          </button>
-          <button type="button" data-card-save title="Save" class="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
-          </button>
-          <button type="button" data-card-delete title="Delete this word" class="rounded p-1 text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482 41.03 41.03 0 00-2.365-.298V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/></svg>
-          </button>
-          <button type="button" data-card-clear title="Clear" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 10-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 10-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
-          </button>
-        </div>
       `;
 
-      card.querySelectorAll('input').forEach(input => {
-        input.addEventListener('click', (event) => event.stopPropagation());
-        input.addEventListener('dblclick', (event) => event.stopPropagation());
-      });
-      card.querySelector('[data-card-move]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        renderCardSectionPicker(card, entry);
-      });
-      card.querySelector('[data-card-clear]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        exitCardEditMode(card, entry);
-      });
-      card.querySelector('[data-card-delete]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        deleteWordEntry(entry);
-      });
-      card.querySelector('[data-card-save]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        saveCardEdits(card, entry);
-      });
-    }
+      const inputs = CARD_EDIT_FIELD_ORDER.map(name => card.querySelector(`[data-field="${name}"]`));
 
-    // Swaps the card's fields row for a single section input (autocompleted
-    // against existing sections via the shared datalist) plus confirm/back
-    // controls — an arrow pair to mirror the move button that opened it.
-    function renderCardSectionPicker(card, entry) {
-      card.innerHTML = `
-        <div class="min-w-0 flex-1 flex items-center gap-2">
-          <input type="text" data-field="section" value="${escapeHtml(entry.section)}" list="card-section-options" placeholder="Section" class="min-w-0 flex-1 rounded-md border border-blue-300 bg-white px-1.5 py-1 text-sm font-medium text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:border-blue-700 dark:bg-slate-900 dark:text-slate-100" />
-        </div>
-        <div class="flex shrink-0 items-center gap-1">
-          <button type="button" data-card-move-confirm title="Move here" class="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
-          </button>
-          <button type="button" data-card-move-back title="Back" class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:text-slate-500 dark:hover:bg-slate-700">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a.75.75 0 01-.75.75H4.66l2.1 1.95a.75.75 0 11-1.02 1.1l-3.5-3.25a.75.75 0 010-1.1l3.5-3.25a.75.75 0 111.02 1.1l-2.1 1.95h12.59a.75.75 0 01.75.75z" clip-rule="evenodd"/></svg>
-          </button>
-        </div>
-      `;
-
-      const datalist = document.getElementById('card-section-options');
-      datalist.innerHTML = getDistinctSections().map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
-
-      const sectionField = card.querySelector('[data-field="section"]');
-      sectionField.addEventListener('click', (event) => event.stopPropagation());
-      sectionField.addEventListener('dblclick', (event) => event.stopPropagation());
-      sectionField.addEventListener('input', () => {
-        const cursor = sectionField.selectionStart;
-        const upper = sectionField.value.toUpperCase();
-        if (upper !== sectionField.value) {
-          sectionField.value = upper;
-          sectionField.setSelectionRange(cursor, cursor);
+      function finish(save) {
+        document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+        if (save) {
+          saveCardEdits(card, entry);
+        } else {
+          exitCardEditMode(card, entry);
         }
-      });
-      sectionField.addEventListener('keydown', (event) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          confirmCardMove(card, entry, sectionField.value);
-        } else if (event.key === 'Escape') {
-          renderCardEditFields(card, entry);
-        }
-      });
-      sectionField.focus();
-      sectionField.select();
-
-      card.querySelector('[data-card-move-confirm]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        confirmCardMove(card, entry, sectionField.value);
-      });
-      card.querySelector('[data-card-move-back]').addEventListener('click', (event) => {
-        event.stopPropagation();
-        renderCardEditFields(card, entry);
-      });
-    }
-
-    async function confirmCardMove(card, entry, rawSection) {
-      const section = (rawSection || '').trim().toUpperCase() || 'UNCATEGORIZED';
-      if (section === entry.section) {
-        renderCardEditFields(card, entry);
-        return;
       }
-      try {
-        const snapshot = await wordsRef.child(state.language).child(entry.section).child(entry.id).once('value');
-        const data = snapshot.val();
-        if (data) {
-          await database.ref().update({
-            [`words/${state.language}/${entry.section}/${entry.id}`]: null,
-            [`words/${state.language}/${section}/${entry.id}`]: data
-          });
-          await Promise.all([
-            bumpSectionCount(state.language, entry.section, -1),
-            bumpSectionCount(state.language, section, 1)
-          ]);
-          entry.section = section;
-        }
-      } catch (err) {
-        console.error('Failed to move word to new section', err);
-        window.alert('Failed to move word. See console for details.');
-        return;
+
+      // Capture phase so this sees the pointerdown before any other card's
+      // own gesture handling does.
+      function handleOutsidePointerDown(event) {
+        if (card.contains(event.target)) return;
+        finish(false);
       }
-      exitCardEditMode(card, entry);
+      document.addEventListener('pointerdown', handleOutsidePointerDown, true);
+
+      inputs.forEach((input, index) => {
+        input.addEventListener('pointerdown', (event) => event.stopPropagation());
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const nextInput = inputs[index + 1];
+            if (nextInput) {
+              nextInput.focus();
+              nextInput.select();
+            } else {
+              finish(true);
+            }
+          } else if (event.key === 'Escape') {
+            finish(false);
+          }
+        });
+      });
+
+      inputs[0].focus();
+      inputs[0].select();
     }
 
     function exitCardEditMode(card, entry) {
@@ -1370,7 +1517,7 @@
     async function saveCardEdits(card, entry) {
       const word = card.querySelector('[data-field="word"]').value.trim();
       const pronunciation = card.querySelector('[data-field="pronunciation"]').value.trim();
-      const englishMeaning = card.querySelector('[data-field="englishMeaning"]').value.trim();
+      const englishMeaning = toInitCap(card.querySelector('[data-field="englishMeaning"]').value.trim());
       if (!word) {
         window.alert('Word cannot be empty.');
         return;
@@ -1388,6 +1535,29 @@
       exitCardEditMode(card, entry);
     }
 
+    // Shared by the drag-and-drop move (below) — moves a word's data to
+    // targetSection and adjusts both sections' counts.
+    async function moveWordEntry(entry, targetSection) {
+      try {
+        const snapshot = await wordsRef.child(state.language).child(entry.section).child(entry.id).once('value');
+        const data = snapshot.val();
+        if (data) {
+          await database.ref().update({
+            [`words/${state.language}/${entry.section}/${entry.id}`]: null,
+            [`words/${state.language}/${targetSection}/${entry.id}`]: data
+          });
+          await Promise.all([
+            bumpSectionCount(state.language, entry.section, -1),
+            bumpSectionCount(state.language, targetSection, 1)
+          ]);
+          entry.section = targetSection;
+        }
+      } catch (err) {
+        console.error('Failed to move word to new section', err);
+        window.alert('Failed to move word. See console for details.');
+      }
+    }
+
     function getDistinctSections() {
       return Object.keys(state.sectionSummary)
         .filter(section => section !== 'UNCATEGORIZED')
@@ -1400,6 +1570,120 @@
       card.innerHTML = buildDictionaryCardContent(entry);
       attachCardInteractions(card, entry);
       return card;
+    }
+
+    // ---- Drag-to-move: long-press a word card and drop it on a section or
+    // subsection header to move it there. Every section collapses the
+    // moment the drag starts, so every header is a visible, reachable drop
+    // target; hovering over a still-collapsed parent for a beat drills into
+    // it (showing only its subsections, never its own words — you can't
+    // drop a word onto another word). ----
+
+    function startCardDrag(card, entry, initialEvent) {
+      if (state.cardDrag) return;
+
+      state.expandedSections.clear();
+      state.expandedUnsectionedGroups.clear();
+      renderCurrentView();
+
+      card.classList.add('compact-card-dragging');
+
+      const ghost = document.createElement('div');
+      ghost.className = 'card-drag-ghost';
+      ghost.innerHTML = `<span>${escapeHtml(entry.word)}</span><span class="card-drag-ghost-meaning">${escapeHtml(entry.englishMeaning || '')}</span>`;
+      document.body.appendChild(ghost);
+
+      state.cardDrag = { entry, card, ghost, hoverSection: null, hoverRow: null, hoverTimer: null };
+      positionCardDragGhost(initialEvent.clientX, initialEvent.clientY);
+
+      document.addEventListener('pointermove', onCardDragMove);
+      document.addEventListener('pointerup', onCardDragEnd);
+      document.addEventListener('pointercancel', onCardDragCancel);
+    }
+
+    function positionCardDragGhost(x, y) {
+      if (!state.cardDrag) return;
+      // Offset above the point of contact so a finger (or the cursor)
+      // doesn't sit directly on top of — and hide — the ghost.
+      state.cardDrag.ghost.style.left = `${x}px`;
+      state.cardDrag.ghost.style.top = `${y - 28}px`;
+    }
+
+    function onCardDragMove(event) {
+      if (!state.cardDrag) return;
+      positionCardDragGhost(event.clientX, event.clientY);
+
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      const summary = hit && hit.closest('summary');
+      const row = summary ? summary.closest('.section-row, .section-row-sub') : null;
+      const section = row ? row.dataset.section : null;
+
+      if (section === state.cardDrag.hoverSection) return;
+
+      if (state.cardDrag.hoverRow) {
+        state.cardDrag.hoverRow.classList.remove('section-row-drop-hover');
+      }
+      if (state.cardDrag.hoverTimer) {
+        clearTimeout(state.cardDrag.hoverTimer);
+        state.cardDrag.hoverTimer = null;
+      }
+
+      state.cardDrag.hoverSection = section;
+      state.cardDrag.hoverRow = row;
+      if (!section) return;
+
+      row.classList.add('section-row-drop-hover');
+
+      const isCollapsedParentWithSubsections = !isSubsection(section)
+        && getSubsectionsOf(section).length > 0
+        && !state.expandedSections.has(section);
+      if (isCollapsedParentWithSubsections) {
+        state.cardDrag.hoverTimer = setTimeout(() => {
+          state.cardDrag.hoverTimer = null;
+          if (!state.cardDrag || state.cardDrag.hoverSection !== section) return;
+          state.expandedSections.add(section);
+          renderCurrentView();
+          // The row was just rebuilt — re-apply the highlight to the fresh one.
+          const freshWrapper = state.sectionHeaderDomRefs.get(section);
+          if (freshWrapper) {
+            freshWrapper.classList.add('section-row-drop-hover');
+            state.cardDrag.hoverRow = freshWrapper;
+          }
+        }, 600);
+      }
+    }
+
+    async function onCardDragEnd() {
+      if (!state.cardDrag) return;
+      const drag = state.cardDrag;
+      stopCardDragTracking();
+      const targetSection = drag.hoverSection;
+      cleanupCardDrag();
+      if (!targetSection || targetSection === drag.entry.section) return;
+      await moveWordEntry(drag.entry, targetSection);
+    }
+
+    function onCardDragCancel() {
+      if (!state.cardDrag) return;
+      stopCardDragTracking();
+      cleanupCardDrag();
+    }
+
+    function stopCardDragTracking() {
+      document.removeEventListener('pointermove', onCardDragMove);
+      document.removeEventListener('pointerup', onCardDragEnd);
+      document.removeEventListener('pointercancel', onCardDragCancel);
+    }
+
+    function cleanupCardDrag() {
+      const drag = state.cardDrag;
+      if (!drag) return;
+      if (drag.hoverTimer) clearTimeout(drag.hoverTimer);
+      if (drag.hoverRow) drag.hoverRow.classList.remove('section-row-drop-hover');
+      drag.ghost.remove();
+      drag.card.classList.remove('compact-card-dragging');
+      state.cardDrag = null;
+      renderCurrentView();
     }
 
     // Always the section-wise view now — search filters the section list
@@ -1461,24 +1745,6 @@
           loadAndRenderSectionBody(section);
         }
       });
-
-      reattachSectionAddWidgetIfNeeded();
-    }
-
-    // A section list re-render (filtering, live count updates, etc.) tears down
-    // and rebuilds every wrapper — if the add-word widget was open for one of
-    // these sections, it just got orphaned along with the old wrapper. Re-home
-    // it into the freshly built wrapper (keeping whatever was typed so far), or
-    // close it if that section no longer has a wrapper at all (e.g. filtered out).
-    function reattachSectionAddWidgetIfNeeded() {
-      if (state.sectionAdd.mode === 'idle') return;
-      const wrapper = state.sectionHeaderDomRefs.get(state.sectionAdd.section);
-      const summary = wrapper && wrapper.querySelector('summary');
-      if (!summary) {
-        closeSectionAdd();
-        return;
-      }
-      summary.appendChild(sectionAddWidget);
     }
 
     // Enter in the section filter box: if the typed name doesn't match any
@@ -1524,13 +1790,24 @@
 
       const wrapper = document.createElement('div');
       wrapper.className = sub ? 'section-row section-row-sub' : 'section-row';
+      // Lets a card drag's hit-testing (elementFromPoint + closest) read back
+      // which section a given row is, without needing a separate DOM->name
+      // reverse lookup.
+      wrapper.dataset.section = section;
+      // Desktop "which section does space-bar/swipe target" signal — mobile
+      // has no hover, so it falls back to lastActiveSection below instead.
+      wrapper.addEventListener('mouseenter', () => { state.hoveredSection = section; });
+      wrapper.addEventListener('mouseleave', () => {
+        if (state.hoveredSection === section) state.hoveredSection = null;
+      });
 
       const details = document.createElement('details');
       details.className = 'section-group';
 
       const summary = document.createElement('summary');
       const label = sub ? getSubsectionLabel(section) : section;
-      summary.innerHTML = `<span class="section-label">${escapeHtml(label)} (${count})</span>`;
+      const starMark = isSectionStarred(section) ? '<span class="section-star-mark">★</span> ' : '';
+      summary.innerHTML = `<span class="section-label">${starMark}${escapeHtml(label)} (${count})</span>`;
       details.appendChild(summary);
 
       const body = document.createElement('div');
@@ -1541,6 +1818,7 @@
       details.addEventListener('toggle', () => {
         if (details.open) {
           state.expandedSections.add(section);
+          state.lastActiveSection = section;
           loadAndRenderSectionBody(section);
         } else {
           state.expandedSections.delete(section);
@@ -1571,7 +1849,7 @@
         addBtn.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleSectionAddWidget(section, wrapper);
+          toggleQuickAdd(section);
         });
         actions.appendChild(addBtn);
       }
@@ -1672,21 +1950,20 @@
       renderCurrentView();
     }
 
-    // The open kebab menu's default contents: one row per action. Add moves
-    // the shared add-widget itself (see toggleSectionAddWidget) rather than
-    // going through the usual close-then-rerender path — closeSectionMenu's
-    // full re-render would rebuild `wrapper` and hand toggleSectionAddWidget
-    // a stale, detached reference, so the widget would never actually attach
-    // to the live summary. Removing just this menu node directly sidesteps
-    // that. Every other action doesn't touch `wrapper` at all afterward, so
-    // closeSectionMenu's simpler close-then-rerender is safe for them.
+    // The open kebab menu's contents: one icon per action (star/quiz/read,
+    // plus merge/delete for admins). Add and hide/un-hide live outside the
+    // menu entirely (see buildSectionDetailsShell), so every action here can
+    // safely use closeSectionMenu's simple close-then-rerender.
     function renderSectionMenuList(menuEl, section, sub) {
       const quizTitle = sub ? 'Quiz this subsection' : 'Quiz this section (and its subsections)';
       const readTitle = sub ? 'Read this subsection' : 'Read this section (and its subsections)';
       const deleteTitle = sub ? 'Delete this subsection' : 'Delete this section';
+      const starred = isSectionStarred(section);
+      const starTitle = starred ? 'Un-star this (remove from top 5)' : 'Star this (mark as a top 5 section)';
 
       menuEl.innerHTML = `
         <div class="section-menu-grid">
+          ${state.isAdmin ? `<button type="button" class="section-menu-icon-btn${starred ? ' section-menu-icon-starred' : ''}" data-menu-star title="${escapeHtml(starTitle)}">${starred ? '★' : '☆'}</button>` : ''}
           <button type="button" class="section-menu-icon-btn" data-menu-quiz title="${escapeHtml(quizTitle)}">✦</button>
           <button type="button" class="section-menu-icon-btn" data-menu-read title="${escapeHtml(readTitle)}">▶</button>
           ${state.isAdmin ? `
@@ -1696,6 +1973,12 @@
         </div>
       `;
 
+      const starBtn = menuEl.querySelector('[data-menu-star]');
+      if (starBtn) starBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeSectionMenu();
+        toggleSectionStarred(section);
+      });
       menuEl.querySelector('[data-menu-quiz]').addEventListener('click', (event) => {
         event.stopPropagation();
         closeSectionMenu();
@@ -1936,16 +2219,18 @@
       // In the hidden pane, a parent that isn't itself hidden can still be
       // shown above purely as a container for the hidden subsections just
       // rendered — its own words are visible in the normal pane already, so
-      // there's nothing of its own to show here.
-      const suppressOwnEntries = state.showHidden && !isSubsection(section) && !isSectionHidden(section);
+      // there's nothing of its own to show here. While a card is being
+      // dragged, EVERY section suppresses its own words too — a word can't
+      // be dropped onto another word, so during a drag only section/
+      // subsection headers should ever be visible as candidates.
+      const suppressOwnEntries = !!state.cardDrag
+        || (state.showHidden && !isSubsection(section) && !isSectionHidden(section));
       if (!suppressOwnEntries) {
         const ownEntriesContainer = document.createElement('div');
         ownEntriesContainer.className = 'own-entries-container';
         body.appendChild(ownEntriesContainer);
         renderOwnEntriesInto(ownEntriesContainer, section, entries, subsections);
       }
-
-      reattachSectionAddWidgetIfNeeded();
     }
 
     // Renders a parent's own (not-in-any-subsection) words — either as a flat
@@ -2033,154 +2318,235 @@
       renderOwnEntriesInto(container, section, entries, subsections);
     }
 
-    // ---- Section add: single-field word entry, traversed field by field,
-    // scoped to one fixed section (opened via that section's "+") ----
+    // ---- Quick add: a modal, scoped to one fixed section, opened via that
+    // section's "+", the space-bar shortcut, or a swipe (see the bottom of
+    // this script) ----
     //
-    // Type a word (English or native script — direction is auto-detected),
-    // then Enter steps through the resolved fields one at a time, loading each
-    // into the same input in place of the last (word -> pronunciation ->
-    // meaning), editable at every stage. A panel below the input shows all
-    // three throughout, highlighting whichever one is currently loaded into
-    // the field. A final Enter (from the meaning stage) saves straight into
-    // the section this widget was opened for — there's no category step here,
-    // since the section is already fixed. Escape/Clear cancels at any point.
+    // Type a word, then Enter steps through the resolved fields one at a
+    // time, loading each into the same input in place of the last (word ->
+    // pronunciation -> meaning), editable at every stage. A panel below the
+    // input shows all three throughout, highlighting whichever one is
+    // currently loaded into the field. A final Enter (from the meaning
+    // stage) saves straight into the section this was opened for — there's
+    // no category step here, since the section is already fixed. Escape,
+    // Clear, the × button, or the modal's own close button cancel at any point.
     //
     // Independently, a 2-second poll compares the field's current text to
     // what it held at the last check: if it changed, that's treated as a
-    // fresh edit — a full re-translation at the word stage, or a direct
+    // fresh edit — a full re-resolve at the word stage, or a direct
     // correction to the current field at the pronunciation/meaning stages —
     // and the panel is refreshed either way.
 
-    // Matches the per-direction ordering the app already showed in the
-    // (now-removed) review popup — same fields, same order, just traversed
-    // one at a time instead of shown all at once.
-    function getQuickAddFieldOrder(direction) {
-      return direction === 'toNative'
+    // Field order depends on which one you're actually typing first: meaning
+    // mode starts from the English meaning (word and pronunciation are then
+    // reviewed as translation results); romaji mode starts from the word
+    // itself (in romaji), same order as reviewing any other section's cards.
+    function getQuickAddFieldOrder() {
+      return state.quickAddMeaningMode
         ? ['englishMeaning', 'word', 'pronunciation']
         : ['word', 'pronunciation', 'englishMeaning'];
     }
 
     function buildQuickAddParts(resolved) {
-      return getQuickAddFieldOrder(resolved.direction).map(key => ({ key, value: resolved[key] }));
+      return getQuickAddFieldOrder().map(key => ({ key, value: resolved[key] }));
     }
 
-    function isSectionAddOpenFor(section) {
-      return state.sectionAdd.mode !== 'idle' && state.sectionAdd.section === section;
+    function updateQuickAddToggleLabel() {
+      quickAddMeaningToggle.checked = state.quickAddMeaningMode;
+      quickAddToggleLabel.textContent = state.quickAddMeaningMode
+        ? 'Typing the English meaning (translates to Japanese)'
+        : 'Typing romaji (converts to hiragana)';
     }
 
-    function toggleSectionAddWidget(section, wrapper) {
-      if (isSectionAddOpenFor(section)) {
-        closeSectionAdd();
+    // Live-converts the input's own text as you type, the same way a real
+    // Japanese IME would — only relevant for the "word" stage while in
+    // romaji mode (typing the English meaning, or reviewing an
+    // already-resolved word/pronunciation, should never get phonetic
+    // conversion sprung on it), and NOT while typing a '>subsection name' —
+    // confirmed by testing that leaving it bound there corrupts the name
+    // (typed "SNACKS", the live conversion silently turned it into
+    // "SナCKS"). Re-evaluated on every stage/toggle/keystroke change, so
+    // it's always bound exactly when it should be and nowhere else.
+    //
+    // wanakana.unbind() throws if the element was never bound in the first
+    // place (rather than a no-op) — quickAddImeBound tracks that ourselves
+    // so unbind is only ever called on an element we know we bound.
+    let quickAddImeBound = false;
+
+    function updateQuickAddImeBinding() {
+      if (typeof wanakana === 'undefined') return;
+      const isSubsectionEntry = quickAddInput.value.trim().startsWith('>');
+      const shouldBeBound = !state.quickAddMeaningMode && state.quickAdd.open && state.quickAdd.stageIndex === 0 && !isSubsectionEntry;
+      // Called on every keystroke (see the 'input' listener below) as well as
+      // every stage/toggle change, so this has to be a no-op whenever the
+      // desired state already matches — actually unbinding+rebinding on every
+      // keystroke resets wanakana's internal romaji-buffer, meaning a
+      // multi-character syllable (e.g. "toukyou") could never finish
+      // composing (confirmed by testing: unconditional rebinding froze
+      // conversion entirely, every keystroke just showed raw romaji).
+      if (shouldBeBound === quickAddImeBound) return;
+      if (quickAddImeBound) {
+        wanakana.unbind(quickAddInput);
+        quickAddImeBound = false;
+      }
+      if (shouldBeBound) {
+        wanakana.bind(quickAddInput, { IMEMode: true });
+        quickAddImeBound = true;
+      }
+    }
+
+    function updateQuickAddBackBtn() {
+      quickAddBackBtn.classList.toggle('hidden', !state.quickAdd.open || state.quickAdd.stageIndex === 0);
+    }
+
+    function openQuickAdd(section) {
+      closeQuickAdd();
+      state.quickAdd = { open: true, section, stageIndex: 0, resolved: null, lastCheckedText: null };
+      state.lastActiveSection = section;
+      quickAddSectionLabel.textContent = getSectionDisplayLabel(section);
+      quickAddInput.value = '';
+      quickAddInput.disabled = false;
+      quickAddInput.placeholder = 'Type a word to add…';
+      quickAddPanel.classList.add('hidden');
+      quickAddPreviewRows.innerHTML = '';
+      updateQuickAddToggleLabel();
+      updateQuickAddImeBinding();
+      updateQuickAddBackBtn();
+      quickAddModal.classList.add('open');
+      startQuickAddChecker();
+      quickAddInput.focus();
+    }
+
+    function closeQuickAdd() {
+      stopQuickAddChecker();
+      state.quickAdd = { open: false, section: null, stageIndex: 0, resolved: null, lastCheckedText: null };
+      quickAddModal.classList.remove('open');
+      quickAddInput.value = '';
+      quickAddInput.disabled = false;
+      quickAddInput.placeholder = 'Type a word to add…';
+      quickAddPanel.classList.add('hidden');
+      quickAddPreviewRows.innerHTML = '';
+      updateQuickAddImeBinding();
+      updateQuickAddBackBtn();
+    }
+
+    function toggleQuickAdd(section) {
+      if (state.quickAdd.open && state.quickAdd.section === section) {
+        closeQuickAdd();
         return;
       }
-      openSectionAdd(section, wrapper);
+      openQuickAdd(section);
     }
 
-    function openSectionAdd(section, wrapper) {
-      closeSectionAdd();
-      const summary = wrapper.querySelector('summary');
-      if (!summary) return;
-      state.sectionAdd = { mode: 'entering', section, stageIndex: 0, resolved: null, lastCheckedText: null };
-      sectionAddInput.value = '';
-      sectionAddInput.disabled = false;
-      sectionAddInput.placeholder = 'Type a word…';
-      sectionAddPanel.classList.add('hidden');
-      sectionAddPreviewRows.innerHTML = '';
-      summary.appendChild(sectionAddWidget);
-      startSectionAddChecker();
-      sectionAddInput.focus();
-    }
+    // Jumps straight to any of the 3 stages — used by the ‹ back button,
+    // Shift+Enter, and clicking a field in the preview strip below. Whatever
+    // was typed at the stage being left is saved into `resolved` first, so
+    // nothing typed is lost by navigating away from it.
+    function goToQuickAddStage(newIndex) {
+      if (!state.quickAdd.open || !state.quickAdd.resolved) return;
+      if (newIndex < 0 || newIndex > 2 || newIndex === state.quickAdd.stageIndex) return;
 
-    function closeSectionAdd() {
-      stopSectionAddChecker();
-      state.sectionAdd = { mode: 'idle', section: null, stageIndex: 0, resolved: null, lastCheckedText: null };
-      sectionAddInput.value = '';
-      sectionAddInput.disabled = false;
-      sectionAddInput.placeholder = 'Type a word…';
-      sectionAddPanel.classList.add('hidden');
-      sectionAddPreviewRows.innerHTML = '';
-      sectionAddHome.appendChild(sectionAddWidget);
+      const currentKey = getQuickAddFieldOrder()[state.quickAdd.stageIndex];
+      state.quickAdd.resolved[currentKey] = quickAddInput.value.trim();
+
+      state.quickAdd.stageIndex = newIndex;
+      const key = getQuickAddFieldOrder()[newIndex];
+      const value = state.quickAdd.resolved[key] || '';
+      quickAddInput.disabled = false;
+      quickAddInput.placeholder = 'Type a word to add…';
+      quickAddInput.value = value;
+      state.quickAdd.lastCheckedText = value;
+      updateQuickAddImeBinding();
+      updateQuickAddBackBtn();
+      quickAddInput.focus();
+      quickAddInput.select();
+      renderQuickAddPanel();
     }
 
     // One line, no labels — just the typed word, its pronunciation, and the
     // translated word, dot-separated, with whichever one is currently loaded
-    // into the input highlighted.
-    function renderSectionAddPanel() {
-      const resolved = state.sectionAdd.resolved;
+    // into the input highlighted. Every field here is clickable — it jumps
+    // straight to editing that stage, same as the ‹ back button but able to
+    // reach any of the three directly instead of only the previous one.
+    function renderQuickAddPanel() {
+      const resolved = state.quickAdd.resolved;
       if (!resolved) {
-        sectionAddPanel.classList.add('hidden');
+        quickAddPanel.classList.add('hidden');
         return;
       }
       const parts = buildQuickAddParts(resolved);
-      const pieces = parts.map((part, index) => `<span class="${
-        index === state.sectionAdd.stageIndex
-          ? 'rounded bg-blue-50 px-1 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200'
-          : 'text-slate-500 dark:text-slate-400'
-      }">${escapeHtml(part.value || '—')}</span>`);
-      sectionAddPreviewRows.innerHTML = `
+      const pieces = parts.map((part, index) => `<button type="button" data-stage-index="${index}" class="rounded px-1 ${
+        index === state.quickAdd.stageIndex
+          ? 'bg-blue-50 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200'
+          : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'
+      }">${escapeHtml(part.value || '—')}</button>`);
+      quickAddPreviewRows.innerHTML = `
         <div class="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs">
           ${pieces.join('<span class="text-slate-300 dark:text-slate-600">·</span>')}
         </div>
       `;
-      sectionAddPanel.classList.remove('hidden');
+      quickAddPanel.classList.remove('hidden');
+      quickAddPreviewRows.querySelectorAll('[data-stage-index]').forEach(btn => {
+        btn.addEventListener('click', () => goToQuickAddStage(Number(btn.dataset.stageIndex)));
+      });
     }
 
-    let sectionAddCheckTimer = null;
+    let quickAddCheckTimer = null;
 
-    function startSectionAddChecker() {
-      if (sectionAddCheckTimer) return;
-      sectionAddCheckTimer = setInterval(checkSectionAddForChanges, 2000);
+    function startQuickAddChecker() {
+      if (quickAddCheckTimer) return;
+      quickAddCheckTimer = setInterval(checkQuickAddForChanges, 2000);
     }
 
-    function stopSectionAddChecker() {
-      clearInterval(sectionAddCheckTimer);
-      sectionAddCheckTimer = null;
+    function stopQuickAddChecker() {
+      clearInterval(quickAddCheckTimer);
+      quickAddCheckTimer = null;
     }
 
     // The 2-second poll: only reacts when the field's text actually differs
     // from what it held at the last check.
-    async function checkSectionAddForChanges() {
-      if (state.sectionAdd.mode !== 'entering') return;
-      const text = sectionAddInput.value.trim();
+    async function checkQuickAddForChanges() {
+      if (!state.quickAdd.open) return;
+      const text = quickAddInput.value.trim();
       if (text.startsWith('>')) return; // handled instantly by the input handler instead
-      if (text === state.sectionAdd.lastCheckedText) return;
+      if (text === state.quickAdd.lastCheckedText) return;
       if (!text) {
-        state.sectionAdd.lastCheckedText = text;
+        state.quickAdd.lastCheckedText = text;
         return;
       }
 
-      const stageIndex = state.sectionAdd.stageIndex;
+      const stageIndex = state.quickAdd.stageIndex;
       if (stageIndex === 0) {
         const resolved = await resolveQuickAddFields(text);
         // Bail if the field moved on while this was resolving.
-        if (state.sectionAdd.mode !== 'entering' || state.sectionAdd.stageIndex !== 0 || sectionAddInput.value.trim() !== text) return;
-        state.sectionAdd.resolved = resolved;
-      } else if (state.sectionAdd.resolved) {
-        const key = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[stageIndex];
-        state.sectionAdd.resolved[key] = text;
+        if (!state.quickAdd.open || state.quickAdd.stageIndex !== 0 || quickAddInput.value.trim() !== text) return;
+        state.quickAdd.resolved = resolved;
+      } else if (state.quickAdd.resolved) {
+        const key = getQuickAddFieldOrder()[stageIndex];
+        state.quickAdd.resolved[key] = text;
       }
-      state.sectionAdd.lastCheckedText = text;
-      renderSectionAddPanel();
+      state.quickAdd.lastCheckedText = text;
+      renderQuickAddPanel();
     }
 
     // A '>' prefix (only meaningful at the very first stage, before any
-    // translation has started) means "create a subsection" instead of "add a
-    // word" — shows a live preview of the name as it's typed, no translation
-    // involved.
+    // resolution has started) means "create a subsection" instead of "add a
+    // word" — shows a live preview of the name as it's typed, no
+    // translation/conversion involved.
     function renderSubsectionHint(name) {
-      sectionAddPreviewRows.innerHTML = `
+      quickAddPreviewRows.innerHTML = `
         <div class="flex flex-wrap items-center gap-1.5 px-1 py-1 text-xs">
           <span class="text-slate-400 dark:text-slate-500">New subsection:</span>
           <span class="rounded bg-blue-50 px-1 font-semibold text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">${escapeHtml(name || '—')}</span>
         </div>
       `;
-      sectionAddPanel.classList.remove('hidden');
+      quickAddPanel.classList.remove('hidden');
     }
 
     async function createSubsectionUnder(parentSection, rawName) {
       if (isSubsection(parentSection)) {
         window.alert('Subsections can\'t be nested further.');
-        closeSectionAdd();
+        closeQuickAdd();
         return;
       }
       const childLabel = rawName.trim().toUpperCase();
@@ -2191,7 +2557,7 @@
       const fullName = `${parentSection}>${childLabel}`;
       if (Object.keys(state.sectionSummary).includes(fullName)) {
         window.alert(`"${childLabel}" already exists under ${parentSection}.`);
-        closeSectionAdd();
+        closeQuickAdd();
         return;
       }
       try {
@@ -2205,25 +2571,25 @@
       }
       state.expandedSections.add(parentSection);
       state.expandedSections.add(fullName);
-      closeSectionAdd();
+      closeQuickAdd();
       renderCurrentView();
       const parentWrapper = state.sectionHeaderDomRefs.get(parentSection);
       if (parentWrapper) parentWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // The Enter handler while composing: advances one stage at a time — word
-    // -> pronunciation -> meaning — capturing any manual edit at the current
-    // stage before moving to the next. After the meaning stage, saves
-    // directly into the fixed section (no category step to pass through).
-    async function advanceSectionAddStage() {
-      if (state.sectionAdd.mode !== 'entering') return;
-      const text = sectionAddInput.value.trim();
+    // The Enter handler while composing: advances one stage at a time —
+    // capturing any manual edit at the current stage before moving to the
+    // next. After the meaning stage, saves directly into the fixed section
+    // (no category step to pass through).
+    async function advanceQuickAddStage() {
+      if (!state.quickAdd.open) return;
+      const text = quickAddInput.value.trim();
       if (!text) return;
 
-      const stageIndex = state.sectionAdd.stageIndex;
+      const stageIndex = state.quickAdd.stageIndex;
 
       if (stageIndex === 0 && text.startsWith('>')) {
-        await createSubsectionUnder(state.sectionAdd.section, text.slice(1));
+        await createSubsectionUnder(state.quickAdd.section, text.slice(1));
         return;
       }
 
@@ -2231,51 +2597,88 @@
         // Reuse the poller's resolution if it already caught up with this
         // exact text; otherwise resolve it now rather than make the user wait
         // for the next 2-second tick.
-        if (!state.sectionAdd.resolved || state.sectionAdd.lastCheckedText !== text) {
-          sectionAddInput.disabled = true;
-          sectionAddInput.placeholder = 'Translating…';
-          state.sectionAdd.resolved = await resolveQuickAddFields(text);
-          state.sectionAdd.lastCheckedText = text;
-          sectionAddInput.disabled = false;
+        if (!state.quickAdd.resolved || state.quickAdd.lastCheckedText !== text) {
+          quickAddInput.disabled = true;
+          quickAddInput.placeholder = state.quickAddMeaningMode ? 'Translating…' : 'Converting…';
+          state.quickAdd.resolved = await resolveQuickAddFields(text);
+          state.quickAdd.lastCheckedText = text;
+          quickAddInput.disabled = false;
         }
       } else {
-        const key = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[stageIndex];
-        state.sectionAdd.resolved[key] = text;
+        const key = getQuickAddFieldOrder()[stageIndex];
+        state.quickAdd.resolved[key] = text;
       }
-      renderSectionAddPanel();
+      renderQuickAddPanel();
 
       if (stageIndex < 2) {
-        state.sectionAdd.stageIndex = stageIndex + 1;
-        const nextKey = getQuickAddFieldOrder(state.sectionAdd.resolved.direction)[state.sectionAdd.stageIndex];
-        const nextValue = state.sectionAdd.resolved[nextKey] || '';
-        sectionAddInput.value = nextValue;
-        state.sectionAdd.lastCheckedText = nextValue;
-        sectionAddInput.select();
-        renderSectionAddPanel();
+        state.quickAdd.stageIndex = stageIndex + 1;
+        const nextKey = getQuickAddFieldOrder()[state.quickAdd.stageIndex];
+        const nextValue = state.quickAdd.resolved[nextKey] || '';
+        quickAddInput.value = nextValue;
+        state.quickAdd.lastCheckedText = nextValue;
+        updateQuickAddImeBinding();
+        updateQuickAddBackBtn();
+        quickAddInput.select();
+        renderQuickAddPanel();
         return;
       }
 
-      const resolved = state.sectionAdd.resolved;
-      const section = state.sectionAdd.section;
-      const exists = await wordExistsInLanguage(normalize(resolved.word));
-      if (exists) {
-        window.alert(`"${resolved.word}" already exists in the ${getCurrentLanguageData().label} dictionary.`);
-        closeSectionAdd();
+      const resolved = state.quickAdd.resolved;
+      const section = state.quickAdd.section;
+      const existing = await findExistingWordLocation(normalize(resolved.word));
+
+      if (existing) {
+        if (existing.section === section) {
+          window.alert(`"${resolved.word}" already exists in this section.`);
+          closeQuickAdd();
+          return;
+        }
+        // Rather than blocking the add outright, offer to relocate the
+        // existing entry here instead of creating a second copy of the same
+        // word — Cancel leaves it where it is and aborts adding anything.
+        const moveHere = window.confirm(
+          `"${resolved.word}" already exists in "${getSectionDisplayLabel(existing.section)}". Move it to "${getSectionDisplayLabel(section)}" instead?\n\nCancel to leave it where it is and abort adding this word.`
+        );
+        if (!moveHere) {
+          closeQuickAdd();
+          return;
+        }
+        try {
+          await database.ref().update({
+            [`words/${state.language}/${existing.section}/${existing.id}`]: null,
+            [`words/${state.language}/${section}/${existing.id}`]: existing.data
+          });
+          await Promise.all([
+            bumpSectionCount(state.language, existing.section, -1),
+            bumpSectionCount(state.language, section, 1)
+          ]);
+        } catch (err) {
+          console.error('Failed to move existing word', err);
+          window.alert('Failed to move word. See console for details.');
+        }
+        closeQuickAdd();
         return;
       }
+
       try {
-        await wordsRef.child(state.language).child(section).push({ w: resolved.word, p: resolved.pronunciation, em: resolved.englishMeaning, c: Date.now() });
+        await wordsRef.child(state.language).child(section).push({ w: resolved.word, p: resolved.pronunciation, em: toInitCap(resolved.englishMeaning), c: Date.now() });
         await bumpSectionCount(state.language, section, 1);
       } catch (err) {
         console.error('Failed to save word', err);
         window.alert('Failed to save word. See console for details.');
       }
-      closeSectionAdd();
+      closeQuickAdd();
     }
 
-    async function deleteWordEntry(entry) {
+    // skipConfirm: the click-and-hold gesture (see attachCardInteractions)
+    // already requires a full second of deliberate, hard-to-trigger-by-
+    // accident holding — that IS the confirmation, so a second window.confirm
+    // popup on top of it would just be redundant friction. Any other caller
+    // still gets the normal confirm prompt.
+    async function deleteWordEntry(entry, options) {
       if (!entry) return;
-      if (!window.confirm(`Delete "${entry.word}"?`)) return;
+      const skipConfirm = !!(options && options.skipConfirm);
+      if (!skipConfirm && !window.confirm(`Delete "${entry.word}"?`)) return;
       if (!state.isAdmin) {
         window.alert('You are not authorized to delete this entry.');
         return;
@@ -2729,37 +3132,66 @@
     readingClose.addEventListener('click', () => closeReadingModal());
     scriptPracticeClose.addEventListener('click', () => closeScriptPracticeModal());
 
-    // The widget now lives inside <summary> so it sits right after the header
-    // text — but a click anywhere in <summary> normally toggles the <details>
-    // open/closed by default, which would fight with clicking into the field
-    // or the clear button. preventDefault() anywhere along the bubble path
-    // suppresses just that default action without blocking focus or typing,
-    // so one listener on the whole widget covers the input, the panel, and
-    // the clear button inside it.
-    sectionAddWidget.addEventListener('click', (event) => event.preventDefault());
-    sectionAddInput.addEventListener('keydown', (event) => {
+    // Quick add is a real modal now — not embedded in any <summary> — so
+    // none of the old disclosure-toggle/click-away workarounds are needed at
+    // all: typing a space is just typing a space, and there's exactly one
+    // fixed home in the DOM for it, no reattachment dance either.
+    quickAddClose.addEventListener('click', () => closeQuickAdd());
+    quickAddClearBtn.addEventListener('click', () => closeQuickAdd());
+    quickAddBackBtn.addEventListener('click', () => goToQuickAddStage(state.quickAdd.stageIndex - 1));
+    quickAddInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        advanceSectionAddStage();
+        if (event.shiftKey) {
+          goToQuickAddStage(state.quickAdd.stageIndex - 1);
+        } else {
+          advanceQuickAddStage();
+        }
       } else if (event.key === 'Escape') {
-        closeSectionAdd();
+        closeQuickAdd();
       }
     });
-    sectionAddInput.addEventListener('input', () => {
-      const text = sectionAddInput.value;
-      if (state.sectionAdd.stageIndex === 0 && text.trim().startsWith('>')) {
-        stopSectionAddChecker();
+    quickAddInput.addEventListener('input', () => {
+      const text = quickAddInput.value;
+      // Re-checked on every keystroke (not just stage/toggle changes) so the
+      // very first ">" keystroke unbinds live conversion before it can
+      // mangle the subsection name that follows.
+      if (state.quickAdd.stageIndex === 0) updateQuickAddImeBinding();
+      if (state.quickAdd.stageIndex === 0 && text.trim().startsWith('>')) {
+        stopQuickAddChecker();
         renderSubsectionHint(text.trim().slice(1).trim());
         return;
       }
-      if (state.sectionAdd.stageIndex === 0 && !state.sectionAdd.resolved) {
+      if (state.quickAdd.stageIndex === 0 && !state.quickAdd.resolved) {
         // Clear any subsection hint left over from a moment ago.
-        sectionAddPanel.classList.add('hidden');
-        sectionAddPreviewRows.innerHTML = '';
+        quickAddPanel.classList.add('hidden');
+        quickAddPreviewRows.innerHTML = '';
       }
-      startSectionAddChecker();
+      startQuickAddChecker();
     });
-    sectionAddClearBtn.addEventListener('click', () => closeSectionAdd());
+    quickAddMeaningToggle.addEventListener('change', () => {
+      state.quickAddMeaningMode = quickAddMeaningToggle.checked;
+      localStorage.setItem('quickAddMeaningMode', state.quickAddMeaningMode ? '1' : '0');
+      updateQuickAddToggleLabel();
+      updateQuickAddImeBinding();
+      // Whatever was already resolved was resolved under the old mode —
+      // clear it so the next Enter re-resolves under the new one instead of
+      // silently saving a mismatched result.
+      if (state.quickAdd.open) {
+        state.quickAdd.resolved = null;
+        state.quickAdd.lastCheckedText = null;
+        quickAddPanel.classList.add('hidden');
+      }
+    });
+    // Clicking the dimmed backdrop (not the card itself) closes it, same as
+    // most modal dialogs — the other modals in this app only expose an
+    // explicit close button, but those are multi-step sessions (quiz/
+    // reading) where an accidental backdrop tap losing progress would
+    // actually hurt; this one is just a text box, so the friendlier default
+    // is worth it here.
+    quickAddModal.addEventListener('click', (event) => {
+      if (event.target === quickAddModal) closeQuickAdd();
+    });
 
     const EYE_ICON_PATHS = `
       <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"></path>
@@ -2787,7 +3219,7 @@
     hiddenToggle.addEventListener('click', () => {
       state.showHidden = !state.showHidden;
       updateHiddenToggleUI();
-      closeSectionAdd();
+      closeQuickAdd();
       state.sectionMenu = { section: null, mode: 'closed' };
       renderCurrentView();
     });
@@ -2799,6 +3231,52 @@
       if (state.sectionMenu.mode === 'closed') return;
       closeSectionMenu();
     });
+
+    // Desktop: space bar opens quick-add for whichever section is currently
+    // hovered, or failing that the last one expanded/added to, or failing
+    // that the first section on screen — a fast alternative to hunting down
+    // that section's own "+". Guarded to skip while actually typing
+    // anywhere (this input included, once open — Escape/× close it instead)
+    // so it can never hijack a real space keystroke.
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== ' ' && event.code !== 'Space') return;
+      if (state.quickAdd.open) return;
+      if (!state.isAdmin) return;
+      const target = event.target;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isTyping) return;
+      const section = state.hoveredSection || state.lastActiveSection || getTopLevelSectionNames()[0];
+      if (!section) return;
+      event.preventDefault();
+      openQuickAdd(section);
+    });
+
+    // Mobile: a deliberate horizontal swipe does the same thing space-bar
+    // does on desktop. Requires mostly-horizontal movement (so it can't be
+    // confused with the section list's normal vertical scroll) past a
+    // minimum distance and within a short time (so it reads as a swipe, not
+    // a drag-scroll that happened to drift sideways a little).
+    let quickAddSwipeStartX = 0;
+    let quickAddSwipeStartY = 0;
+    let quickAddSwipeStartTime = 0;
+    document.addEventListener('touchstart', (event) => {
+      if (event.touches.length !== 1) return;
+      quickAddSwipeStartX = event.touches[0].clientX;
+      quickAddSwipeStartY = event.touches[0].clientY;
+      quickAddSwipeStartTime = Date.now();
+    }, { passive: true });
+    document.addEventListener('touchend', (event) => {
+      if (state.quickAdd.open || !state.isAdmin) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - quickAddSwipeStartX;
+      const dy = touch.clientY - quickAddSwipeStartY;
+      const elapsed = Date.now() - quickAddSwipeStartTime;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || elapsed > 600) return;
+      const section = state.lastActiveSection || getTopLevelSectionNames()[0];
+      if (!section) return;
+      openQuickAdd(section);
+    }, { passive: true });
   </script>
 </body>
 </html>
