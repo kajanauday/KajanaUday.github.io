@@ -45,6 +45,7 @@ is wired in sections.js) — those are called out explicitly.
 | Space-bar / swipe shortcuts that open quick-add                            | `js/main.js`                |
 | The global hidden/visible eye toggle, theme toggle, logout                 | `js/main.js`                |
 | Page markup, CSS, Tailwind config, the theme-flash-prevention script       | `language-studio.html`     |
+| The standalone personal budget tracker                                     | `budget-tracker.html`, `css/budget-tracker.css`, `js/budget-tracker.js` |
 
 ## Module map
 
@@ -111,3 +112,13 @@ current split was chosen deliberately.
 - No build step: this must keep working when opened as plain files served
   by any static host (GitHub Pages). Don't introduce bundler-only syntax
   (e.g. bare-specifier imports without a path, JSON imports, etc).
+
+## Budget tracker
+
+`budget-tracker.html` is a separate static page and does not load or modify
+the language-studio app. Its UI and data model are in `js/budget-tracker.js`,
+and its styling is in `css/budget-tracker.css`. The tracker stores its data
+and view preferences in browser `localStorage` under
+`ledger-budget-tracker-v1`; data is local to the browser and device.
+The site root redirects to this page for normal visits. The root login page is
+retained for Language Studio's signed-out redirect flow via `?redirect=...`.

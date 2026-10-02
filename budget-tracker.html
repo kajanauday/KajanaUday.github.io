@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8fbff">
+  <title>Ledger | Budget tracker</title>
+  <script>
+    if (localStorage.getItem('theme') === 'dark' ||
+        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/budget-tracker.css">
+  <script type="module" src="./js/budget-tracker.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./budget-tracker.html" aria-label="Ledger home"><span class="brand-mark">L</span><span>ledger<span class="brand-period">.</span></span></a>
+    <div class="header-actions"><button type="button" class="theme-button" id="theme-toggle" title="Switch to dark theme" aria-label="Switch to dark theme"><span id="theme-icon" aria-hidden="true">☾</span></button><span class="save-state" id="save-state"><span class="save-dot"></span> Saved on this device</span></div>
+  </header>
+  <main class="shell">
+    <section class="toolbar" aria-label="Tracker controls">
+      <div class="toolbar-leading">
+        <div class="view-switch" role="group" aria-label="Choose view">
+          <button type="button" class="view-choice" data-view="list" aria-pressed="false"><span aria-hidden="true">≡</span> List</button>
+          <button type="button" class="view-choice" data-view="calendar" aria-pressed="true"><span aria-hidden="true">▦</span> Calendar</button>
+        </div>
+      </div>
+      <div class="toolbar-actions"><button type="button" class="button button-quiet" id="columns-button" title="Choose visible columns"><span aria-hidden="true">☷</span><span class="desktop-label">Columns</span></button><button type="button" class="button button-primary" id="add-month"><span aria-hidden="true">＋</span> Add month</button></div>
+    </section>
+    <div id="months" class="months" aria-live="polite"></div>
+    <div id="empty-state" class="empty-state" hidden><div class="empty-icon" aria-hidden="true">＋</div><h2>A fresh page for your spending.</h2><p>Add a month to start tracking income and expenses in JPY or INR.</p><button type="button" class="button button-primary" id="empty-add-month">Add your first month</button></div>
+    <footer class="page-footer"><span>Amounts stay separate by currency.</span><span>JPY · INR</span></footer>
+  </main>
+  <dialog id="form-dialog" class="modal">
+    <form id="dynamic-form" method="dialog"><div class="modal-top"><div><p class="eyebrow">LEDGER</p><h2 id="form-title">Add item</h2></div><button type="button" class="icon-button" data-close aria-label="Close">×</button></div><div id="form-fields" class="form-fields"></div><div class="modal-actions"><button type="button" class="button button-quiet" data-close>Cancel</button><button type="submit" class="button button-primary" id="form-submit">Save</button></div></form>
+  </dialog>
+  <dialog id="day-dialog" class="modal day-modal"><div class="modal-top"><div><p class="eyebrow">DAY DETAILS</p><h2 id="day-title"></h2></div><button type="button" class="icon-button" data-close aria-label="Close">×</button></div><div id="day-content"></div><div class="modal-actions"><button type="button" class="button button-quiet" data-close>Close</button><button type="button" id="day-add" class="button button-primary">＋ Add expense</button></div></dialog>
+  <dialog id="columns-dialog" class="modal"><form id="columns-form" method="dialog"><div class="modal-top"><div><p class="eyebrow">LIST VIEW</p><h2>Visible columns</h2></div><button type="button" class="icon-button" data-close aria-label="Close">×</button></div><p class="modal-copy">Choose which details appear in expense tables.</p><div id="column-options" class="column-options"></div><div class="modal-actions"><button type="button" class="button button-quiet" data-close>Cancel</button><button type="submit" class="button button-primary">Apply</button></div></form></dialog>
+</body>
+</html>
