@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f4">
+  <title>Expense Tracker | Choose a month</title>
+  <link rel="stylesheet" href="../family-budget.css">
+  <script src="../family-budget.js" defer></script>
+</head>
+<body data-page="months">
+  <header class="topbar">
+    <a class="brand" href="months.html" aria-label="Expense Tracker"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Expense Tracker</span></a>
+    <div></div>
+    <div class="header-actions">
+      <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
+    </div>
+  </header>
+  <main class="month-picker">
+    <h1 class="month-year" id="month-year"></h1>
+    <nav class="month-grid" id="month-grid" aria-label="Months in the current year"></nav>
+  </main>
+</body>
+</html>
