@@ -31,6 +31,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return new Date(year, month - 1, 1);
     })();
     let toastTimer;
+    let universeOpen = sessionStorage.getItem(`${STORAGE_KEY}-universe`) === 'true';
 
     function loadTransactions() {
       try {
@@ -106,8 +107,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const value = Math.abs(Number(minor || 0) / 100);
       const steps = property === 'japan' ? [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']] : [[1e7, 'Cr'], [1e5, 'L'], [1e3, 'K']];
       const [size, suffix] = steps.find(([limit]) => value >= limit) || [1, ''];
-      const digits = suffix === 'L' || suffix === 'Cr' ? 2 : suffix ? 1 : 0;
-      return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value / size)}${suffix}`;
+      const digits = suffix === 'L' || suffix === 'Cr' ? 2 : suffix && value / size < 100 ? 1 : 0;
+      return `${minor < 0 ? '−' : ''}${new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value / size)}${suffix}`;
     }
     function signedMoney(minor, property, format = formatMoney) {
       return `${minor > 0 ? '+' : minor < 0 ? '−' : ''}${format(Math.abs(minor), property)}`;
@@ -149,9 +150,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const target = document.querySelector(`#property-${property}`);
       if (!target) return;
       const region = regions[property];
+      const budget = budgetFor(currentMonth.getFullYear(), property);
       const stats = propertyStats(property);
-      const spentPercent = Math.min(100, stats.expense / region.budget * 100);
-      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(region.budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
+      const spentPercent = Math.min(100, stats.expense / budget * 100);
+      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
       target.innerHTML = content;
     }
     function renderTransactions() {
@@ -185,6 +187,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return transactions.filter(item => item.property === property && item.date.startsWith(prefix));
     }
     // Groups a month's entries into the year's configured sections; anything unmatched lands in an "Other" bucket so nothing is hidden.
+    // Opening balance for the year plus every month's net up to and including `month`.
+    function closingBalance(year, property, month) {
+      const cutoff = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const items = ledgerItems(year, property).filter(item => item.date.slice(0, 7) <= cutoff);
+      return openingFor(year, property) + flowStats(items).net;
+    }
     function groupIntoSections(items, settings) {
       const claimed = new Set();
       const groups = [...settings.sections]
@@ -200,35 +208,43 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
       return groups;
     }
+    // Inline "new subsection" editor in the ledger: { property, section } while open.
+    let ledgerDraft = null;
+    let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
+    const catKey = (property, section, category) => [property, section, category].join('|');
     function renderLedgerSection(section, property) {
       const total = totalFor(section.items, section.type);
+      const configured = section.subsections.length > 0; // the "Other" catch-all buckets are not in the year config
       const names = [...new Set([...section.subsections, ...section.items.map(item => item.category)])];
       const categories = names
         .map(name => ({ name, items: section.items.filter(item => item.category === name) }))
         .map(category => ({ ...category, amount: totalFor(category.items, section.type) }));
-      const filled = categories.filter(category => category.items.length).sort((a, b) => b.amount - a.amount);
-      const empty = categories.filter(category => !category.items.length).map(category => escapeHtml(category.name));
-      const rows = filled.map(category => {
-        const share = total ? Math.max(2, category.amount / total * 100) : 0;
+      const shown = categories.filter(category => category.items.length).sort((a, b) => b.amount - a.amount);
+      const empty = categories.filter(category => !shown.includes(category));
+      const addData = name => `data-property="${property}" data-section="${escapeHtml(section.name)}" data-type="${section.type}" data-category="${escapeHtml(name)}"`;
+      const rows = shown.map(category => {
         const entries = [...category.items]
           .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-          .map(item => `<div class="ledger-entry" title="${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${dayLabel(item.date)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></div>`).join('');
-        return `<details class="ledger-cat"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-bar" aria-hidden="true"><i class="${section.type}" style="width:${share}%"></i></span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong></summary><div class="ledger-entries">${entries}</div></details>`;
+          .map(item => `<div class="ledger-entry" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></div>`).join('');
+        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}</div></details>`;
       }).join('');
-      return `<section class="ledger-sec ${section.type}"><header class="ledger-sec-head"><h4>${escapeHtml(section.name)}</h4><span>${section.items.length}</span><strong class="${section.type}">${formatMoney(total, property)}</strong></header>${rows || '<p class="ledger-none">Nothing recorded</p>'}${empty.length ? `<p class="ledger-none" title="Configured but no entries this month">No entries · ${empty.join(', ')}</p>` : ''}</section>`;
+      const emptyLine = empty.length ? `<p class="ledger-none">No entries · ${empty.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : '';
+      const subForm = ledgerDraft && ledgerDraft.property === property && ledgerDraft.section === section.name
+        ? `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${escapeHtml(section.name)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`
+        : '';
+      const sectionAdd = configured ? `<button type="button" class="mini-add" data-add-subsection data-property="${property}" data-section="${escapeHtml(section.name)}" aria-label="Add subsection to ${escapeHtml(section.name)}" title="Add subsection"><i class="ti ti-plus" aria-hidden="true"></i></button>` : '<span></span>';
+      return `<section class="ledger-sec ${section.type}"><header class="ledger-sec-head"><h4>${escapeHtml(section.name)}</h4><span>${section.items.length}</span><strong class="${section.type}">${formatMoney(total, property)}</strong>${sectionAdd}</header>${subForm}${rows || (subForm ? '' : '<p class="ledger-none">Nothing recorded</p>')}${emptyLine}</section>`;
     }
     function renderLedgerPanel(property, year, month, settings) {
       const region = regions[property];
       const items = ledgerItems(year, property, month);
       const stats = flowStats(items);
-      const spent = region.budget ? stats.expense / region.budget * 100 : 0;
       const sections = groupIntoSections(items, settings).map(section => renderLedgerSection(section, property)).join('');
       return `<section class="ledger-panel ${property}" aria-label="${region.name}">
         <header class="ledger-panel-head">
           <h3><span class="property-dot ${property}" aria-hidden="true"></span>${region.name}<small>${region.code}</small></h3>
-          <dl class="ledger-totals"><div><dt>In</dt><dd class="income">${formatMoney(stats.income, property)}</dd></div><div><dt>Out</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div><div><dt>Net</dt><dd class="${netClass(stats.net)}">${signedMoney(stats.net, property)}</dd></div></dl>
+          <dl class="ledger-totals"><div><dt>In</dt><dd class="income">${formatMoney(stats.income, property)}</dd></div><div><dt>Out</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div><div><dt>Net</dt><dd class="${netClass(stats.net)}">${signedMoney(stats.net, property)}</dd></div><div title="Closing balance at month end"><dt>Bal</dt><dd>${formatMoney(closingBalance(year, property, month), property)}</dd></div></dl>
         </header>
-        <div class="ledger-budget${spent > 100 ? ' is-over' : ''}" title="Monthly budget ${formatMoney(region.budget, property)}"><span>Budget</span><div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, spent)}%"></div></div><span class="ledger-budget-value">${Math.round(spent)}% of ${compactMoney(region.budget, property)}</span></div>
         <div class="ledger-sections">${sections}</div>
       </section>`;
     }
@@ -236,14 +252,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return settings.currencies.map(property => {
         const region = regions[property];
         const stats = flowStats(ledgerItems(year, property));
-        const opening = year === 2026 ? region.opening : 0;
         const rate = stats.income ? Math.round(stats.net / stats.income * 100) : null;
-        const nets = Array.from({ length: 12 }, (_, month) => flowStats(ledgerItems(year, property, month)).net);
-        const peak = Math.max(1, ...nets.map(Math.abs));
-        const bars = nets.map((net, month) => {
-          const label = new Date(year, month, 1).toLocaleDateString('en', { month: 'short' });
-          return `<span class="kpi-bar ${netClass(net)}" title="${label}: ${signedMoney(net, property)}" style="--h:${Math.abs(net) / peak * 100}%"></span>`;
-        }).join('');
         return `<article class="kpi-card ${property}">
           <header class="kpi-head"><span class="property-dot ${property}" aria-hidden="true"></span><strong>${region.name}</strong><span>${region.code} · ${year} to date</span></header>
           <dl class="kpi-values">
@@ -251,9 +260,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             <div><dt>Expenses</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div>
             <div><dt>Net</dt><dd class="${netClass(stats.net)}">${signedMoney(stats.net, property)}</dd></div>
             <div><dt>Saved</dt><dd>${rate === null ? '—' : `${rate}%`}</dd></div>
-            <div><dt>Balance</dt><dd>${formatMoney(opening + stats.net, property)}</dd></div>
+            <div title="Opening ${formatMoney(openingFor(year, property), property)} + net"><dt>Balance</dt><dd>${formatMoney(openingFor(year, property) + stats.net, property)}</dd></div>
           </dl>
-          <div class="kpi-spark" role="img" aria-label="Monthly net for ${year}">${bars}</div>
         </article>`;
       }).join('');
     }
@@ -264,15 +272,15 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const name = date.toLocaleDateString('en', { month: 'short' });
         const isNow = year === today.getFullYear() && month === today.getMonth();
         const isFuture = date > today;
-        const rows = settings.currencies.map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)) }));
+        const rows = settings.currencies.map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
         const hasData = rows.some(row => row.stats.count);
-        const label = rows.filter(row => row.stats.count).map(({ property, stats }) => `${regions[property].code} income ${formatMoney(stats.income, property)}, expenses ${formatMoney(stats.expense, property)}`).join('; ');
-        const body = hasData
-          ? rows.map(({ property, stats }) => stats.count
-            ? `<span class="mcell-cur ${property}"><span class="mcell-net ${netClass(stats.net)}"><i>${SYMBOLS[property]}</i>${signedMoney(stats.net, property, compactMoney)}</span><span class="mcell-flow"><span class="income" title="Income ${formatMoney(stats.income, property)}">${compactMoney(stats.income, property)}</span><span class="expense" title="Expenses ${formatMoney(stats.expense, property)}">${compactMoney(stats.expense, property)}</span></span></span>`
-            : `<span class="mcell-cur ${property} is-empty"><span class="mcell-net"><i>${SYMBOLS[property]}</i>—</span></span>`).join('')
-          : isFuture ? '' : '<span class="mcell-idle">—</span>';
-        return `<button type="button" class="mcell${month === selected ? ' is-selected' : ''}${hasData ? '' : ' is-empty'}${isFuture ? ' is-future' : ''}" data-ledger-month="${month}" aria-pressed="${month === selected}" aria-label="${name} ${year}${label ? `: ${label}` : ', no entries'}"${isNow ? ' aria-current="date"' : ''}><span class="mcell-name">${name}${isNow ? '<i class="mcell-now" title="This month"></i>' : ''}</span>${body}</button>`;
+        const label = rows.map(({ property, stats, balance }) => `${regions[property].code} income ${formatMoney(stats.income, property)}, expenses ${formatMoney(stats.expense, property)}, balance ${formatMoney(balance, property)}`).join('; ');
+        const cell = (value, property, kind, title) => `<span class="mcell-val ${kind}${value ? '' : ' is-zero'}" title="${title} ${formatMoney(value, property)}">${value || kind === 'balance' ? compactMoney(value, property) : '—'}</span>`;
+        const table = isFuture ? '' : `
+          ${rows.map(({ property, stats }) => cell(stats.income, property, 'income', `${regions[property].code} income`)).join('')}
+          ${rows.map(({ property, stats }) => cell(stats.expense, property, 'expense', `${regions[property].code} expenses`)).join('')}
+          ${rows.map(({ property, balance }) => cell(balance, property, 'balance', `${regions[property].code} closing balance`)).join('')}`;
+        return `<button type="button" class="mcell${month === selected ? ' is-selected' : ''}${hasData ? '' : ' is-empty'}${isFuture ? ' is-future' : ''}" data-ledger-month="${month}" aria-pressed="${month === selected}" aria-label="${name} ${year}${isFuture ? '' : `: ${label}`}"${isNow ? ' aria-current="date"' : ''} style="--cols:${rows.length}">${rows.map(({ property }, index) => `<span class="mcell-top">${index === 0 ? `<span class="mcell-name">${name}${isNow ? '<i class="mcell-now" title="This month"></i>' : ''}</span>` : ''}<span class="mcell-sym">${SYMBOLS[property]}</span></span>`).join('')}${table}</button>`;
       }).join('');
     }
     function renderLedger() {
@@ -288,14 +296,123 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       document.querySelector('#year-kpis').innerHTML = renderYearKpis(year, settings);
       document.querySelector('#month-rail').innerHTML = renderMonthRail(year, month, settings);
       document.querySelector('#month-rail').setAttribute('aria-label', `Months of ${year}`);
-      document.querySelector('#month-ledger').innerHTML = `
+      // Keep open subsections open across re-renders of the same month (e.g. after saving an entry).
+      const ledgerHost = document.querySelector('#month-ledger');
+      const keepOpen = ledgerHost.dataset.month === monthKey() ? [...ledgerHost.querySelectorAll('.ledger-cat[open]')].map(cat => cat.dataset.key) : [];
+      if (ledgerHost.dataset.month !== monthKey()) ledgerDraft = null;
+      ledgerHost.dataset.month = monthKey();
+      ledgerHost.innerHTML = `
         <header class="month-ledger-head">
-          <div class="month-step"><button type="button" class="month-arrow" data-ledger-step="-1" aria-label="Previous month"${year === FIRST_YEAR && month === 0 ? ' disabled' : ''}><i class="ti ti-chevron-left" aria-hidden="true"></i></button><h2>${monthLabel()}</h2><button type="button" class="month-arrow" data-ledger-step="1" aria-label="Next month"${year === lastYear && month === 11 ? ' disabled' : ''}><i class="ti ti-chevron-right" aria-hidden="true"></i></button></div>
+          <h2>${monthLabel()}</h2>
           <span class="month-ledger-meta">${monthCount} ${monthCount === 1 ? 'entry' : 'entries'}</span>
           <button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>
+          <button type="button" class="icon-button universe-toggle" data-toggle-universe aria-pressed="${universeOpen}" aria-controls="universe" aria-label="${universeOpen ? 'Hide year summary and months' : 'Show year summary and all months'}" title="${universeOpen ? 'Back to this month' : 'Show everything'}"><i class="ti ${universeOpen ? 'ti-eye-off' : 'ti-eye'}" aria-hidden="true"></i></button>
         </header>
         <div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}">${settings.currencies.map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>`;
+      ledgerHost.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
+      revealKey = null;
+      const draftForm = ledgerHost.querySelector('[data-ledger-form]');
+      draftForm?.elements.name.focus();
       document.querySelector('#year-settings-button').dataset.year = year;
+      document.body.classList.toggle('show-universe', universeOpen);
+      const universe = document.querySelector('#universe');
+      universe.inert = !universeOpen;
+      universe.setAttribute('aria-hidden', String(!universeOpen));
+    }
+    // Layer 1 ("now") shows only the current month; layer 2 reveals the year summary, month strip and year tabs.
+    function setUniverse(open) {
+      universeOpen = open;
+      sessionStorage.setItem(`${STORAGE_KEY}-universe`, String(open));
+      const today = new Date();
+      if (!open) currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
+      renderLedger();
+      document.querySelector('[data-toggle-universe]')?.focus();
+    }
+    function saveDraftSubsection(form) {
+      const input = form.elements.name;
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const hint = form.querySelector('.ledger-form-hint');
+      const section = yearSettings(currentMonth.getFullYear()).sections.find(item => item.name === ledgerDraft.section);
+      const problem = !name ? 'Type a name first.' : !section ? 'This section is no longer configured.' : section.subsections.some(existing => existing.toLowerCase() === name.toLowerCase()) ? `"${name}" already exists in ${section.name}.` : '';
+      if (problem) {
+        hint.textContent = problem;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      section.subsections.push(name);
+      try {
+        saveYearSettings();
+      } catch (error) {
+        section.subsections.pop();
+        hint.textContent = 'Could not save in this browser.';
+        return;
+      }
+      // Go straight to the first entry for the new subsection.
+      const property = ledgerDraft.property;
+      ledgerDraft = null;
+      renderLedger();
+      showToast(`Added "${name}" to ${section.name}.`);
+      openEntryModal({ property, section: section.name, type: section.type, category: name });
+    }
+    // Focused pop-up for one subsection: the currency, type, section and subsection come from the + that opened it.
+    let entryTarget = null;
+    function openEntryModal(target) {
+      const dialog = document.querySelector('#entry-modal');
+      if (!dialog) return;
+      entryTarget = target;
+      const form = dialog.querySelector('form');
+      const today = new Date();
+      const days = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+      form.reset();
+      form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
+      form.elements.day.max = days;
+      form.elements.day.value = monthKey(today) === monthKey() ? today.getDate() : 1;
+      dialog.querySelector('#entry-modal-path').innerHTML = `<span class="property-dot ${target.property}" aria-hidden="true"></span>${regions[target.property].name} › ${escapeHtml(target.section)}`;
+      dialog.querySelector('#entry-modal-title').textContent = target.category;
+      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel()} · day 1–${days}`;
+      dialog.querySelector('#entry-modal-log').replaceChildren();
+      dialog.dataset.type = target.type;
+      dialog.showModal();
+      form.elements.description.focus();
+    }
+    function setupEntryModal() {
+      const dialog = document.querySelector('#entry-modal');
+      if (!dialog) return;
+      const form = dialog.querySelector('form');
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const fields = form.elements;
+        const day = Number(fields.day.value);
+        const amount = Number(fields.amount.value);
+        const checks = [
+          [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+          [fields.description, fields.description.value.trim() !== ''],
+          [fields.amount, Number.isFinite(amount) && amount > 0]
+        ];
+        checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
+        const invalid = checks.find(([, ok]) => !ok);
+        if (invalid) return invalid[0].focus();
+        const { property, section, type, category } = entryTarget;
+        const item = { id: `new-${Date.now()}`, property, date: `${monthKey()}-${String(day).padStart(2, '0')}`, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
+        transactions.push(item);
+        saveTransactions();
+        revealKey = catKey(property, section, category);
+        renderLedger();
+        if (!fields.again.checked) {
+          dialog.close();
+          return showToast(`Saved to ${category}.`);
+        }
+        // Stay open for the next item: keep the day, clear the rest, and list what was added in this sitting.
+        const logged = document.createElement('li');
+        logged.innerHTML = `<time>${String(day).padStart(2, '0')}</time><span>${escapeHtml(item.description)}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong>`;
+        dialog.querySelector('#entry-modal-log').prepend(logged);
+        fields.description.value = '';
+        fields.place.value = '';
+        fields.amount.value = '';
+        fields.description.focus();
+      });
+      dialog.querySelector('[data-close-entry]').addEventListener('click', () => dialog.close());
     }
     function selectLedgerMonth(year, month) {
       currentMonth = new Date(year, month, 1);
@@ -305,6 +422,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
+      if (!universeOpen) currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       const lastYear = new Date().getFullYear();
       const step = delta => {
         const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
@@ -322,8 +440,21 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       ledger.addEventListener('click', event => {
         const monthButton = event.target.closest('[data-ledger-month]');
         if (monthButton) return selectLedgerMonth(currentMonth.getFullYear(), Number(monthButton.dataset.ledgerMonth));
-        const stepButton = event.target.closest('[data-ledger-step]');
-        if (stepButton) return step(Number(stepButton.dataset.ledgerStep));
+        if (event.target.closest('[data-toggle-universe]')) return setUniverse(!universeOpen);
+        const addSub = event.target.closest('[data-add-subsection]');
+        if (addSub) {
+          ledgerDraft = { property: addSub.dataset.property, section: addSub.dataset.section };
+          return renderLedger();
+        }
+        const addEntry = event.target.closest('[data-add-entry-row]');
+        if (addEntry) {
+          event.preventDefault(); // the + sits inside <summary>; don't toggle the row
+          return openEntryModal({ ...addEntry.dataset });
+        }
+        if (event.target.closest('[data-cancel-draft]')) {
+          ledgerDraft = null;
+          return renderLedger();
+        }
         const expandButton = event.target.closest('[data-ledger-expand]');
         if (expandButton) {
           const cats = [...ledger.querySelectorAll('.ledger-cat')];
@@ -332,10 +463,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           expandButton.textContent = open ? 'Collapse all' : 'Expand all';
         }
       });
+      setupEntryModal();
+      ledger.addEventListener('submit', event => {
+        const form = event.target.closest('[data-ledger-form]');
+        if (!form || !ledgerDraft) return;
+        event.preventDefault();
+        saveDraftSubsection(form);
+      });
+      ledger.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && event.target.closest('[data-ledger-form]')) {
+          ledgerDraft = null;
+          renderLedger();
+        }
+      });
       document.querySelector('#year-settings-button').addEventListener('click', event => openYearSettings(Number(event.currentTarget.dataset.year)));
       document.addEventListener('keydown', event => {
         if (event.altKey || event.ctrlKey || event.metaKey || document.querySelector('dialog[open]')) return;
         if (event.target.closest('input, select, textarea, [contenteditable]')) return;
+        if (!universeOpen) return;
         if (event.key === 'ArrowLeft') step(-1);
         if (event.key === 'ArrowRight') step(1);
       });
@@ -345,10 +490,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       if (!panels) return;
       panels.innerHTML = Object.keys(regions).map(property => {
         const region = regions[property];
+        const budget = budgetFor(currentMonth.getFullYear(), property);
         const stats = propertyStats(property);
         const categories = categoryTotals(property);
-        const remainder = Math.max(0, region.budget - stats.expense);
-        return `<section class="surface-panel"><div class="panel-title-row"><h2><span class="property-dot ${property}" style="display:inline-block;margin-right:7px"></span>${region.name} · ${region.code}</h2><span>${monthLabel()}</span></div><div class="category-budget">${categories.map(([name, amount]) => { const percent = Math.min(100, amount / region.budget * 100); return `<div class="category-budget-row"><div class="category-budget-top"><strong>${escapeHtml(name)}</strong><span>${formatMoney(amount, property)} · ${Math.round(percent)}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%;${property === 'japan' ? 'background:var(--japan)' : ''}"></div></div></div>`; }).join('') || '<p class="transaction-meta">No expenses recorded for this month.</p>'}</div><div class="budget-foot"><span>Monthly limit</span><strong>${formatMoney(region.budget, property)}</strong></div><div class="budget-foot"><span>Remaining</span><strong>${formatMoney(remainder, property)}</strong></div></section>`;
+        const remainder = Math.max(0, budget - stats.expense);
+        return `<section class="surface-panel"><div class="panel-title-row"><h2><span class="property-dot ${property}" style="display:inline-block;margin-right:7px"></span>${region.name} · ${region.code}</h2><span>${monthLabel()}</span></div><div class="category-budget">${categories.map(([name, amount]) => { const percent = Math.min(100, amount / budget * 100); return `<div class="category-budget-row"><div class="category-budget-top"><strong>${escapeHtml(name)}</strong><span>${formatMoney(amount, property)} · ${Math.round(percent)}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%;${property === 'japan' ? 'background:var(--japan)' : ''}"></div></div></div>`; }).join('') || '<p class="transaction-meta">No expenses recorded for this month.</p>'}</div><div class="budget-foot"><span>Monthly limit</span><strong>${formatMoney(budget, property)}</strong></div><div class="budget-foot"><span>Remaining</span><strong>${formatMoney(remainder, property)}</strong></div></section>`;
       }).join('');
     }
     function renderInsights() {
@@ -372,6 +518,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderInsights();
       renderLedger();
     }
+    // Opens the add form for the month on screen, optionally preset to a currency, type and section.
+    // Each preset goes through the hidden selects so the year-specific options and buttons refresh in order.
+    function openEntryDialog({ property, type, section } = {}) {
+      const dialog = document.querySelector('#transaction-dialog');
+      if (!dialog || dialog.open) return;
+      const dateInput = document.querySelector('#entry-date');
+      const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+      dateInput.value = `${monthKey()}-${String(Math.min(new Date().getDate(), daysInMonth)).padStart(2, '0')}`;
+      dateInput.dispatchEvent(new Event('change'));
+      [['#entry-property', property], ['#entry-type', type], ['#entry-section', section]].forEach(([selector, value]) => {
+        const select = document.querySelector(selector);
+        if (!select || !value || ![...select.options].some(option => option.value === value)) return;
+        select.value = value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      dialog.showModal();
+      document.querySelector('#entry-description')?.focus();
+    }
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
     }
@@ -381,29 +545,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       toast.hidden = false;
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toast.hidden = true; }, 2500);
-    }
-    function addYearSectionEditor(section = { name: '', type: 'expense', subsections: [] }) {
-      const template = document.querySelector('#year-section-template');
-      const list = document.querySelector('#year-section-list');
-      if (!template || !list) return;
-      const editor = template.content.firstElementChild.cloneNode(true);
-      editor.querySelector('.year-section-name').value = section.name;
-      editor.querySelector('.year-section-type').value = section.type;
-      editor.querySelector('.year-section-subsections').value = section.subsections.join(', ');
-      list.append(editor);
-    }
-    function openYearSettings(year) {
-      const dialog = document.querySelector('#year-settings-dialog');
-      const form = document.querySelector('#year-settings-form');
-      if (!dialog || !form) return;
-      const settings = yearSettings(year);
-      document.querySelector('#year-settings-title').textContent = `${year} settings`;
-      form.querySelectorAll('input[name="currency"]').forEach(input => { input.checked = settings.currencies.includes(input.value); });
-      const list = document.querySelector('#year-section-list');
-      list.replaceChildren();
-      settings.sections.forEach(section => addYearSectionEditor(section));
-      document.querySelector('#year-settings-error').hidden = true;
-      dialog.showModal();
     }
     function setupTransactionTaxonomy() {
       const form = document.querySelector('#transaction-form');
@@ -435,53 +576,344 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         sectionSelect.replaceChildren(...matchingSections.map(section => new Option(section.name, section.name)));
         if (matchingSections.some(section => section.name === previousSection)) sectionSelect.value = previousSection;
         const section = matchingSections.find(item => item.name === sectionSelect.value) || matchingSections[0];
+        const previousSubsection = subsectionSelect.value;
         subsectionSelect.replaceChildren(...(section?.subsections || []).map(name => new Option(name, name)));
+        if (section?.subsections.includes(previousSubsection)) subsectionSelect.value = previousSubsection;
         sectionSelect.disabled = matchingSections.length === 0;
         subsectionSelect.disabled = !section?.subsections.length;
+        const amountLabel = document.querySelector('label[for="entry-amount"]');
+        if (amountLabel?.firstChild?.nodeType === Node.TEXT_NODE) amountLabel.firstChild.textContent = `Amount · ${regions[propertySelect.value]?.code || ''}`;
       };
       dateInput.addEventListener('change', refreshOptions);
       propertySelect.addEventListener('change', refreshOptions);
       typeSelect.addEventListener('change', refreshOptions);
       sectionSelect.addEventListener('change', refreshOptions);
+      form.addEventListener('reset', () => setTimeout(refreshOptions));
       refreshOptions();
+      segmentize(propertySelect);
+      segmentize(typeSelect);
+      segmentize(sectionSelect);
+      segmentize(subsectionSelect, { wrap: true });
+      categoryLabel.classList.add('wide');
     }
-    document.querySelector('#add-year-section')?.addEventListener('click', () => addYearSectionEditor());
-    document.querySelector('#year-section-list')?.addEventListener('click', event => {
-      const removeButton = event.target.closest('.remove-year-section');
-      if (removeButton) removeButton.closest('.year-section-editor').remove();
-    });
-    document.querySelector('#year-settings-form')?.addEventListener('submit', event => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const dialog = form.closest('dialog');
-      const year = Number(document.querySelector('#year-settings-title').textContent.split(' ')[0]);
-      const currencies = [...form.querySelectorAll('input[name="currency"]:checked')].map(input => input.value);
-      const sections = [...form.querySelectorAll('.year-section-editor')].map(editor => ({
-        name: editor.querySelector('.year-section-name').value.trim(),
-        type: editor.querySelector('.year-section-type').value,
-        subsections: [...new Set(editor.querySelector('.year-section-subsections').value.split(',').map(name => name.trim()).filter(Boolean))]
+    // Turns a <select> into one-click buttons. The hidden select stays the source of truth, so option lists
+    // rebuilt elsewhere (per-year currencies, sections, subsections) are mirrored automatically.
+    function segmentize(select, { wrap = false } = {}) {
+      if (!select || select.dataset.segmented) return;
+      select.dataset.segmented = 'true';
+      const group = document.createElement('div');
+      group.className = `segment-group${wrap ? ' is-wrap' : ''}`;
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', select.closest('label')?.firstChild?.textContent.trim() || select.name);
+      select.hidden = true;
+      select.after(group);
+      const draw = () => {
+        group.innerHTML = [...select.options].map(option => `<button type="button" class="segment" data-value="${escapeHtml(option.value)}" aria-pressed="${option.value === select.value}">${escapeHtml(option.textContent)}</button>`).join('')
+          || '<span class="segment-empty">Nothing configured for this year</span>';
+      };
+      group.addEventListener('click', event => {
+        const button = event.target.closest('[data-value]');
+        if (!button || select.disabled) return;
+        select.value = button.dataset.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        draw();
+      });
+      select.addEventListener('change', draw);
+      new MutationObserver(draw).observe(select, { childList: true });
+      select.form?.addEventListener('reset', () => setTimeout(draw));
+      draw();
+    }
+    // ---- Year configuration (months.html) ----
+    // Edits are held as per-year drafts so the user can hop between year boxes; Save validates and writes every touched year.
+    const CODE_TO_PROPERTY = Object.fromEntries(Object.entries(regions).map(([property, region]) => [region.code, property]));
+    const configState = { year: null, drafts: {} };
+    const toMajor = minor => String(Math.round(Number(minor || 0) / 100));
+    function draftFromSettings(year, source = yearSettings(year)) {
+      const properties = Object.keys(regions);
+      return {
+        dirty: false,
+        currencies: source.currencies.map(property => regions[property].code),
+        openings: Object.fromEntries(properties.map(property => [property, toMajor(source === yearSettings(year) ? openingFor(year, property) : source.openings?.[property] ?? 0)])),
+        sections: source.sections.map(section => ({ name: section.name, originalName: section.name, type: section.type, subsections: [...section.subsections] }))
+      };
+    }
+    function configDraft(year) {
+      configState.drafts[year] ||= draftFromSettings(year);
+      return configState.drafts[year];
+    }
+    function markConfigDirty() {
+      configDraft(configState.year).dirty = true;
+      document.querySelector(`[data-config-year="${configState.year}"]`)?.classList.add('is-dirty');
+    }
+    function usageCount(year, filter) {
+      return transactions.filter(item => item.date.startsWith(`${year}-`) && filter(item)).length;
+    }
+    // LinkedIn-style tag field: type and press Enter or comma, paste a comma list, Backspace removes the last chip, × removes any chip.
+    function chipInput({ values, label, placeholder, allowed = null, countFor = () => 0, onChange = () => {} }) {
+      const root = document.createElement('div');
+      root.className = 'chip-field';
+      root.innerHTML = `<div class="chip-input"><input type="text" aria-label="${escapeHtml(label)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div><p class="chip-hint" aria-live="polite"></p>`;
+      const box = root.querySelector('.chip-input');
+      const input = root.querySelector('input');
+      const hint = root.querySelector('.chip-hint');
+      if (allowed) {
+        const list = document.createElement('datalist');
+        list.id = `chip-options-${Math.random().toString(36).slice(2)}`;
+        list.innerHTML = allowed.map(value => `<option value="${value}"></option>`).join('');
+        input.setAttribute('list', list.id);
+        root.append(list);
+      }
+      const draw = () => {
+        box.querySelectorAll('.chip').forEach(chip => chip.remove());
+        values.forEach((value, index) => {
+          const count = countFor(value);
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.innerHTML = `<span>${escapeHtml(value)}</span>${count ? `<small title="${count} ${count === 1 ? 'entry' : 'entries'} this year">${count}</small>` : ''}<button type="button" aria-label="Remove ${escapeHtml(value)}" data-chip-index="${index}">×</button>`;
+          box.insertBefore(chip, input);
+        });
+        input.placeholder = values.length ? '' : placeholder;
+      };
+      const say = message => { hint.textContent = message; root.classList.toggle('has-hint', Boolean(message)); };
+      const add = raw => {
+        const problems = [];
+        raw.split(/[,\n]/).map(part => part.trim()).filter(Boolean).forEach(part => {
+          const value = allowed ? allowed.find(option => option.toLowerCase() === part.toLowerCase()) : part.slice(0, 40);
+          if (!value) return problems.push(`"${part}" is not available. Use ${allowed.join(' or ')}.`);
+          if (values.some(existing => existing.toLowerCase() === value.toLowerCase())) return problems.push(`"${value}" is already added.`);
+          values.push(value);
+        });
+        input.value = '';
+        say(problems.join(' '));
+        draw();
+        onChange();
+      };
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ',' || (event.key === 'Tab' && input.value.trim())) {
+          event.preventDefault();
+          add(input.value);
+        } else if (event.key === 'Backspace' && !input.value && values.length) {
+          values.pop();
+          say('');
+          draw();
+          onChange();
+        }
+      });
+      input.addEventListener('paste', event => {
+        const text = event.clipboardData.getData('text');
+        if (!/[,\n]/.test(text)) return;
+        event.preventDefault();
+        add(`${input.value},${text}`);
+      });
+      input.addEventListener('blur', () => { if (input.value.trim()) add(input.value); });
+      box.addEventListener('click', event => {
+        const remove = event.target.closest('[data-chip-index]');
+        if (remove) {
+          values.splice(Number(remove.dataset.chipIndex), 1);
+          say('');
+          draw();
+          onChange();
+        }
+        input.focus();
+      });
+      draw();
+      return root;
+    }
+    function renderConfigMoney() {
+      const year = configState.year;
+      const draft = configDraft(year);
+      const properties = draft.currencies.map(code => CODE_TO_PROPERTY[code]);
+      const carry = year > FIRST_YEAR;
+      const field = (kind, property) => `<label class="money-field"><span>${regions[property].code}</span><input type="number" step="1" inputmode="numeric" value="${escapeHtml(draft[kind][property])}" data-config-money="${kind}" data-property="${property}"></label>`;
+      document.querySelector('#config-openings').innerHTML = properties.length
+        ? `${properties.map(property => field('openings', property)).join('')}${carry ? `<button type="button" class="link-button" data-config-carry>Use ${year - 1} closing</button>` : ''}`
+        : '<span class="config-muted">Add a currency first</span>';
+    }
+    function renderConfigSections() {
+      const year = configState.year;
+      const draft = configDraft(year);
+      const list = document.querySelector('#config-sections');
+      list.replaceChildren();
+      draft.sections.forEach((section, index) => {
+        const box = document.createElement('fieldset');
+        box.className = `config-section ${section.type}`;
+        const entries = usageCount(year, item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category))));
+        box.innerHTML = `<div class="config-section-head">
+            <input class="config-section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40" data-section-index="${index}">
+            <div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>
+            <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
+            <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          </div>
+          <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
+        box.querySelector('.kv-row').append(chipInput({
+          values: section.subsections,
+          label: `Subsections of ${section.name || 'section'}`,
+          placeholder: 'Type a name, press Enter or comma',
+          countFor: name => usageCount(year, item => item.type === section.type && item.category.toLowerCase() === name.toLowerCase()),
+          onChange: markConfigDirty
+        }));
+        box.dataset.sectionIndex = index;
+        list.append(box);
+      });
+      if (!draft.sections.length) list.innerHTML = '<p class="config-muted">No sections yet. Add one to start categorising entries.</p>';
+    }
+    function renderConfig() {
+      const year = configState.year;
+      const draft = configDraft(year);
+      const lastYear = new Date().getFullYear();
+      document.querySelector('#year-settings-title').textContent = `${year} configuration`;
+      document.querySelector('#config-years').innerHTML = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset).map(value => {
+        const summary = configState.drafts[value] || draftFromSettings(value);
+        return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${summary.currencies.join(' · ') || 'No currency'}</span><span>${summary.sections.length} section${summary.sections.length === 1 ? '' : 's'}</span></button>`;
+      }).join('');
+      const others = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset).filter(value => value !== year);
+      document.querySelector('#config-copy').innerHTML = `<option value="">Copy from…</option>${others.map(value => `<option value="${value}">${value} setup</option>`).join('')}`;
+      document.querySelector('#config-copy').hidden = !others.length;
+      const currencySlot = document.querySelector('#config-currencies');
+      currencySlot.replaceChildren(chipInput({
+        values: draft.currencies,
+        label: 'Currencies',
+        placeholder: 'Add INR or JPY',
+        allowed: Object.values(regions).map(region => region.code),
+        countFor: code => usageCount(year, item => item.property === CODE_TO_PROPERTY[code]),
+        onChange: () => { markConfigDirty(); renderConfigMoney(); }
       }));
-      const names = sections.map(section => section.name.toLocaleLowerCase());
-      const error = document.querySelector('#year-settings-error');
-      if (!currencies.length) error.textContent = 'Select at least one currency for this year.';
-      else if (!sections.length) error.textContent = 'Add at least one section for this year.';
-      else if (sections.some(section => !section.name || !section.subsections.length)) error.textContent = 'Each section needs a name and at least one subsection.';
-      else if (new Set(names).size !== names.length) error.textContent = 'Section names must be unique.';
-      else if (sections.some(section => new Set(section.subsections.map(name => name.toLocaleLowerCase())).size !== section.subsections.length)) error.textContent = 'Subsection names must be unique within each section.';
-      else {
-        yearSettingsByYear[String(year)] = { currencies, sections };
+      renderConfigMoney();
+      renderConfigSections();
+      document.querySelector('#year-settings-error').hidden = true;
+    }
+    function openYearSettings(year) {
+      const dialog = document.querySelector('#year-settings-dialog');
+      if (!dialog) return;
+      configState.year = year;
+      configState.drafts = {};
+      renderConfig();
+      dialog.showModal();
+    }
+    function validateDraft(draft) {
+      const names = draft.sections.map(section => section.name.trim().toLowerCase());
+      if (!draft.currencies.length) return 'Add at least one currency.';
+      const amounts = draft.currencies.map(code => draft.openings[CODE_TO_PROPERTY[code]]);
+      if (amounts.some(value => String(value).trim() !== '' && !Number.isFinite(Number(value)))) return 'Opening balance must be a number.';
+      if (!draft.sections.length) return 'Add at least one section.';
+      if (names.some(name => !name)) return 'Every section needs a name.';
+      if (new Set(names).size !== names.length) return 'Section names must be unique.';
+      const bare = draft.sections.find(section => !section.subsections.length);
+      if (bare) return `Add at least one subsection to "${bare.name}".`;
+      return '';
+    }
+    function setupYearConfig() {
+      const dialog = document.querySelector('#year-settings-dialog');
+      const form = document.querySelector('#year-settings-form');
+      if (!dialog || !form) return;
+      document.querySelector('#config-years').addEventListener('click', event => {
+        const button = event.target.closest('[data-config-year]');
+        if (!button) return;
+        configState.year = Number(button.dataset.configYear);
+        renderConfig();
+      });
+      document.querySelector('#config-copy').addEventListener('change', event => {
+        const from = Number(event.target.value);
+        if (!from) return;
+        const copy = draftFromSettings(from, { ...yearSettings(from), openings: undefined });
+        const draft = configDraft(configState.year);
+        Object.assign(draft, { currencies: copy.currencies, sections: copy.sections.map(section => ({ ...section, originalName: null })) });
+        markConfigDirty();
+        renderConfig();
+        showToast(`Copied the ${from} setup. Review and save.`);
+      });
+      form.addEventListener('input', event => {
+        const draft = configDraft(configState.year);
+        const money = event.target.closest('[data-config-money]');
+        if (money) draft[money.dataset.configMoney][money.dataset.property] = money.value;
+        const name = event.target.closest('.config-section-name');
+        if (name) draft.sections[Number(name.dataset.sectionIndex)].name = name.value;
+        if (money || name) markConfigDirty();
+      });
+      form.addEventListener('click', event => {
+        const draft = configDraft(configState.year);
+        const box = event.target.closest('.config-section');
+        const typeButton = event.target.closest('[data-section-type]');
+        if (typeButton && box) {
+          draft.sections[Number(box.dataset.sectionIndex)].type = typeButton.dataset.sectionType;
+          markConfigDirty();
+          renderConfigSections();
+        }
+        if (event.target.closest('[data-remove-section]') && box) {
+          draft.sections.splice(Number(box.dataset.sectionIndex), 1);
+          markConfigDirty();
+          renderConfigSections();
+        }
+        if (event.target.closest('#config-add-section')) {
+          draft.sections.push({ name: '', originalName: null, type: 'expense', subsections: [] });
+          markConfigDirty();
+          renderConfigSections();
+          document.querySelector('#config-sections .config-section:last-child .config-section-name')?.focus();
+        }
+        if (event.target.closest('[data-config-carry]')) {
+          draft.currencies.forEach(code => {
+            const property = CODE_TO_PROPERTY[code];
+            draft.openings[property] = toMajor(closingBalance(configState.year - 1, property, 11));
+          });
+          markConfigDirty();
+          renderConfigMoney();
+        }
+      });
+      // Enter inside a plain field should not save the whole dialog by accident.
+      form.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && event.target.matches('input:not(.chip-input input)')) event.preventDefault();
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const error = document.querySelector('#year-settings-error');
+        const touched = Object.entries(configState.drafts).filter(([, draft]) => draft.dirty);
+        for (const [year, draft] of touched) {
+          const problem = validateDraft(draft);
+          if (problem) {
+            configState.year = Number(year);
+            renderConfig();
+            error.textContent = `${year}: ${problem}`;
+            error.hidden = false;
+            return;
+          }
+        }
+        const previous = JSON.stringify(yearSettingsByYear);
+        const previousTransactions = JSON.stringify(transactions);
+        touched.forEach(([year, draft]) => {
+          const properties = draft.currencies.map(code => CODE_TO_PROPERTY[code]);
+          const sections = draft.sections.map(section => ({ name: section.name.trim(), type: section.type, subsections: [...section.subsections] }));
+          // Keep existing entries attached to a renamed section.
+          draft.sections.forEach((section, index) => {
+            if (!section.originalName || section.originalName === sections[index].name) return;
+            transactions.forEach(item => { if (item.date.startsWith(`${year}-`) && item.section === section.originalName) item.section = sections[index].name; });
+          });
+          yearSettingsByYear[year] = {
+            currencies: properties,
+            sections,
+            openings: Object.fromEntries(properties.map(property => [property, Math.round(Number(draft.openings[property] || 0) * 100)])),
+            // Budgets are no longer edited here; keep any saved value so the overview page is unchanged.
+            budgets: yearSettingsByYear[year]?.budgets
+          };
+        });
         try {
           saveYearSettings();
-          dialog.close();
-          window.location.reload();
+          if (touched.length) localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
         } catch (saveError) {
           console.error('Could not save year settings.', saveError);
+          Object.keys(yearSettingsByYear).forEach(key => delete yearSettingsByYear[key]);
+          Object.assign(yearSettingsByYear, JSON.parse(previous));
+          transactions = JSON.parse(previousTransactions);
           error.textContent = 'Could not save these settings in this browser.';
+          error.hidden = false;
+          return;
         }
-        return;
-      }
-      error.hidden = false;
-    });
+        dialog.close();
+        render();
+        document.querySelector('#entry-date')?.dispatchEvent(new Event('change'));
+        showToast(touched.length ? `Saved ${touched.map(([year]) => year).join(' & ')} configuration.` : 'No changes to save.');
+      });
+    }
+    setupYearConfig();
     setupTransactionTaxonomy();
     const loginForm = document.querySelector('#login-form');
     if (loginForm) {
@@ -495,6 +927,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return;
         }
         sessionStorage.setItem(`${STORAGE_KEY}-passkey-signed-in`, 'true');
+        sessionStorage.removeItem(`${STORAGE_KEY}-universe`);
         const today = new Date();
         sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
         window.location.href = 'family-budget/months.html';
@@ -518,14 +951,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }));
     document.querySelector('#transaction-search')?.addEventListener('input', renderTransactions);
     document.querySelector('#property-filter')?.addEventListener('change', renderTransactions);
-    document.querySelector('#add-button')?.addEventListener('click', () => {
-      const dateInput = document.querySelector('#entry-date');
-      const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-      dateInput.value = `${monthKey()}-${String(Math.min(new Date().getDate(), daysInMonth)).padStart(2, '0')}`;
-      // Refresh the year-specific property/section options for the prefilled date.
-      dateInput.dispatchEvent(new Event('change'));
-      document.querySelector('#transaction-dialog').showModal();
-    });
+    document.querySelector('#add-button')?.addEventListener('click', () => openEntryDialog());
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
     document.querySelector('#transaction-form')?.addEventListener('submit', event => {
       event.preventDefault();

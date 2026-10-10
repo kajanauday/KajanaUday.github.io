@@ -577,6 +577,7 @@
       }
       sessionStorage.setItem(`${STORAGE_KEY}-signed-in`, 'true');
       sessionStorage.setItem(`${STORAGE_KEY}-passkey-signed-in`, 'true');
+      sessionStorage.removeItem(`${STORAGE_KEY}-universe`);
       const today = new Date();
       sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
       window.location.href = 'family-budget/months.html';

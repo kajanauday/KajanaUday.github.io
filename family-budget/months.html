@@ -14,52 +14,45 @@
     <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
-      <button type="button" class="primary-button ledger-add" id="add-button" title="Add transaction"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
       <button type="button" class="icon-button" id="year-settings-button" aria-label="Year settings" title="Year settings"><i class="ti ti-settings" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
   </header>
   <main class="ledger" id="ledger">
     <h1 class="sr-only">Monthly ledger</h1>
-    <section class="year-kpis" id="year-kpis" aria-label="Year to date"></section>
-    <nav class="month-rail" id="month-rail" aria-label="Months"></nav>
+    <div class="universe" id="universe">
+      <div class="universe-inner">
+        <section class="year-kpis" id="year-kpis" aria-label="Year to date"></section>
+        <p class="rail-legend" aria-hidden="true"><span>Each month, per currency:</span><b class="income">In</b><b class="expense">Out</b><b class="balance">Balance</b></p>
+        <nav class="month-rail" id="month-rail" aria-label="Months"></nav>
+      </div>
+    </div>
     <section class="month-ledger" id="month-ledger" aria-live="polite"></section>
   </main>
-  <dialog class="modal" id="transaction-dialog" aria-labelledby="entry-title">
-    <form id="transaction-form">
-      <div class="modal-header"><div><p>New activity</p><h2 id="entry-title">Add transaction</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <div class="form-grid">
-        <label class="field" for="entry-property">Property<select id="entry-property" name="property"><option value="india">India · INR</option><option value="japan">Japan · JPY</option></select></label>
-        <label class="field" for="entry-type">Type<select id="entry-type" name="type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-        <label class="field" for="entry-date">Date<input id="entry-date" name="date" type="date" required></label>
-        <label class="field" for="entry-category">Category<input id="entry-category" name="category" placeholder="e.g. Groceries" required></label>
-        <label class="field wide" for="entry-description">Description<input id="entry-description" name="description" placeholder="What was this for?" required></label>
-        <label class="field" for="entry-place">Place (optional)<input id="entry-place" name="place" placeholder="Where was this?"></label>
-        <label class="field" for="entry-amount">Amount<input id="entry-amount" name="amount" type="number" min="1" step="1" placeholder="0" required></label>
+  <dialog class="modal config-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
+    <form id="year-settings-form" novalidate>
+      <header class="config-head">
+        <div class="modal-header"><div><p>Configuration</p><h2 id="year-settings-title">Year configuration</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <div class="config-years" id="config-years" role="group" aria-label="Year to configure"></div>
+      </header>
+      <div class="config-body">
+        <section class="config-block" aria-labelledby="config-general-title">
+          <div class="config-block-head"><h3 id="config-general-title">General</h3></div>
+          <div class="kv-row"><span class="kv-key">Currencies</span><div class="kv-value" id="config-currencies"></div></div>
+          <div class="kv-row"><span class="kv-key">Opening balance</span><div class="kv-value kv-money" id="config-openings"></div></div>        </section>
+        <section class="config-block" aria-labelledby="config-sections-title">
+          <div class="config-block-head"><h3 id="config-sections-title">Sections</h3><select id="config-copy" class="filter-select" aria-label="Copy setup from another year"></select><button type="button" class="quiet-button" id="config-add-section"><i class="ti ti-plus" aria-hidden="true"></i> Add section</button></div>
+          <div class="config-sections" id="config-sections"></div>
+        </section>
       </div>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save transaction</button></div>
+      <footer class="config-foot">
+        <p class="settings-error" id="year-settings-error" role="alert" hidden></p>
+        <span class="config-tip">Type and press <kbd>Enter</kbd> or <kbd>,</kbd> to add · paste a comma list · <kbd>⌫</kbd> removes the last</span>
+        <button type="button" class="quiet-button" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary-button">Save</button>
+      </footer>
     </form>
   </dialog>
-  <dialog class="modal year-settings-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
-    <form id="year-settings-form">
-      <div class="modal-header"><div><p>Year setup</p><h2 id="year-settings-title">Year settings</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <fieldset class="year-currencies"><legend>Currencies used this year</legend><label><input type="checkbox" name="currency" value="india"> INR · India</label><label><input type="checkbox" name="currency" value="japan"> JPY · Japan</label></fieldset>
-      <div class="year-sections-heading"><h3>Sections and subsections</h3><button type="button" class="quiet-button" id="add-year-section">Add section</button></div>
-      <div class="year-section-list" id="year-section-list"></div>
-      <p class="settings-error" id="year-settings-error" role="alert" hidden></p>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save settings</button></div>
-    </form>
-  </dialog>
-  <template id="year-section-template">
-    <fieldset class="year-section-editor">
-      <div class="year-section-fields">
-        <label class="field">Section name<input class="year-section-name" required></label>
-        <label class="field">Type<select class="year-section-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-      </div>
-      <label class="field">Subsections <small>Separate each name with a comma</small><textarea class="year-section-subsections" rows="2" required></textarea></label>
-      <button type="button" class="quiet-button remove-year-section">Remove section</button>
-    </fieldset>
-  </template>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>
