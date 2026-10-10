@@ -214,8 +214,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
     const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
     const dateOf = key => new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1);
-    // Months whose ledger is open. On a fresh session only the current month is open.
-    const expandedMonths = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-open-months`) || 'null') || [keyOf(new Date().getFullYear(), new Date().getMonth())]);
+    // Months whose ledger is open. A fresh session opens the current month on wider screens; on phones every month
+    // starts closed so the whole year's list fits on screen (an open month is several screens tall there).
+    const isPhone = () => window.matchMedia('(max-width: 700px)').matches;
+    const expandedMonths = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-open-months`) || 'null') || (isPhone() ? [] : [keyOf(new Date().getFullYear(), new Date().getMonth())]));
     function saveExpandedMonths() {
       sessionStorage.setItem(`${STORAGE_KEY}-open-months`, JSON.stringify([...expandedMonths]));
     }
@@ -359,7 +361,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
       // A past year opens on its latest month with entries, unless one of its months is already open.
       const hasOpen = [...expandedMonths].some(key => key.startsWith(`${year}-`));
-      if (!hasOpen && year !== today.getFullYear()) {
+      if (!hasOpen && year !== today.getFullYear() && !isPhone()) {
         const latest = transactions.filter(item => item.date.startsWith(`${year}-`)).map(item => item.date.slice(0, 7)).sort().pop();
         if (latest) expandedMonths.add(latest);
         saveExpandedMonths();
