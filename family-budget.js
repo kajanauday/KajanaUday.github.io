@@ -1,7 +1,7 @@
 const STORAGE_KEY = 'family-budget-static-demo-v1';
     const regions = {
-      india: { name: 'India', home: 'Pune home', code: 'INR', symbol: '₹', color: 'india', opening: 1973800, budget: 5500000, icon: 'ti-home-2' },
-      japan: { name: 'Japan', home: 'Tokyo home', code: 'JPY', symbol: '¥', color: 'japan', opening: 1973800, budget: 9800000, icon: 'ti-building-community' }
+      india: { name: 'India', home: 'Pune home', code: 'INR', color: 'india', opening: 1973800, budget: 5500000, icon: 'ti-home-2' },
+      japan: { name: 'Japan', home: 'Tokyo home', code: 'JPY', color: 'japan', opening: 1973800, budget: 9800000, icon: 'ti-building-community' }
     };
     const starterTransactions = [
       { id: 'in-1', property: 'india', date: '2026-10-09', category: 'Travel', description: 'Airport transfer', amount: 80000, type: 'expense' },
@@ -84,10 +84,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return transactions.filter(item => item.date.startsWith(key) && (!property || item.property === property));
     }
     function formatMoney(minor, property) {
-      const region = regions[property];
       const value = Number(minor || 0) / 100;
       const formatted = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.abs(value));
-      return `${value < 0 ? '-' : ''}${region.symbol}${formatted}`;
+      return `${value < 0 ? '-' : ''}${formatted}`;
     }
     function totalFor(items, type) {
       return items.filter(item => item.type === type).reduce((sum, item) => sum + Number(item.amount), 0);
@@ -128,7 +127,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const region = regions[property];
       const stats = propertyStats(property);
       const spentPercent = Math.min(100, stats.expense / region.budget * 100);
-      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip">${region.symbol} <span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(region.budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
+      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(region.budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
       target.innerHTML = content;
     }
     function renderTransactions() {
@@ -152,19 +151,25 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return settings.currencies.map(property => {
         const region = regions[property];
         const items = transactions.filter(item => item.property === property && item.date.startsWith(value));
-        const income = totalFor(items, 'income');
-        const expense = totalFor(items, 'expense');
-        const opening = value === '2026-10' ? region.opening : 0;
-        const sectionRows = settings.sections.map(section => {
+        const sectionRows = [...settings.sections].sort((a, b) => (a.type === 'income' ? 0 : 1) - (b.type === 'income' ? 0 : 1)).map(section => {
           const sectionItems = items.filter(item => item.type === section.type && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));
-          const subsectionRows = section.subsections.map(subsection => {
-            const amount = totalFor(sectionItems.filter(item => item.category === subsection), section.type);
-            return `<div class="month-category"><span>${escapeHtml(subsection)}</span><strong>${formatMoney(amount, property)}</strong></div>`;
+          const subsections = [...new Set([
+            ...section.subsections,
+            ...sectionItems.map(item => item.category)
+          ])];
+          const subsectionRows = subsections.map(subsection => {
+            const subsectionItems = sectionItems
+              .filter(item => item.category === subsection)
+              .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+            const amount = totalFor(subsectionItems, section.type);
+            const entries = subsectionItems.length
+              ? subsectionItems.map(item => `<div class="month-entry-row"><span>${dayLabel(item.date)}</span><span>${escapeHtml(item.description)}</span><span>${escapeHtml(item.place || '—')}</span><strong class="month-entry-amount ${section.type}">${formatMoney(item.amount, property)}</strong></div>`).join('')
+              : '<p class="month-empty">No entries for this subsection.</p>';
+            return `<details class="month-drill-subsection"><summary><span>${escapeHtml(subsection)}</span><strong>${formatMoney(amount, property)}</strong></summary><div class="month-entry-table">${entries}</div></details>`;
           }).join('');
-          const amount = totalFor(sectionItems, section.type);
-          return `<div class="month-section"><h4>${escapeHtml(section.name)} <strong>${formatMoney(amount, property)}</strong></h4>${subsectionRows}</div>`;
+          return `<details class="month-drill-section ${section.type}"><summary>${escapeHtml(section.name)}</summary><div class="month-drill-subsections">${subsectionRows || '<p class="month-empty">No subsections configured.</p>'}</div></details>`;
         }).join('');
-        return `<section class="month-detail-property ${property}" aria-label="${region.name} details for ${date.toLocaleDateString('en', { month: 'long', year: 'numeric' })}"><header class="month-detail-head"><h2><i class="property-dot ${property}" aria-hidden="true"></i>${region.name}</h2><span>${region.code}</span></header><div class="month-detail-totals"><div><span>Income</span><strong class="income">${formatMoney(income, property)}</strong></div><div><span>Expenses</span><strong class="expense">${formatMoney(expense, property)}</strong></div><div><span>Balance</span><strong>${formatMoney(opening + income - expense, property)}</strong></div></div><div class="month-categories"><h3>Sections and subsections</h3>${sectionRows}</div></section>`;
+        return `<section class="month-detail-property ${property}" aria-label="${region.name} details for ${date.toLocaleDateString('en', { month: 'long', year: 'numeric' })}"><header class="month-detail-head"><h2><i class="property-dot ${property}" aria-hidden="true"></i>${region.name}</h2><span>${region.code}</span></header><div class="month-drill-sections">${sectionRows}</div></section>`;
       }).join('');
     }
     function renderBudgets() {
@@ -354,13 +359,28 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             const date = new Date(year, month, 1);
             const value = `${year}-${String(month + 1).padStart(2, '0')}`;
             const isActiveMonth = month === activeMonth;
-            const monthName = date.toLocaleDateString('en', { month: 'long' });
-            return `<article class="month-tile${isActiveMonth ? ' is-selected' : ''}" data-month-card="${value}"><button type="button" class="month-tile-toggle" data-month-value="${value}" aria-label="${monthName} ${year}" aria-expanded="${isActiveMonth}" aria-controls="month-details-${year}"${year === today.getFullYear() && month === today.getMonth() ? ' aria-current="date"' : ''}><span class="month-tile-head">${monthName}</span></button></article>`;
+            const monthName = date.toLocaleDateString('en', { month: 'short' }).slice(0, 3);
+            const monthItems = yearItems.filter(item => item.date.startsWith(value));
+            const monthSummary = Object.keys(regions).filter(property => settings.currencies.includes(property)).map(property => {
+              const region = regions[property];
+              const items = monthItems.filter(item => item.property === property);
+              const income = totalFor(items, 'income');
+              const expense = totalFor(items, 'expense');
+              const formattedIncome = formatMoney(income, property);
+              const formattedExpense = formatMoney(expense, property);
+              return {
+                markup: `<span class="month-tile-currency-row"><span class="month-tile-currency">${region.code}</span><strong class="month-tile-amount income">${formattedIncome}</strong><strong class="month-tile-amount expense">${formattedExpense}</strong></span>`,
+                label: `${region.code}: Income ${formattedIncome}, Expenses ${formattedExpense}`
+              };
+            });
+            const monthSummaryLabel = monthSummary.map(summary => summary.label).join('; ');
+            return `<article class="month-tile${isActiveMonth ? ' is-selected' : ''}" data-month-card="${value}"><button type="button" class="month-tile-toggle" data-month-value="${value}" aria-label="${monthName} ${year}${monthSummaryLabel ? `: ${monthSummaryLabel}` : ''}" aria-expanded="${isActiveMonth}" aria-controls="month-details-${year}"${year === today.getFullYear() && month === today.getMonth() ? ' aria-current="date"' : ''}><span class="month-tile-head">${monthName}</span><span class="month-tile-summary">${monthSummary.map(summary => summary.markup).join('')}</span></button></article>`;
           }).join('');
           const monthDetails = Array.from({ length: 12 }, (_, month) => {
             const date = new Date(year, month, 1);
             const value = `${year}-${String(month + 1).padStart(2, '0')}`;
-            return `<div data-month-details="${value}"${month === activeMonth ? '' : ' hidden'}>${renderMonthDetails(value, date)}</div>`;
+            const singleCurrency = settings.currencies.length === 1 ? ' has-single-currency' : '';
+            return `<div class="month-details${singleCurrency}" data-month-details="${value}"${month === activeMonth ? '' : ' hidden'}>${renderMonthDetails(value, date)}</div>`;
           }).join('');
           return `<section class="month-year-group${isCurrentYear ? ' is-open' : ''}" data-year-group="${year}"><div class="month-year-heading"><button type="button" class="month-year-toggle" aria-expanded="${isCurrentYear}" aria-controls="months-${year}"><span class="month-list-year">${year}</span><span class="year-summary">${yearSummaries}</span></button></div><div class="year-month-content" id="months-${year}"${isCurrentYear ? '' : ' hidden'}><div class="year-month-grid">${months}</div><div class="year-active-month-details" id="month-details-${year}" data-year-details="${year}">${monthDetails}</div></div></section>`;
         }).join('');
@@ -423,7 +443,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const amount = Number(values.amount);
       if (!Number.isFinite(amount) || amount <= 0) return;
-      transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, section: values.section, category: values.category.trim(), description: values.description.trim(), amount: Math.round(amount * 100), type: values.type });
+      transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, section: values.section, category: values.category.trim(), description: values.description.trim(), place: values.place.trim(), amount: Math.round(amount * 100), type: values.type });
       saveTransactions();
       event.currentTarget.reset();
       document.querySelector('#transaction-dialog').close();

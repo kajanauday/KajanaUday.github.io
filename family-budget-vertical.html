@@ -365,6 +365,7 @@
         <label class="field" for="entry-date">Date<input id="entry-date" name="date" type="date" required></label>
         <label class="field" for="entry-category">Category<input id="entry-category" name="category" placeholder="e.g. Groceries" required></label>
         <label class="field wide" for="entry-description">Description<input id="entry-description" name="description" placeholder="What was this for?" required></label>
+        <label class="field wide" for="entry-place">Place (optional)<input id="entry-place" name="place" placeholder="Where was this?"></label>
         <label class="field wide" for="entry-amount">Amount<input id="entry-amount" name="amount" type="number" min="1" step="1" placeholder="0" required></label>
       </div>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save transaction</button></div>
@@ -375,8 +376,8 @@
   <script>
     const STORAGE_KEY = 'family-budget-static-demo-v1';
     const regions = {
-      india: { name: 'India', home: 'Pune home', code: 'INR', symbol: '₹', color: 'india', opening: 1973800, budget: 5500000, icon: 'ti-home-2' },
-      japan: { name: 'Japan', home: 'Tokyo home', code: 'JPY', symbol: '¥', color: 'japan', opening: 1973800, budget: 9800000, icon: 'ti-building-community' }
+      india: { name: 'India', home: 'Pune home', code: 'INR', color: 'india', opening: 1973800, budget: 5500000, icon: 'ti-home-2' },
+      japan: { name: 'Japan', home: 'Tokyo home', code: 'JPY', color: 'japan', opening: 1973800, budget: 9800000, icon: 'ti-building-community' }
     };
     const starterTransactions = [
       { id: 'in-1', property: 'india', date: '2026-10-09', category: 'Travel', description: 'Airport transfer', amount: 80000, type: 'expense' },
@@ -422,10 +423,9 @@
       return transactions.filter(item => item.date.startsWith(key) && (!property || item.property === property));
     }
     function formatMoney(minor, property) {
-      const region = regions[property];
       const value = Number(minor || 0) / 100;
       const formatted = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value);
-      return `${region.symbol}${formatted}`;
+      return formatted;
     }
     function totalFor(items, type) {
       return items.filter(item => item.type === type).reduce((sum, item) => sum + Number(item.amount), 0);
@@ -464,7 +464,7 @@
       const region = regions[property];
       const stats = propertyStats(property);
       const spentPercent = Math.min(100, stats.expense / region.budget * 100);
-      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip">${region.symbol} <span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(region.budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
+      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(region.budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
       document.querySelector(`#property-${property}`).innerHTML = content;
     }
     function renderTransactions() {
@@ -556,7 +556,7 @@
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const amount = Number(values.amount);
       if (!Number.isFinite(amount) || amount <= 0) return;
-      transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, category: values.category.trim(), description: values.description.trim(), amount: Math.round(amount * 100), type: values.type });
+      transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, category: values.category.trim(), description: values.description.trim(), place: values.place.trim(), amount: Math.round(amount * 100), type: values.type });
       saveTransactions();
       event.currentTarget.reset();
       document.querySelector('#transaction-dialog').close();
