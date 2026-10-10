@@ -4,22 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f8f4">
-  <title>Expense Tracker | Choose a month</title>
+  <title>Expense Tracker | Monthly ledger</title>
   <link rel="stylesheet" href="../family-budget.css">
   <script src="../family-budget.js" defer></script>
 </head>
 <body data-page="months">
-  <header class="topbar">
+  <header class="topbar ledger-topbar">
     <a class="brand" href="months.html" aria-label="Expense Tracker"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Expense Tracker</span></a>
-    <div></div>
+    <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
     <div class="header-actions">
+      <span class="save-state"><span class="save-dot"></span> Saved</span>
+      <button type="button" class="primary-button ledger-add" id="add-button" title="Add transaction"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
+      <button type="button" class="icon-button" id="year-settings-button" aria-label="Year settings" title="Year settings"><i class="ti ti-settings" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
   </header>
-  <main class="month-picker">
-    <h1 class="month-year" id="month-year">Monthly history</h1>
-    <nav class="month-grid" id="month-grid" aria-label="Months from 2025 onward"></nav>
+  <main class="ledger" id="ledger">
+    <h1 class="sr-only">Monthly ledger</h1>
+    <section class="year-kpis" id="year-kpis" aria-label="Year to date"></section>
+    <nav class="month-rail" id="month-rail" aria-label="Months"></nav>
+    <section class="month-ledger" id="month-ledger" aria-live="polite"></section>
   </main>
+  <dialog class="modal" id="transaction-dialog" aria-labelledby="entry-title">
+    <form id="transaction-form">
+      <div class="modal-header"><div><p>New activity</p><h2 id="entry-title">Add transaction</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="form-grid">
+        <label class="field" for="entry-property">Property<select id="entry-property" name="property"><option value="india">India · INR</option><option value="japan">Japan · JPY</option></select></label>
+        <label class="field" for="entry-type">Type<select id="entry-type" name="type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+        <label class="field" for="entry-date">Date<input id="entry-date" name="date" type="date" required></label>
+        <label class="field" for="entry-category">Category<input id="entry-category" name="category" placeholder="e.g. Groceries" required></label>
+        <label class="field wide" for="entry-description">Description<input id="entry-description" name="description" placeholder="What was this for?" required></label>
+        <label class="field" for="entry-place">Place (optional)<input id="entry-place" name="place" placeholder="Where was this?"></label>
+        <label class="field" for="entry-amount">Amount<input id="entry-amount" name="amount" type="number" min="1" step="1" placeholder="0" required></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save transaction</button></div>
+    </form>
+  </dialog>
   <dialog class="modal year-settings-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
     <form id="year-settings-form">
       <div class="modal-header"><div><p>Year setup</p><h2 id="year-settings-title">Year settings</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
@@ -40,5 +60,6 @@
       <button type="button" class="quiet-button remove-year-section">Remove section</button>
     </fieldset>
   </template>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>
