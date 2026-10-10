@@ -276,39 +276,48 @@
     .kpi-values dd { margin: 2px 0 0; overflow: hidden; font: 700 15px var(--display); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
     dd.income { color: var(--income); }
     dd.expense { color: var(--expense); }
-    .month-rail { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; }
-    .mcell { min-width: 0; display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); align-content: start; align-items: baseline; gap: 3px 8px; padding: 7px 8px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
-    .mcell:hover { border-color: #b4c3b2; }
-    .mcell.is-empty { background: transparent; }
-    .mcell.is-future { border-style: dashed; color: var(--muted); }
-    .mcell.is-selected { border-color: var(--forest); background: var(--surface); box-shadow: inset 0 0 0 1px var(--forest), 0 3px 10px rgba(40, 99, 71, .1); }
-    .mcell-name { display: flex; align-items: center; gap: 5px; font: 700 12px var(--display); }
-    .mcell.is-selected .mcell-name { color: var(--forest-dark); }
-    .mcell-now { width: 6px; height: 6px; border-radius: 50%; background: var(--forest); }
-    .mcell-top { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
-    .mcell-sym { margin-left: auto; color: var(--muted); font: 500 10px var(--mono); }
-    .mcell-val { min-width: 0; text-align: right; }
-    .mcell-val { overflow: hidden; font: 600 11px var(--mono); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-    .mcell-val.income { color: var(--income); }
-    .mcell-val.expense { color: var(--expense); }
-    .mcell-val.balance { color: var(--ink); }
-    .mcell-val.balance { padding-top: 3px; border-top: 1px dashed var(--line); }
     /* Layer 2: year summary + month strip, folded away until the eye is pressed. */
     .universe { display: none; }
     .universe-inner { display: grid; gap: 12px; }
     .show-universe .universe { display: block; animation: unfold .28s ease both; }
     @keyframes unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-    body:not(.show-universe) .year-tabs { visibility: hidden; }
     .month-ledger-head .icon-button { width: 32px; height: 32px; font-size: 16px; }
-    .universe-toggle[aria-pressed="true"] { border-color: var(--forest); background: var(--forest-soft); color: var(--forest-dark); }
-    .rail-legend { display: flex; justify-content: flex-end; gap: 12px; margin: -4px 0 -6px; color: var(--muted); font: 500 10px var(--mono); }
-    .rail-legend b { font-weight: 600; }
-    .rail-legend .income { color: var(--income); }
-    .rail-legend .expense { color: var(--expense); }
-    .rail-legend .balance { padding-top: 1px; border-top: 1px dashed #c4c9c0; color: var(--ink); }
-    .mcell-val.is-zero:not(.balance) { color: #b5bab1; font-weight: 500; }
-    .month-ledger { display: grid; gap: 10px; }
-    .month-ledger-head { display: flex; align-items: center; gap: 12px; }
+    .month-ledger { display: grid; gap: 4px; }
+    /* Month list: priority groups, hairline dividers, and a statement-style summary on closed months. */
+    .month-group { display: grid; }
+    .month-group-label { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .month-group-label::after { content: ""; order: 1; flex: 1; border-top: .5px solid #c9cec5; }
+    .month-group-label small { order: 2; color: #a3a99f; font: 500 10px var(--mono); letter-spacing: 0; text-transform: none; }
+    .month-block { min-width: 0; display: grid; gap: 10px; padding: 9px 0; }
+    .month-block + .month-block { border-top: .5px solid #d3d7cf; }
+    .month-block.is-open { padding-bottom: 16px; }
+    .month-index { width: 20px; flex: none; color: #b0b5ac; font: 500 11px var(--mono); }
+    .month-block.is-open .month-index { color: var(--forest); }
+    /* Closed-month stats use the same pill as the month tags: small uppercase mono on a soft background. */
+    .month-summary { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .month-tag { display: inline-flex; align-items: center; gap: 8px; padding: 3px 9px; border-radius: 99px; background: var(--surface-soft); color: var(--muted); font: 600 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+    .month-tag.is-zero { color: #a9aea5; }
+    .month-summary > .month-tag:first-child { min-width: 96px; justify-content: center; }
+    .ms-cur { gap: 10px; color: var(--ink); }
+    .ms-cur .property-dot { width: 6px; height: 6px; margin-right: -4px; }
+    /* Fixed, right-aligned slots so numbers line up from month to month. */
+    .ms-kv { min-width: 6ch; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0; text-align: right; }
+    .ms-kv.income { color: var(--income); }
+    .ms-kv.expense { color: var(--expense); }
+    .ms-kv.balance { color: var(--ink); }
+    .ms-kv.is-zero:not(.balance) { opacity: .45; }
+    @media (min-width: 701px) { .month-ledger-head h2 { min-width: 180px; } }
+    .year-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    .year-meta { color: var(--muted); font: 500 11px var(--mono); }
+    .summary-toggle { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; }
+    .summary-toggle[aria-pressed="true"] { border-color: var(--forest); background: var(--forest-soft); color: var(--forest-dark); }
+    /* One block per month: open months show the full ledger, closed months are a single slim row. */
+    /* The month name is the toggle: plain heading when closed, highlighted when open. */
+    .month-name { margin: 0 0 0 -8px; padding: 3px 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font: inherit; text-align: left; transition: background .15s, color .15s; }
+    .month-name:hover { background: var(--surface-soft); }
+    .month-name[aria-expanded="true"] { background: var(--forest-soft); color: var(--forest-dark); box-shadow: inset 0 -2px 0 var(--forest); }
+    .month-block.is-future:not(.is-open) .month-name { color: var(--muted); }
+    .month-ledger-head { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     .month-ledger-head h2 { margin: 0; font: 700 15px var(--display); }
     .month-ledger-meta { color: var(--muted); font: 500 11px var(--mono); }
     .month-ledger-toggle { min-height: 30px; margin-left: auto; font-size: 11px; }
@@ -357,7 +366,6 @@
     .ledger-empty-cat:hover, .ledger-empty-cat:focus-visible { background: var(--forest-soft); color: var(--forest-dark); }
     .ledger-empty-cat:hover i { color: var(--forest-dark); }
     .ledger-form { display: grid; align-items: center; gap: 5px; }
-    .entry-form { grid-template-columns: 38px minmax(0, 1fr) minmax(0, .7fr) 84px 20px 20px; padding: 4px 0 5px; }
     .sub-form { grid-template-columns: minmax(0, 1fr) 20px 20px; padding: 6px 0 2px; }
     .ledger-form input { min-width: 0; height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font-size: 11px; }
     .ledger-form input[type="number"] { font-family: var(--mono); -moz-appearance: textfield; }
@@ -370,10 +378,29 @@
     .mini-btn.is-save:hover { background: var(--forest-soft); }
     .ledger-form-hint { grid-column: 1 / -1; margin: 0; color: var(--expense); font-size: 11px; }
     .ledger-form-hint:empty { display: none; }
-    @container (max-width: 340px) {
-      .entry-form { grid-template-columns: 34px minmax(0, 1fr) 70px 20px 20px; }
-      .entry-form [name="place"] { grid-row: 2; grid-column: 2 / 4; }
-    }
+    /* Focused entry pop-up */
+    .entry-modal { width: min(400px, calc(100% - 24px)); padding: 0; border-top: 4px solid var(--expense); }
+    .entry-modal[data-type="income"] { border-top-color: var(--income); }
+    .entry-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 10px; }
+    .entry-modal-path { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; color: var(--muted); font: 500 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    .entry-modal-head h2 { margin: 0; font: 700 20px var(--display); }
+    .entry-modal-month { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .entry-modal-fields { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 10px; padding: 4px 18px 12px; }
+    .entry-modal-fields .field.wide { grid-column: 1 / -1; }
+    .entry-modal-fields input { height: 40px; font-size: 14px; }
+    .entry-modal-fields .entry-amount input { font: 600 18px var(--mono); }
+    .entry-modal-fields .entry-day input { font: 500 14px var(--mono); text-align: center; }
+    .entry-modal-fields input[aria-invalid] { border-color: var(--expense); background: var(--expense-soft); }
+    .entry-modal-log { display: grid; gap: 2px; max-height: 120px; margin: 0 18px 10px; padding: 0; overflow-y: auto; list-style: none; }
+    .entry-modal-log:empty { display: none; }
+    .entry-modal-log li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; padding: 4px 8px; border-radius: 4px; background: var(--forest-soft); font-size: 11px; animation: rise .2s both; }
+    .entry-modal-log time { color: var(--muted); font: 500 10px var(--mono); }
+    .entry-modal-log span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .entry-modal-log strong { font: 500 11px var(--mono); }
+    .entry-modal-log .income { color: var(--income); }
+    .entry-modal-log .expense { color: var(--expense); }
+    .entry-modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--canvas); }
+    .entry-again { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--muted); font-size: 11px; cursor: pointer; }
     .page-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 26px; color: #91978f; font: 9px var(--mono); }
     @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
     @media (max-width: 930px) {
@@ -446,9 +473,6 @@
     @media (max-width: 1280px) {
       .kpi-card { grid-template-columns: minmax(0, 1fr); gap: 7px; }
     }
-    @media (max-width: 1100px) {
-      .month-rail { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    }
     @media (max-width: 700px) {
       .ledger-topbar { height: 52px; padding: 0 12px; }
       .ledger-topbar .brand-word { display: none; }
@@ -459,12 +483,17 @@
       .kpi-card { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 9px 11px; }
       .kpi-values { gap: 4px 10px; }
       .kpi-values dd { font-size: 13px; }
-      .month-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
-      .mcell { padding: 6px 5px 6px 6px; }
-      .mcell-name { gap: 3px; }
-      .mcell-now { width: 5px; height: 5px; }
       .month-ledger-head { gap: 8px; }
       .ledger-panel { padding: 10px; }
+      .year-meta, .month-ledger-meta { display: none; }
+      .month-block.is-open .month-ledger-head { flex-wrap: nowrap; gap: 8px; }
+      /* Phone: entry count beside the name, then one aligned row per currency. */
+      .month-summary { display: contents; }
+      .month-summary > .month-tag:first-child { min-width: 0; margin-left: auto; }
+      .ms-cur { flex-basis: calc(100% - 28px); margin-left: 28px; }
+      .month-ledger-head h2 { min-width: 0; }
+      .month-name { white-space: nowrap; }
+      .month-ledger-toggle { min-height: 30px; padding: 0 9px; }
     }
     @media (max-width: 380px) {
       .kpi-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }

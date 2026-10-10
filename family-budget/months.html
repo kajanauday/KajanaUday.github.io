@@ -11,7 +11,7 @@
 <body data-page="months">
   <header class="topbar ledger-topbar">
     <a class="brand" href="months.html" aria-label="Expense Tracker"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Expense Tracker</span></a>
-    <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
+    <div></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
       <button type="button" class="icon-button" id="year-settings-button" aria-label="Year settings" title="Year settings"><i class="ti ti-settings" aria-hidden="true"></i></button>
@@ -20,14 +20,17 @@
   </header>
   <main class="ledger" id="ledger">
     <h1 class="sr-only">Monthly ledger</h1>
+    <div class="year-bar">
+      <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
+      <span class="year-meta" id="year-meta"></span>
+      <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
+    </div>
     <div class="universe" id="universe">
       <div class="universe-inner">
         <section class="year-kpis" id="year-kpis" aria-label="Year to date"></section>
-        <p class="rail-legend" aria-hidden="true"><span>Each month, per currency:</span><b class="income">In</b><b class="expense">Out</b><b class="balance">Balance</b></p>
-        <nav class="month-rail" id="month-rail" aria-label="Months"></nav>
       </div>
     </div>
-    <section class="month-ledger" id="month-ledger" aria-live="polite"></section>
+    <div class="month-ledger" id="month-ledger"></div>
   </main>
   <dialog class="modal config-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
     <form id="year-settings-form" novalidate>
@@ -49,6 +52,26 @@
         <p class="settings-error" id="year-settings-error" role="alert" hidden></p>
         <span class="config-tip">Type and press <kbd>Enter</kbd> or <kbd>,</kbd> to add · paste a comma list · <kbd>⌫</kbd> removes the last</span>
         <button type="button" class="quiet-button" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary-button">Save</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog class="modal entry-modal" id="entry-modal" aria-labelledby="entry-modal-title">
+    <form novalidate>
+      <header class="entry-modal-head">
+        <div><p class="entry-modal-path" id="entry-modal-path"></p><h2 id="entry-modal-title">Subsection</h2><p class="entry-modal-month" id="entry-modal-month"></p></div>
+        <button type="button" class="icon-button" data-close-entry aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </header>
+      <div class="entry-modal-fields">
+        <label class="field wide">Description<input name="description" maxlength="80" autocomplete="off" placeholder="What was it?"></label>
+        <label class="field entry-amount">Amount<input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></label>
+        <label class="field entry-day">Day<input name="day" type="number" min="1" step="1" inputmode="numeric"></label>
+        <label class="field wide">Place (optional)<input name="place" maxlength="60" autocomplete="off" placeholder="Where?"></label>
+      </div>
+      <ol class="entry-modal-log" id="entry-modal-log" aria-label="Added just now"></ol>
+      <footer class="entry-modal-foot">
+        <label class="entry-again"><input type="checkbox" name="again"> Add another</label>
+        <button type="button" class="quiet-button" data-close-entry>Cancel</button>
         <button type="submit" class="primary-button">Save</button>
       </footer>
     </form>

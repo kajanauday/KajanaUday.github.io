@@ -208,11 +208,18 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
       return groups;
     }
-    // Inline "new subsection" editor in the ledger: { property, section } while open.
+    // Inline "new subsection" editor in the ledger: { month, property, section } while open.
     let ledgerDraft = null;
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
-    const catKey = (property, section, category) => [property, section, category].join('|');
-    function renderLedgerSection(section, property) {
+    const catKey = (month, property, section, category) => [month, property, section, category].join('|');
+    const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
+    const dateOf = key => new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1);
+    // Months whose ledger is open. On a fresh session only the current month is open.
+    const expandedMonths = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-open-months`) || 'null') || [keyOf(new Date().getFullYear(), new Date().getMonth())]);
+    function saveExpandedMonths() {
+      sessionStorage.setItem(`${STORAGE_KEY}-open-months`, JSON.stringify([...expandedMonths]));
+    }
+    function renderLedgerSection(section, property, mKey) {
       const total = totalFor(section.items, section.type);
       const configured = section.subsections.length > 0; // the "Other" catch-all buckets are not in the year config
       const names = [...new Set([...section.subsections, ...section.items.map(item => item.category)])];
@@ -221,25 +228,25 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         .map(category => ({ ...category, amount: totalFor(category.items, section.type) }));
       const shown = categories.filter(category => category.items.length).sort((a, b) => b.amount - a.amount);
       const empty = categories.filter(category => !shown.includes(category));
-      const addData = name => `data-property="${property}" data-section="${escapeHtml(section.name)}" data-type="${section.type}" data-category="${escapeHtml(name)}"`;
+      const addData = name => `data-month="${mKey}" data-property="${property}" data-section="${escapeHtml(section.name)}" data-type="${section.type}" data-category="${escapeHtml(name)}"`;
       const rows = shown.map(category => {
         const entries = [...category.items]
           .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
           .map(item => `<div class="ledger-entry" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></div>`).join('');
-        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}</div></details>`;
+        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}</div></details>`;
       }).join('');
       const emptyLine = empty.length ? `<p class="ledger-none">No entries · ${empty.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : '';
-      const subForm = ledgerDraft && ledgerDraft.property === property && ledgerDraft.section === section.name
+      const subForm = ledgerDraft && ledgerDraft.month === mKey && ledgerDraft.property === property && ledgerDraft.section === section.name
         ? `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${escapeHtml(section.name)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`
         : '';
-      const sectionAdd = configured ? `<button type="button" class="mini-add" data-add-subsection data-property="${property}" data-section="${escapeHtml(section.name)}" aria-label="Add subsection to ${escapeHtml(section.name)}" title="Add subsection"><i class="ti ti-plus" aria-hidden="true"></i></button>` : '<span></span>';
+      const sectionAdd = configured ? `<button type="button" class="mini-add" data-add-subsection data-month="${mKey}" data-property="${property}" data-section="${escapeHtml(section.name)}" aria-label="Add subsection to ${escapeHtml(section.name)}" title="Add subsection"><i class="ti ti-plus" aria-hidden="true"></i></button>` : '<span></span>';
       return `<section class="ledger-sec ${section.type}"><header class="ledger-sec-head"><h4>${escapeHtml(section.name)}</h4><span>${section.items.length}</span><strong class="${section.type}">${formatMoney(total, property)}</strong>${sectionAdd}</header>${subForm}${rows || (subForm ? '' : '<p class="ledger-none">Nothing recorded</p>')}${emptyLine}</section>`;
     }
     function renderLedgerPanel(property, year, month, settings) {
       const region = regions[property];
       const items = ledgerItems(year, property, month);
       const stats = flowStats(items);
-      const sections = groupIntoSections(items, settings).map(section => renderLedgerSection(section, property)).join('');
+      const sections = groupIntoSections(items, settings).map(section => renderLedgerSection(section, property, keyOf(year, month))).join('');
       return `<section class="ledger-panel ${property}" aria-label="${region.name}">
         <header class="ledger-panel-head">
           <h3><span class="property-dot ${property}" aria-hidden="true"></span>${region.name}<small>${region.code}</small></h3>
@@ -265,75 +272,106 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         </article>`;
       }).join('');
     }
-    function renderMonthRail(year, selected, settings) {
+    // Priority order: this month, then finished months (newest first), then upcoming months (soonest first).
+    function monthOrder(year) {
       const today = new Date();
-      return Array.from({ length: 12 }, (_, month) => {
-        const date = new Date(year, month, 1);
-        const name = date.toLocaleDateString('en', { month: 'short' });
-        const isNow = year === today.getFullYear() && month === today.getMonth();
-        const isFuture = date > today;
-        const rows = settings.currencies.map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
-        const hasData = rows.some(row => row.stats.count);
-        const label = rows.map(({ property, stats, balance }) => `${regions[property].code} income ${formatMoney(stats.income, property)}, expenses ${formatMoney(stats.expense, property)}, balance ${formatMoney(balance, property)}`).join('; ');
-        const cell = (value, property, kind, title) => `<span class="mcell-val ${kind}${value ? '' : ' is-zero'}" title="${title} ${formatMoney(value, property)}">${value || kind === 'balance' ? compactMoney(value, property) : '—'}</span>`;
-        const table = isFuture ? '' : `
-          ${rows.map(({ property, stats }) => cell(stats.income, property, 'income', `${regions[property].code} income`)).join('')}
-          ${rows.map(({ property, stats }) => cell(stats.expense, property, 'expense', `${regions[property].code} expenses`)).join('')}
-          ${rows.map(({ property, balance }) => cell(balance, property, 'balance', `${regions[property].code} closing balance`)).join('')}`;
-        return `<button type="button" class="mcell${month === selected ? ' is-selected' : ''}${hasData ? '' : ' is-empty'}${isFuture ? ' is-future' : ''}" data-ledger-month="${month}" aria-pressed="${month === selected}" aria-label="${name} ${year}${isFuture ? '' : `: ${label}`}"${isNow ? ' aria-current="date"' : ''} style="--cols:${rows.length}">${rows.map(({ property }, index) => `<span class="mcell-top">${index === 0 ? `<span class="mcell-name">${name}${isNow ? '<i class="mcell-now" title="This month"></i>' : ''}</span>` : ''}<span class="mcell-sym">${SYMBOLS[property]}</span></span>`).join('')}${table}</button>`;
-      }).join('');
+      const months = Array.from({ length: 12 }, (_, month) => month);
+      if (year !== today.getFullYear()) return months.reverse();
+      const now = today.getMonth();
+      return [now, ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
+    }
+    // Pills shown next to a closed month's name: entry count, then In / Out / Bal per currency.
+    // Upcoming months get a single countdown pill instead.
+    function renderMonthSummary(year, month, settings, isFuture) {
+      const today = new Date();
+      if (isFuture) {
+        const days = Math.ceil((new Date(year, month, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+        return `<span class="month-summary"><span class="month-tag">Upcoming · in ${days} ${days === 1 ? 'day' : 'days'}</span></span>`;
+      }
+      const rows = settings.currencies.map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
+      const count = rows.reduce((sum, row) => sum + row.stats.count, 0);
+      const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${formatMoney(amount, property)}">${compactMoney(amount, property)}</span>`;
+      return `<span class="month-summary"><span class="month-tag${count ? '' : ' is-zero'}">${count ? `${count} ${count === 1 ? 'entry' : 'entries'}` : 'No entries'}</span>${rows.map(({ property, stats, balance }) =>
+        `<span class="month-tag ms-cur ${property}"><i class="property-dot ${property}" aria-hidden="true"></i>${regions[property].code}${value(stats.income, property, 'income', 'In')}${value(stats.expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+    }
+    function renderMonthBlock(year, month, settings) {
+      const today = new Date();
+      const mKey = keyOf(year, month);
+      const isNow = year === today.getFullYear() && month === today.getMonth();
+      const isFuture = new Date(year, month, 1) > today;
+      const open = expandedMonths.has(mKey);
+      const label = monthLabel(new Date(year, month, 1));
+      const count = settings.currencies.reduce((sum, property) => sum + ledgerItems(year, property, month).length, 0);
+      return `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}" data-month-key="${mKey}" aria-label="${label}">
+        <header class="month-ledger-head">
+          <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label}">${label}</button></h2>
+          ${open ? `<span class="month-ledger-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span><button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>` : renderMonthSummary(year, month, settings, isFuture)}
+        </header>
+        ${open ? `<div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}" id="month-body-${mKey}">${settings.currencies.map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>` : ''}
+      </section>`;
+    }
+    // Months grouped by priority: this month, earlier months (newest first), then the ones still to come.
+    function renderMonthGroups(year, settings) {
+      const today = new Date();
+      const order = monthOrder(year);
+      const groups = year === today.getFullYear()
+        ? [['This month', order.slice(0, 1)], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
+        : [[`${year}, newest first`, order]];
+      return groups.filter(([, months]) => months.length).map(([title, months]) =>
+        `<div class="month-group"><p class="month-group-label"><span>${title}</span>${months.length > 1 ? `<small>${months.length} months</small>` : ''}</p>${months.map(month => renderMonthBlock(year, month, settings)).join('')}</div>`).join('');
     }
     function renderLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
-      const month = currentMonth.getMonth();
       const lastYear = new Date().getFullYear();
       const settings = yearSettings(year);
-      const monthCount = settings.currencies.reduce((sum, property) => sum + ledgerItems(year, property, month).length, 0);
+      const yearCount = settings.currencies.reduce((sum, property) => sum + ledgerItems(year, property).length, 0);
       document.querySelector('#year-tabs').innerHTML = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset)
         .map(value => `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="${value === year}">${value}</button>`).join('');
+      document.querySelector('#year-meta').textContent = `${yearCount} ${yearCount === 1 ? 'entry' : 'entries'} in ${year}`;
       document.querySelector('#year-kpis').innerHTML = renderYearKpis(year, settings);
-      document.querySelector('#month-rail').innerHTML = renderMonthRail(year, month, settings);
-      document.querySelector('#month-rail').setAttribute('aria-label', `Months of ${year}`);
-      // Keep open subsections open across re-renders of the same month (e.g. after saving an entry).
-      const ledgerHost = document.querySelector('#month-ledger');
-      const keepOpen = ledgerHost.dataset.month === monthKey() ? [...ledgerHost.querySelectorAll('.ledger-cat[open]')].map(cat => cat.dataset.key) : [];
-      if (ledgerHost.dataset.month !== monthKey()) ledgerDraft = null;
-      ledgerHost.dataset.month = monthKey();
-      ledgerHost.innerHTML = `
-        <header class="month-ledger-head">
-          <h2>${monthLabel()}</h2>
-          <span class="month-ledger-meta">${monthCount} ${monthCount === 1 ? 'entry' : 'entries'}</span>
-          <button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>
-          <button type="button" class="icon-button universe-toggle" data-toggle-universe aria-pressed="${universeOpen}" aria-controls="universe" aria-label="${universeOpen ? 'Hide year summary and months' : 'Show year summary and all months'}" title="${universeOpen ? 'Back to this month' : 'Show everything'}"><i class="ti ${universeOpen ? 'ti-eye-off' : 'ti-eye'}" aria-hidden="true"></i></button>
-        </header>
-        <div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}">${settings.currencies.map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>`;
-      ledgerHost.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
+      const toggle = document.querySelector('[data-toggle-universe]');
+      toggle.setAttribute('aria-pressed', String(universeOpen));
+      toggle.querySelector('span').textContent = universeOpen ? 'Hide summary' : 'Year summary';
+      // Keep open subsections open across re-renders (e.g. after saving an entry).
+      const host = document.querySelector('#month-ledger');
+      const keepOpen = [...host.querySelectorAll('.ledger-cat[open]')].map(cat => cat.dataset.key);
+      host.innerHTML = renderMonthGroups(year, settings);
+      host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
-      const draftForm = ledgerHost.querySelector('[data-ledger-form]');
-      draftForm?.elements.name.focus();
+      host.querySelector('[data-ledger-form]')?.elements.name.focus();
       document.querySelector('#year-settings-button').dataset.year = year;
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
       universe.setAttribute('aria-hidden', String(!universeOpen));
     }
-    // Layer 1 ("now") shows only the current month; layer 2 reveals the year summary, month strip and year tabs.
     function setUniverse(open) {
       universeOpen = open;
       sessionStorage.setItem(`${STORAGE_KEY}-universe`, String(open));
-      const today = new Date();
-      if (!open) currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
       renderLedger();
-      document.querySelector('[data-toggle-universe]')?.focus();
+    }
+    function selectLedgerYear(year) {
+      const today = new Date();
+      currentMonth = new Date(year, year === today.getFullYear() ? today.getMonth() : 0, 1);
+      sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
+      // A past year opens on its latest month with entries, unless one of its months is already open.
+      const hasOpen = [...expandedMonths].some(key => key.startsWith(`${year}-`));
+      if (!hasOpen && year !== today.getFullYear()) {
+        const latest = transactions.filter(item => item.date.startsWith(`${year}-`)).map(item => item.date.slice(0, 7)).sort().pop();
+        if (latest) expandedMonths.add(latest);
+        saveExpandedMonths();
+      }
+      ledgerDraft = null;
+      renderLedger();
     }
     function saveDraftSubsection(form) {
       const input = form.elements.name;
       const name = input.value.trim().replace(/\s+/g, ' ');
       const hint = form.querySelector('.ledger-form-hint');
-      const section = yearSettings(currentMonth.getFullYear()).sections.find(item => item.name === ledgerDraft.section);
+      const section = yearSettings(Number(ledgerDraft.month.slice(0, 4))).sections.find(item => item.name === ledgerDraft.section);
       const problem = !name ? 'Type a name first.' : !section ? 'This section is no longer configured.' : section.subsections.some(existing => existing.toLowerCase() === name.toLowerCase()) ? `"${name}" already exists in ${section.name}.` : '';
       if (problem) {
         hint.textContent = problem;
@@ -349,28 +387,31 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return;
       }
       // Go straight to the first entry for the new subsection.
-      const property = ledgerDraft.property;
+      const { month, property } = ledgerDraft;
       ledgerDraft = null;
       renderLedger();
       showToast(`Added "${name}" to ${section.name}.`);
-      openEntryModal({ property, section: section.name, type: section.type, category: name });
+      openEntryModal({ month, property, section: section.name, type: section.type, category: name });
     }
-    // Focused pop-up for one subsection: the currency, type, section and subsection come from the + that opened it.
+    // Focused pop-up for one subsection: month, currency, type, section and subsection come from the + that opened it.
     let entryTarget = null;
+    let entryAgain = false; // "Add another" is remembered while the page is open
     function openEntryModal(target) {
       const dialog = document.querySelector('#entry-modal');
       if (!dialog) return;
       entryTarget = target;
       const form = dialog.querySelector('form');
       const today = new Date();
-      const days = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+      const month = dateOf(target.month);
+      const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
       form.reset();
+      form.elements.again.checked = entryAgain;
       form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
       form.elements.day.max = days;
-      form.elements.day.value = monthKey(today) === monthKey() ? today.getDate() : 1;
+      form.elements.day.value = monthKey(today) === target.month ? today.getDate() : 1;
       dialog.querySelector('#entry-modal-path').innerHTML = `<span class="property-dot ${target.property}" aria-hidden="true"></span>${regions[target.property].name} › ${escapeHtml(target.section)}`;
       dialog.querySelector('#entry-modal-title').textContent = target.category;
-      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel()} · day 1–${days}`;
+      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel(month)} · day 1–${days}`;
       dialog.querySelector('#entry-modal-log').replaceChildren();
       dialog.dataset.type = target.type;
       dialog.showModal();
@@ -393,11 +434,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
         const invalid = checks.find(([, ok]) => !ok);
         if (invalid) return invalid[0].focus();
-        const { property, section, type, category } = entryTarget;
-        const item = { id: `new-${Date.now()}`, property, date: `${monthKey()}-${String(day).padStart(2, '0')}`, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
+        const { month, property, section, type, category } = entryTarget;
+        const item = { id: `new-${Date.now()}`, property, date: `${month}-${String(day).padStart(2, '0')}`, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
         transactions.push(item);
         saveTransactions();
-        revealKey = catKey(property, section, category);
+        revealKey = catKey(month, property, section, category);
         renderLedger();
         if (!fields.again.checked) {
           dialog.close();
@@ -412,38 +453,29 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         fields.amount.value = '';
         fields.description.focus();
       });
-      dialog.querySelector('[data-close-entry]').addEventListener('click', () => dialog.close());
-    }
-    function selectLedgerMonth(year, month) {
-      currentMonth = new Date(year, month, 1);
-      sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
-      renderLedger();
+      dialog.querySelectorAll('[data-close-entry]').forEach(button => button.addEventListener('click', () => dialog.close()));
+      form.elements.again.addEventListener('change', event => { entryAgain = event.target.checked; });
     }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
-      if (!universeOpen) currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-      const lastYear = new Date().getFullYear();
-      const step = delta => {
-        const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
-        if (next.getFullYear() >= FIRST_YEAR && next.getFullYear() <= lastYear) selectLedgerMonth(next.getFullYear(), next.getMonth());
-      };
-      document.querySelector('#year-tabs').addEventListener('click', event => {
-        const tab = event.target.closest('[data-ledger-year]');
-        if (!tab) return;
-        const year = Number(tab.dataset.ledgerYear);
-        const today = new Date();
-        // Jump to the current month in the current year, otherwise the latest month that has entries.
-        const latest = year === today.getFullYear() ? today.getMonth() : Math.max(0, ...transactions.filter(item => item.date.startsWith(`${year}-`)).map(item => Number(item.date.slice(5, 7)) - 1));
-        selectLedgerMonth(year, latest);
-      });
       ledger.addEventListener('click', event => {
-        const monthButton = event.target.closest('[data-ledger-month]');
-        if (monthButton) return selectLedgerMonth(currentMonth.getFullYear(), Number(monthButton.dataset.ledgerMonth));
+        const yearTab = event.target.closest('[data-ledger-year]');
+        if (yearTab) return selectLedgerYear(Number(yearTab.dataset.ledgerYear));
         if (event.target.closest('[data-toggle-universe]')) return setUniverse(!universeOpen);
+        const eye = event.target.closest('[data-toggle-month]');
+        if (eye) {
+          const key = eye.dataset.toggleMonth;
+          if (expandedMonths.has(key)) expandedMonths.delete(key);
+          else expandedMonths.add(key);
+          saveExpandedMonths();
+          if (ledgerDraft?.month === key) ledgerDraft = null;
+          renderLedger();
+          return document.querySelector(`[data-toggle-month="${key}"]`)?.focus();
+        }
         const addSub = event.target.closest('[data-add-subsection]');
         if (addSub) {
-          ledgerDraft = { property: addSub.dataset.property, section: addSub.dataset.section };
+          ledgerDraft = { month: addSub.dataset.month, property: addSub.dataset.property, section: addSub.dataset.section };
           return renderLedger();
         }
         const addEntry = event.target.closest('[data-add-entry-row]');
@@ -457,7 +489,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
         const expandButton = event.target.closest('[data-ledger-expand]');
         if (expandButton) {
-          const cats = [...ledger.querySelectorAll('.ledger-cat')];
+          const cats = [...expandButton.closest('.month-block').querySelectorAll('.ledger-cat')];
           const open = cats.some(cat => !cat.open);
           cats.forEach(cat => { cat.open = open; });
           expandButton.textContent = open ? 'Collapse all' : 'Expand all';
@@ -477,13 +509,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
       });
       document.querySelector('#year-settings-button').addEventListener('click', event => openYearSettings(Number(event.currentTarget.dataset.year)));
-      document.addEventListener('keydown', event => {
-        if (event.altKey || event.ctrlKey || event.metaKey || document.querySelector('dialog[open]')) return;
-        if (event.target.closest('input, select, textarea, [contenteditable]')) return;
-        if (!universeOpen) return;
-        if (event.key === 'ArrowLeft') step(-1);
-        if (event.key === 'ArrowRight') step(1);
-      });
     }
     function renderBudgets() {
       const panels = document.querySelector('#budget-panels');
@@ -928,6 +953,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
         sessionStorage.setItem(`${STORAGE_KEY}-passkey-signed-in`, 'true');
         sessionStorage.removeItem(`${STORAGE_KEY}-universe`);
+        sessionStorage.removeItem(`${STORAGE_KEY}-open-months`);
         const today = new Date();
         sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
         window.location.href = 'family-budget/months.html';
