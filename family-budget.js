@@ -86,8 +86,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function formatMoney(minor, property) {
       const region = regions[property];
       const value = Number(minor || 0) / 100;
-      const formatted = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value);
-      return `${region.symbol}${formatted}`;
+      const formatted = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.abs(value));
+      return `${value < 0 ? '-' : ''}${region.symbol}${formatted}`;
     }
     function totalFor(items, type) {
       return items.filter(item => item.type === type).reduce((sum, item) => sum + Number(item.amount), 0);
@@ -336,10 +336,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         document.querySelector('#month-year').textContent = 'Monthly history';
         monthGrid.innerHTML = Array.from({ length: Math.max(0, today.getFullYear() - firstYear + 1) }, (_, yearOffset) => {
           const year = today.getFullYear() - yearOffset;
-          const monthCount = year === today.getFullYear() ? today.getMonth() + 1 : 12;
           const isCurrentYear = year === today.getFullYear();
           const yearItems = transactions.filter(item => item.date.startsWith(`${year}-`));
           const settings = yearSettings(year);
+          const activeMonth = year === today.getFullYear()
+            ? today.getMonth()
+            : Math.max(0, ...yearItems.map(item => Number(item.date.slice(5, 7)) - 1));
           const yearSummaries = settings.currencies.map(property => {
             const region = regions[property];
             const items = yearItems.filter(item => item.property === property);
@@ -348,23 +350,19 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             const opening = year === 2026 ? region.opening : 0;
             return `<div class="year-summary-property"><span class="year-summary-name"><i class="property-dot ${property}" aria-hidden="true"></i>${region.code}</span><span class="year-summary-value"><small>Income</small><strong class="income">${formatMoney(income, property)}</strong></span><span class="year-summary-value"><small>Expenses</small><strong class="expense">${formatMoney(expense, property)}</strong></span><span class="year-summary-value"><small>Balance</small><strong>${formatMoney(opening + income - expense, property)}</strong></span></div>`;
           }).join('');
-          const months = Array.from({ length: monthCount }, (_, offset) => {
-            const month = monthCount - offset - 1;
+          const months = Array.from({ length: 12 }, (_, month) => {
             const date = new Date(year, month, 1);
             const value = `${year}-${String(month + 1).padStart(2, '0')}`;
-            const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
-            const propertySummaries = settings.currencies.map(property => {
-              const region = regions[property];
-              const items = transactions.filter(item => item.property === property && item.date.startsWith(value));
-              const income = totalFor(items, 'income');
-              const expense = totalFor(items, 'expense');
-              const opening = value === '2026-10' ? region.opening : 0;
-              const balance = opening + income - expense;
-              return `<div class="month-property"><span class="month-property-name"><i class="property-dot ${property}" aria-hidden="true"></i>${region.code}</span><span class="month-values"><strong class="income">${formatMoney(income, property)}</strong><strong class="expense">${formatMoney(expense, property)}</strong><strong>${formatMoney(balance, property)}</strong></span></div>`;
-            }).join('');
-            return `<article class="month-tile${isCurrentMonth ? ' is-current' : ''}" data-month-card="${value}"><button type="button" class="month-tile-toggle" data-month-value="${value}" aria-expanded="false" aria-controls="month-details-${value}"${isCurrentMonth ? ' aria-current="date"' : ''}><span class="month-tile-head">${date.toLocaleDateString('en', { month: 'long' })}${isCurrentMonth ? '<small>Current</small>' : ''}</span></button><div class="month-tile-summary">${propertySummaries}</div><div class="month-details" id="month-details-${value}" hidden>${renderMonthDetails(value, date)}</div></article>`;
+            const isActiveMonth = month === activeMonth;
+            const monthName = date.toLocaleDateString('en', { month: 'long' });
+            return `<article class="month-tile${isActiveMonth ? ' is-selected' : ''}" data-month-card="${value}"><button type="button" class="month-tile-toggle" data-month-value="${value}" aria-label="${monthName} ${year}" aria-expanded="${isActiveMonth}" aria-controls="month-details-${year}"${year === today.getFullYear() && month === today.getMonth() ? ' aria-current="date"' : ''}><span class="month-tile-head">${monthName}</span></button></article>`;
           }).join('');
-          return `<section class="month-year-group${isCurrentYear ? ' is-open' : ''}" data-year-group="${year}"><div class="month-year-heading"><button type="button" class="month-year-toggle" aria-expanded="${isCurrentYear}" aria-controls="months-${year}"><span class="month-list-year">${year}</span><span class="year-summary">${yearSummaries}</span><i class="ti ti-chevron-down year-chevron" aria-hidden="true"></i></button><button type="button" class="icon-button year-settings-button" data-year-settings="${year}" aria-label="Settings for ${year}" title="Settings for ${year}"><i class="ti ti-settings" aria-hidden="true"></i></button></div><div class="year-month-grid" id="months-${year}"${isCurrentYear ? '' : ' hidden'}>${months}</div></section>`;
+          const monthDetails = Array.from({ length: 12 }, (_, month) => {
+            const date = new Date(year, month, 1);
+            const value = `${year}-${String(month + 1).padStart(2, '0')}`;
+            return `<div data-month-details="${value}"${month === activeMonth ? '' : ' hidden'}>${renderMonthDetails(value, date)}</div>`;
+          }).join('');
+          return `<section class="month-year-group${isCurrentYear ? ' is-open' : ''}" data-year-group="${year}"><div class="month-year-heading"><button type="button" class="month-year-toggle" aria-expanded="${isCurrentYear}" aria-controls="months-${year}"><span class="month-list-year">${year}</span><span class="year-summary">${yearSummaries}</span></button></div><div class="year-month-content" id="months-${year}"${isCurrentYear ? '' : ' hidden'}><div class="year-month-grid">${months}</div><div class="year-active-month-details" id="month-details-${year}" data-year-details="${year}">${monthDetails}</div></div></section>`;
         }).join('');
         monthGrid.addEventListener('click', event => {
           const settingsButton = event.target.closest('[data-year-settings]');
@@ -379,29 +377,26 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             monthGrid.querySelectorAll('.month-year-group.is-open').forEach(openGroup => {
               openGroup.classList.remove('is-open');
               openGroup.querySelector('.month-year-toggle').setAttribute('aria-expanded', 'false');
-              openGroup.querySelector('.year-month-grid').hidden = true;
+              openGroup.querySelector('.year-month-content').hidden = true;
             });
             if (!isExpanded) {
               group.classList.add('is-open');
               yearToggle.setAttribute('aria-expanded', 'true');
-              group.querySelector('.year-month-grid').hidden = false;
+              group.querySelector('.year-month-content').hidden = false;
             }
             return;
           }
           const tile = event.target.closest('[data-month-value]');
           if (!tile) return;
-          const card = tile.closest('[data-month-card]');
-          const isExpanded = tile.getAttribute('aria-expanded') === 'true';
-          monthGrid.querySelectorAll('.month-tile.is-expanded').forEach(openCard => {
-            openCard.classList.remove('is-expanded');
-            openCard.querySelector('.month-tile-toggle').setAttribute('aria-expanded', 'false');
-            openCard.querySelector('.month-details').hidden = true;
+          const yearGroup = tile.closest('.month-year-group');
+          const value = tile.dataset.monthValue;
+          yearGroup.querySelectorAll('.month-tile').forEach(card => {
+            const button = card.querySelector('[data-month-value]');
+            const isSelected = button === tile;
+            card.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-expanded', String(isSelected));
           });
-          if (!isExpanded) {
-            card.classList.add('is-expanded');
-            tile.setAttribute('aria-expanded', 'true');
-            card.querySelector('.month-details').hidden = false;
-          }
+          yearGroup.querySelectorAll('[data-month-details]').forEach(details => { details.hidden = details.dataset.monthDetails !== value; });
         });
       }
       document.querySelectorAll('[data-month-shift]').forEach(button => button.addEventListener('click', () => {
