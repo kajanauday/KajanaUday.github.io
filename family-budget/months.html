@@ -17,8 +17,28 @@
     </div>
   </header>
   <main class="month-picker">
-    <h1 class="month-year" id="month-year"></h1>
-    <nav class="month-grid" id="month-grid" aria-label="Months in the current year"></nav>
+    <h1 class="month-year" id="month-year">Monthly history</h1>
+    <nav class="month-grid" id="month-grid" aria-label="Months from 2025 onward"></nav>
   </main>
+  <dialog class="modal year-settings-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
+    <form id="year-settings-form">
+      <div class="modal-header"><div><p>Year setup</p><h2 id="year-settings-title">Year settings</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <fieldset class="year-currencies"><legend>Currencies used this year</legend><label><input type="checkbox" name="currency" value="india"> INR · India</label><label><input type="checkbox" name="currency" value="japan"> JPY · Japan</label></fieldset>
+      <div class="year-sections-heading"><h3>Sections and subsections</h3><button type="button" class="quiet-button" id="add-year-section">Add section</button></div>
+      <div class="year-section-list" id="year-section-list"></div>
+      <p class="settings-error" id="year-settings-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save settings</button></div>
+    </form>
+  </dialog>
+  <template id="year-section-template">
+    <fieldset class="year-section-editor">
+      <div class="year-section-fields">
+        <label class="field">Section name<input class="year-section-name" required></label>
+        <label class="field">Type<select class="year-section-type"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+      </div>
+      <label class="field">Subsections <small>Separate each name with a comma</small><textarea class="year-section-subsections" rows="2" required></textarea></label>
+      <button type="button" class="quiet-button remove-year-section">Remove section</button>
+    </fieldset>
+  </template>
 </body>
 </html>

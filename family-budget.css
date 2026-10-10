@@ -178,14 +178,48 @@
     .month-picker { width: min(1040px,100%); margin: clamp(28px,6vh,60px) auto; padding: 0 24px; }
     .month-year { margin: 0 0 18px; font: 700 clamp(28px,4vw,38px)/1.1 var(--display); }
     .month-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
-    .month-tile { min-width: 0; display: grid; align-content: start; gap: 8px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); transition: border-color .16s, box-shadow .16s; }
+    .month-year-group { grid-column: 1 / -1; min-width: 0; }
+    .month-year-heading { display: grid; grid-template-columns: minmax(0,1fr) 38px; gap: 7px; }
+    .month-year-toggle { width: 100%; display: grid; grid-template-columns: 72px minmax(0,1fr) 20px; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #fbfcf9; color: var(--ink); cursor: pointer; text-align: left; }
+    .month-year-group.is-open .month-year-toggle { border-color: #c9d9cd; border-radius: 7px 7px 0 0; }
+    .month-year-group.is-open .month-year-heading { border-bottom: 1px solid #c9d9cd; }
+    .month-year-group.is-open .month-year-toggle { border-bottom-color: transparent; }
+    .year-settings-button { width: 38px; height: auto; align-self: stretch; }
+    .year-settings-button:hover { border-color: #a9b9a7; color: var(--forest); }
+    .month-list-year { margin: 0; color: var(--forest); font: 700 19px var(--display); }
+    .year-summary { min-width: 0; display: grid; gap: 5px; }
+    .year-summary-property { min-width: 0; display: grid; grid-template-columns: 38px repeat(3,minmax(0,1fr)); align-items: center; gap: 8px; }
+    .year-summary-name { display: flex; align-items: center; gap: 4px; color: var(--muted); font: 500 8px var(--mono); }
+    .year-summary-name .property-dot { width: 6px; height: 6px; }
+    .year-summary-value { min-width: 0; display: flex; align-items: baseline; gap: 5px; }
+    .year-summary-value small { color: var(--muted); font-size: 8px; }
+    .year-summary-value strong { overflow: hidden; font: 600 9px var(--mono); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+    .year-summary-value strong.income { color: var(--income); }
+    .year-summary-value strong.expense { color: var(--expense); }
+    .year-chevron { color: var(--muted); transition: transform .16s; }
+    .month-year-group.is-open .year-chevron { transform: rotate(180deg); }
+    .year-month-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; padding-top: 10px; }
+    .year-settings-dialog { width: min(600px,calc(100% - 28px)); max-height: min(85vh,760px); overflow-y: auto; }
+    .year-currencies { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 20px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+    .year-currencies legend { padding: 0 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .year-currencies label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+    .year-sections-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .year-sections-heading h3 { margin: 0; font: 700 13px var(--display); }
+    .year-section-list { display: grid; gap: 10px; }
+    .year-section-editor { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+    .year-section-fields { display: grid; grid-template-columns: 1fr 140px; gap: 10px; }
+    .year-section-editor textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: 11px/1.5 var(--sans); resize: vertical; }
+    .year-section-editor .field small { color: var(--muted); font-weight: 400; }
+    .remove-year-section { justify-self: end; }
+    .settings-error { margin: 12px 0 0; color: var(--expense); font-size: 11px; }
+    .month-tile { min-width: 0; display: grid; grid-template-columns: max-content minmax(0,1fr); align-content: start; align-items: center; gap: 8px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); transition: border-color .16s, box-shadow .16s; }
     .month-tile:hover { border-color: #a9b9a7; box-shadow: 0 4px 12px rgba(35,48,35,.07); }
     .month-tile.is-current { border-color: var(--forest); box-shadow: inset 0 0 0 1px var(--forest); }
     .month-tile.is-expanded { grid-column: 1 / -1; }
     .month-tile-toggle { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
     .month-tile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 700 14px var(--display); }
     .month-tile-head small { padding: 3px 6px; border: 1px solid #c9d9cd; border-radius: 4px; color: var(--forest); font: 600 8px var(--mono); text-transform: uppercase; }
-    .month-tile-summary { display: grid; gap: 5px; }
+    .month-tile-summary { min-width: 0; display: grid; grid-column: 2; gap: 5px; }
     .month-property { min-width: 0; display: grid; grid-template-columns: 42px minmax(0,1fr); align-items: center; gap: 6px; padding-top: 6px; border-top: 1px solid #eff1ec; }
     .month-property-name { display: flex; align-items: center; gap: 5px; color: var(--ink); font-size: 9px; font-weight: 700; }
     .month-property-name .property-dot { flex: none; width: 6px; height: 6px; }
@@ -194,7 +228,7 @@
     .month-values strong { overflow: hidden; color: var(--ink); font: 600 9px var(--mono); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
     .month-values strong.income { color: var(--income); }
     .month-values strong.expense { color: #d97706; }
-    .month-details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .month-details { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
     .month-detail-property { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fcfdfa; }
     .month-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 11px; }
     .month-detail-head h2 { display: flex; align-items: center; gap: 7px; margin: 0; font: 700 12px var(--display); }
@@ -227,6 +261,15 @@
       .month-year { margin-bottom: 18px; }
       .month-grid { grid-template-columns: minmax(0,1fr); gap: 8px; }
       .month-picker { margin: 25px auto; }
+      .month-year-toggle { grid-template-columns: 54px minmax(0,1fr) 16px; gap: 7px; padding: 9px; }
+      .month-year-heading { grid-template-columns: minmax(0,1fr) 34px; gap: 4px; }
+      .year-settings-button { width: 34px; }
+      .year-summary-property { grid-template-columns: 30px repeat(3,minmax(0,1fr)); gap: 4px; }
+      .year-summary-value { display: grid; gap: 2px; }
+      .year-summary-value small { font-size: 7px; }
+      .year-summary-value strong { font-size: 8px; }
+      .year-month-grid { grid-template-columns: minmax(0,1fr); gap: 8px; }
+      .year-section-fields { grid-template-columns: 1fr; }
       .month-tile { padding: 10px 11px; }
       .month-tile.is-expanded { grid-column: auto; }
       .month-details { grid-template-columns: minmax(0,1fr); gap: 8px; }
