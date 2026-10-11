@@ -174,6 +174,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     // ---- Monthly ledger (months.html) ----
     const SYMBOLS = { india: '₹', japan: '¥' };
+    const orderedCurrencies = currencies => Object.keys(regions).filter(property => currencies.includes(property));
     function flowStats(items) {
       const income = totalFor(items, 'income');
       const expense = totalFor(items, 'expense');
@@ -208,8 +209,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
       return groups;
     }
-    // Inline "new subsection" editor in the ledger: { month, property, section } while open.
+    // Inline ledger drafts: subsection adds and unsaved transaction fields.
     let ledgerDraft = null;
+    let entryDraft = null;
+    let noteDraftId = null;
+    let noteDraftValue = '';
+    let subEntryDraftParentId = null;
+    const expandedEntryNotes = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
     const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -231,13 +237,21 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const shown = categories.filter(category => category.items.length).sort((a, b) => b.amount - a.amount);
       const empty = categories.filter(category => !shown.includes(category));
       const addData = name => `data-month="${mKey}" data-property="${property}" data-section="${escapeHtml(section.name)}" data-type="${section.type}" data-category="${escapeHtml(name)}"`;
+      const draftMatches = name => entryDraft && entryDraft.month === mKey && entryDraft.property === property && entryDraft.section === section.name && entryDraft.category === name;
+      const entryForm = name => `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" ${addData(name)} novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
+      const subEntryForm = parentId => `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${escapeHtml(parentId)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day (optional)" aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount (optional)" aria-label="Amount"><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-sub-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
       const rows = shown.map(category => {
         const entries = [...category.items]
           .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-          .map(item => `<div class="ledger-entry" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong><button type="button" class="mini-add ledger-entry-add" data-add-entry-row ${addData(category.name)} aria-label="Add another entry like ${escapeHtml(item.description)}" title="Add another entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>`).join('');
-        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}</div></details>`;
+          .map(item => {
+            const showingSubEntryForm = subEntryDraftParentId === item.id;
+            const subEntryContent = showingSubEntryForm ? subEntryForm(item.id) : '';
+            return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" aria-label="Entry details" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></button><button type="button" class="mini-add ledger-entry-add" data-add-sub-entry data-entry-id="${escapeHtml(item.id)}" aria-label="Add sub-entry to ${escapeHtml(item.description)}" title="Add sub-entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>${subEntryContent}</div>`;
+          }).join('');
+        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}${draftMatches(category.name) ? entryForm(category.name) : ''}</div></details>`;
       }).join('');
-      const emptyLine = empty.length ? `<p class="ledger-none">No entries · ${empty.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : '';
+      const emptyButtons = empty.filter(category => !draftMatches(category.name));
+      const emptyLine = empty.length ? `${emptyButtons.length ? `<p class="ledger-none">No entries · ${emptyButtons.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : ''}${empty.filter(category => draftMatches(category.name)).map(category => `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}" open><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count">0</span><strong>${formatMoney(0, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entryForm(category.name)}</div></details>`).join('')}` : '';
       const subForm = ledgerDraft && ledgerDraft.month === mKey && ledgerDraft.property === property && ledgerDraft.section === section.name
         ? `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${escapeHtml(section.name)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`
         : '';
@@ -248,22 +262,62 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const region = regions[property];
       const items = ledgerItems(year, property, month);
       const stats = flowStats(items);
-      const sections = groupIntoSections(items, settings).map(section => renderLedgerSection(section, property, keyOf(year, month))).join('');
+      const allSections = groupIntoSections(items, settings);
+      const mKey = keyOf(year, month);
+
+      const sectionsByType = {};
+      allSections.forEach(section => {
+        if (!sectionsByType[section.type]) sectionsByType[section.type] = [];
+        sectionsByType[section.type].push(section);
+      });
+
+      const entryForm = name => `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${type}" data-type="${type}" data-category="${escapeHtml(name)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
+      const draftMatches = name => entryDraft && entryDraft.month === mKey && entryDraft.property === property && entryDraft.section === type && entryDraft.category === name;
+
+      const renderTypeSection = (type, isOpen) => {
+        const typeSections = sectionsByType[type] || [];
+        if (!typeSections.length) return '';
+        const total = typeSections.reduce((sum, section) => sum + totalFor(section.items, type), 0);
+        const categoriesHtml = typeSections.map(section => {
+          const categories = [...new Set([...section.subsections, ...section.items.map(item => item.category)])];
+          return categories
+            .map(name => ({ name, items: section.items.filter(item => item.category === name) }))
+            .map(cat => ({ ...cat, amount: totalFor(cat.items, type) }))
+            .filter(cat => cat.items.length)
+            .sort((a, b) => b.amount - a.amount)
+            .map(cat => {
+              const entries = [...cat.items]
+                .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+                .map(item => {
+                  const showingSubEntryForm = subEntryDraftParentId === item.id;
+                  const subEntryContent = showingSubEntryForm ? `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${escapeHtml(item.id)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day (optional)" aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount (optional)" aria-label="Amount"><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-sub-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>` : '';
+                  return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" aria-label="Entry details" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong></button><button type="button" class="mini-add ledger-entry-add" data-add-sub-entry data-entry-id="${escapeHtml(item.id)}" aria-label="Add sub-entry to ${escapeHtml(item.description)}" title="Add sub-entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>${subEntryContent}</div>`;
+                }).join('');
+              return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, type, cat.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(cat.name)}</span><strong>${formatMoney(cat.amount, property)}</strong><button type="button" class="mini-add" data-month="${mKey}" data-property="${property}" data-section="${type}" data-type="${type}" data-category="${escapeHtml(cat.name)}" data-add-entry-row aria-label="Add entry to ${escapeHtml(cat.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}${draftMatches(cat.name) ? entryForm(cat.name) : ''}</div></details>`;
+            }).join('');
+        }).join('');
+        const title = type === 'income' ? 'Income' : 'Expenses';
+        const colorClass = type === 'income' ? 'income' : 'expense';
+        return `<details class="ledger-type-section" ${isOpen ? 'open' : ''}><summary><strong>${title}</strong><span class="${colorClass}">${formatMoney(total, property)}</span></summary><div>${categoriesHtml || '<p class="ledger-none">Nothing recorded</p>'}</div></details>`;
+      };
+
+      const sections = renderTypeSection('expense', true) + renderTypeSection('income', false);
+
       return `<section class="ledger-panel ${property}" aria-label="${region.name}">
         <header class="ledger-panel-head">
-          <h3><span class="property-dot ${property}" aria-hidden="true"></span>${region.name}<small>${region.code}</small></h3>
-          <dl class="ledger-totals"><div><dt>In</dt><dd class="income">${formatMoney(stats.income, property)}</dd></div><div><dt>Out</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div><div><dt>Net</dt><dd class="${netClass(stats.net)}">${signedMoney(stats.net, property)}</dd></div><div title="Closing balance at month end"><dt>Bal</dt><dd>${formatMoney(closingBalance(year, property, month), property)}</dd></div></dl>
+          <h3>${region.name}<small>${region.code}</small></h3>
+          <div class="ledger-totals"><span class="income">${formatMoney(stats.income, property)}</span><span class="expense">${formatMoney(stats.expense, property)}</span><span class="balance" title="Closing balance at month end">${formatMoney(closingBalance(year, property, month), property)}</span></div>
         </header>
         <div class="ledger-sections">${sections}</div>
       </section>`;
     }
     function renderYearKpis(year, settings) {
-      return settings.currencies.map(property => {
+      return orderedCurrencies(settings.currencies).map(property => {
         const region = regions[property];
         const stats = flowStats(ledgerItems(year, property));
         const rate = stats.income ? Math.round(stats.net / stats.income * 100) : null;
         return `<article class="kpi-card ${property}">
-          <header class="kpi-head"><span class="property-dot ${property}" aria-hidden="true"></span><strong>${region.name}</strong><span>${region.code} · ${year} to date</span></header>
+          <header class="kpi-head"><strong>${region.name}</strong><span>${region.code} · ${year} to date</span></header>
           <dl class="kpi-values">
             <div><dt>Income</dt><dd class="income">${formatMoney(stats.income, property)}</dd></div>
             <div><dt>Expenses</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div>
@@ -290,11 +344,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const days = Math.ceil((new Date(year, month, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
         return `<span class="month-summary"><span class="month-tag">Upcoming · in ${days} ${days === 1 ? 'day' : 'days'}</span></span>`;
       }
-      const rows = settings.currencies.map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
-      const count = rows.reduce((sum, row) => sum + row.stats.count, 0);
+      const rows = orderedCurrencies(settings.currencies).map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
       const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${formatMoney(amount, property)}">${compactMoney(amount, property)}</span>`;
-      return `<span class="month-summary"><span class="month-tag${count ? '' : ' is-zero'}">${count ? `${count} ${count === 1 ? 'entry' : 'entries'}` : 'No entries'}</span>${rows.map(({ property, stats, balance }) =>
-        `<span class="month-tag ms-cur ${property}"><i class="property-dot ${property}" aria-hidden="true"></i>${regions[property].code}${value(stats.income, property, 'income', 'In')}${value(stats.expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+      return `<span class="month-summary">${rows.map(({ property, stats, balance }) =>
+        `<span class="month-tag ms-cur ${property}">${regions[property].code}${value(stats.income, property, 'income', 'In')}${value(stats.expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
     }
     function renderMonthBlock(year, month, settings) {
       const today = new Date();
@@ -303,14 +356,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const isFuture = new Date(year, month, 1) > today;
       const open = expandedMonths.has(mKey);
       const label = monthLabel(new Date(year, month, 1));
-      const count = settings.currencies.reduce((sum, property) => sum + ledgerItems(year, property, month).length, 0);
       return `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
           <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
           <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label}">${label}</button></h2>
-          ${open ? `<span class="month-ledger-meta">${count} ${count === 1 ? 'entry' : 'entries'}</span><button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>` : renderMonthSummary(year, month, settings, isFuture)}
+          ${open ? '<button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>' : renderMonthSummary(year, month, settings, isFuture)}
         </header>
-        ${open ? `<div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}" id="month-body-${mKey}">${settings.currencies.map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>` : ''}
+        ${open ? `<div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}" id="month-body-${mKey}">${orderedCurrencies(settings.currencies).map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>` : ''}
       </section>`;
     }
     // Months grouped by priority: this month, earlier months (newest first), then the ones still to come.
@@ -343,7 +395,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       host.innerHTML = renderMonthGroups(year, settings);
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
-      host.querySelector('[data-ledger-form]')?.elements.name.focus();
+      host.querySelector('[data-ledger-form="subsection"]')?.elements.name.focus();
+      host.querySelector('[data-ledger-form="entry"]')?.elements.description.focus();
       document.querySelector('#year-settings-button').dataset.year = year;
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
@@ -391,75 +444,31 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Go straight to the first entry for the new subsection.
       const { month, property } = ledgerDraft;
       ledgerDraft = null;
+      entryDraft = { month, property, section: section.name, type: section.type, category: name };
+      revealKey = catKey(month, property, section.name, name);
       renderLedger();
       showToast(`Added "${name}" to ${section.name}.`);
-      openEntryModal({ month, property, section: section.name, type: section.type, category: name });
     }
-    // Focused pop-up for one subsection: month, currency, type, section and subsection come from the + that opened it.
-    let entryTarget = null;
-    let entryAgain = false; // "Add another" is remembered while the page is open
-    function openEntryModal(target) {
-      const dialog = document.querySelector('#entry-modal');
-      if (!dialog) return;
-      entryTarget = target;
-      const form = dialog.querySelector('form');
-      const today = new Date();
-      const month = dateOf(target.month);
-      const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-      const firstDate = `${target.month}-01`;
-      const lastDate = `${target.month}-${String(days).padStart(2, '0')}`;
-      form.reset();
-      form.elements.again.checked = entryAgain;
-      form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
-      form.elements.date.min = firstDate;
-      form.elements.date.max = lastDate;
-      form.elements.date.value = monthKey(today) === target.month ? `${target.month}-${String(today.getDate()).padStart(2, '0')}` : firstDate;
-      dialog.querySelector('#entry-modal-path').innerHTML = `<span class="property-dot ${target.property}" aria-hidden="true"></span>${regions[target.property].name} › ${escapeHtml(target.section)}`;
-      dialog.querySelector('#entry-modal-title').textContent = target.category;
-      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel(month)} · date must be in this month`;
-      dialog.querySelector('#entry-modal-log').replaceChildren();
-      dialog.dataset.type = target.type;
-      dialog.showModal();
-      form.elements.description.focus();
-    }
-    function setupEntryModal() {
-      const dialog = document.querySelector('#entry-modal');
-      if (!dialog) return;
-      const form = dialog.querySelector('form');
-      form.addEventListener('submit', event => {
-        event.preventDefault();
-        const fields = form.elements;
-        const date = fields.date.value;
-        const amount = Number(fields.amount.value);
-        const checks = [
-          [fields.date, /^\d{4}-\d{2}-\d{2}$/.test(date) && date.startsWith(`${entryTarget.month}-`) && date >= fields.date.min && date <= fields.date.max],
-          [fields.description, fields.description.value.trim() !== ''],
-          [fields.amount, Number.isFinite(amount) && amount > 0]
-        ];
-        checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
-        const invalid = checks.find(([, ok]) => !ok);
-        if (invalid) return invalid[0].focus();
-        const { month, property, section, type, category } = entryTarget;
-        const item = { id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
-        transactions.push(item);
-        saveTransactions();
-        revealKey = catKey(month, property, section, category);
-        renderLedger();
-        if (!fields.again.checked) {
-          dialog.close();
-          return showToast(`Saved to ${category}.`);
-        }
-        // Stay open for the next item: keep the date, clear the rest, and list what was added in this sitting.
-        const logged = document.createElement('li');
-        logged.innerHTML = `<time>${date.slice(8, 10)}</time><span>${escapeHtml(item.description)}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong>`;
-        dialog.querySelector('#entry-modal-log').prepend(logged);
-        fields.description.value = '';
-        fields.place.value = '';
-        fields.amount.value = '';
-        fields.description.focus();
-      });
-      dialog.querySelectorAll('[data-close-entry]').forEach(button => button.addEventListener('click', () => dialog.close()));
-      form.elements.again.addEventListener('change', event => { entryAgain = event.target.checked; });
+    function saveEntryDraft(form) {
+      const fields = form.elements;
+      const { month, property, section, type, category } = form.dataset;
+      const day = Number(fields.day.value);
+      const amount = Number(fields.amount.value);
+      const checks = [
+        [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+        [fields.description, fields.description.value.trim() !== ''],
+        [fields.amount, Number.isFinite(amount) && amount > 0]
+      ];
+      checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
+      const invalid = checks.find(([, ok]) => !ok);
+      if (invalid) return invalid[0].focus();
+      const date = `${month}-${String(day).padStart(2, '0')}`;
+      transactions.push({ id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type });
+      saveTransactions();
+      entryDraft = null;
+      revealKey = catKey(month, property, section, category);
+      renderLedger();
+      showToast(`Saved to ${category}.`);
     }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
@@ -475,21 +484,42 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           else expandedMonths.add(key);
           saveExpandedMonths();
           if (ledgerDraft?.month === key) ledgerDraft = null;
+          if (entryDraft?.month === key) entryDraft = null;
           renderLedger();
           return document.querySelector(`[data-toggle-month="${key}"]`)?.focus();
         }
         const addSub = event.target.closest('[data-add-subsection]');
+        const addEntry = event.target.closest('[data-add-entry-row]');
+        const subEntryAdd = event.target.closest('[data-add-sub-entry]');
+        if (addEntry) event.preventDefault();
+        if ((addSub || addEntry || subEntryAdd) && (ledgerDraft || entryDraft || subEntryDraftParentId)) {
+          showToast('Save or cancel the current inline edit first.');
+          return;
+        }
         if (addSub) {
           ledgerDraft = { month: addSub.dataset.month, property: addSub.dataset.property, section: addSub.dataset.section };
           return renderLedger();
         }
-        const addEntry = event.target.closest('[data-add-entry-row]');
         if (addEntry) {
-          event.preventDefault(); // the + sits inside <summary>; don't toggle the row
-          return openEntryModal({ ...addEntry.dataset });
+          entryDraft = { ...addEntry.dataset };
+          revealKey = catKey(entryDraft.month, entryDraft.property, entryDraft.section, entryDraft.category);
+          return renderLedger();
+        }
+        if (subEntryAdd) {
+          subEntryDraftParentId = subEntryAdd.dataset.entryId;
+          renderLedger();
+          return ledger.querySelector('[data-ledger-form="sub-entry"] .ledger-entry-desc')?.focus();
         }
         if (event.target.closest('[data-cancel-draft]')) {
           ledgerDraft = null;
+          return renderLedger();
+        }
+        if (event.target.closest('[data-cancel-entry]')) {
+          entryDraft = null;
+          return renderLedger();
+        }
+        if (event.target.closest('[data-cancel-sub-entry]')) {
+          subEntryDraftParentId = null;
           return renderLedger();
         }
         const expandButton = event.target.closest('[data-ledger-expand]');
@@ -500,16 +530,57 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           expandButton.textContent = open ? 'Collapse all' : 'Expand all';
         }
       });
-      setupEntryModal();
       ledger.addEventListener('submit', event => {
         const form = event.target.closest('[data-ledger-form]');
-        if (!form || !ledgerDraft) return;
+        if (!form) return;
         event.preventDefault();
-        saveDraftSubsection(form);
+        if (form.dataset.ledgerForm === 'entry') return saveEntryDraft(form);
+        if (form.dataset.ledgerForm === 'sub-entry') {
+          const description = form.elements.description.value.trim();
+          if (!description) {
+            showToast('Description is required.');
+            return;
+          }
+          const parentId = form.dataset.parentId;
+          const parentItem = transactions.find(item => item.id === parentId);
+          if (!parentItem) {
+            subEntryDraftParentId = null;
+            renderLedger();
+            showToast('Could not find parent entry. Refresh and try again.');
+            return;
+          }
+          const parentYear = Number(parentItem.date.slice(0, 4));
+          const parentMonth = Number(parentItem.date.slice(5, 7));
+          const daysInMonth = new Date(parentYear, parentMonth, 0).getDate();
+          const day = form.elements.day.value ? Math.min(Number(form.elements.day.value), daysInMonth) : undefined;
+          const date = day ? `${parentYear}-${String(parentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}` : undefined;
+          const amount = form.elements.amount.value ? Number(form.elements.amount.value) * 100 : undefined;
+          const place = form.elements.place.value.trim() || undefined;
+          const newSubEntry = {
+            id: `${parentId}-sub-${Date.now()}`,
+            parentId,
+            property: parentItem.property,
+            type: parentItem.type,
+            category: parentItem.category,
+            section: parentItem.section,
+            description,
+            place,
+            date: date || parentItem.date,
+            amount: amount || 0
+          };
+          transactions.push(newSubEntry);
+          saveTransactions();
+          subEntryDraftParentId = null;
+          renderLedger();
+          return showToast('Sub-entry added.');
+        }
+        if (form.dataset.ledgerForm === 'subsection' && ledgerDraft) saveDraftSubsection(form);
       });
       ledger.addEventListener('keydown', event => {
         if (event.key === 'Escape' && event.target.closest('[data-ledger-form]')) {
-          ledgerDraft = null;
+          if (event.target.closest('[data-ledger-form="entry"]')) entryDraft = null;
+          else if (event.target.closest('[data-ledger-form="sub-entry"]')) subEntryDraftParentId = null;
+          else ledgerDraft = null;
           renderLedger();
         }
       });
