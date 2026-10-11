@@ -18,10 +18,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       { id: 'jp-5', property: 'japan', date: '2026-10-03', category: 'Groceries', description: 'Weekend groceries', amount: 1000000, type: 'expense' },
       { id: 'jp-6', property: 'japan', date: '2026-10-01', category: 'Rental income', description: 'Property income', amount: 15000000, type: 'income' }
     ];
-    let transactions = loadTransactions();
-    const YEAR_SETTINGS_KEY = `${STORAGE_KEY}-year-settings`;
-    const yearSettingsByYear = loadYearSettings();
     const FIRST_YEAR = 2025;
+    const store = new ExpenseStore({ storageKey: STORAGE_KEY, regions, firstYear: FIRST_YEAR, starter: starterTransactions });
+    let transactions = store.transactions;
+    const yearSettingsByYear = store.settingsByYear;
     let currentMonth = (() => {
       const today = new Date();
       const savedMonth = sessionStorage.getItem(`${STORAGE_KEY}-month`);
@@ -33,55 +33,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     let toastTimer;
     let universeOpen = sessionStorage.getItem(`${STORAGE_KEY}-universe`) === 'true';
 
-    function loadTransactions() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-        return Array.isArray(saved) ? saved : starterTransactions.map(item => ({ ...item }));
-      } catch (error) {
-        return starterTransactions.map(item => ({ ...item }));
-      }
-    }
-    function defaultYearSettings(year) {
-      const yearItems = transactions.filter(item => item.date.startsWith(`${year}-`));
-      const expenseSubsections = yearItems.filter(item => item.type === 'expense').map(item => item.category);
-      const incomeSubsections = yearItems.filter(item => item.type === 'income').map(item => item.category);
-      return {
-        currencies: year === 2025 ? ['india'] : Object.keys(regions),
-        sections: [
-          { name: 'Expenses', type: 'expense', subsections: [...new Set(expenseSubsections.length ? expenseSubsections : ['Housing', 'Food', 'Utilities', 'Transport', 'Shopping'])] },
-          { name: 'Income', type: 'income', subsections: [...new Set(incomeSubsections.length ? incomeSubsections : ['Salary', 'Freelance', 'Other'])] }
-        ]
-      };
-    }
-    function loadYearSettings() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(YEAR_SETTINGS_KEY) || '{}');
-        return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
-      } catch (error) {
-        console.error('Could not load year settings.', error);
-        return {};
-      }
-    }
-    function yearSettings(year) {
-      const key = String(year);
-      yearSettingsByYear[key] ||= defaultYearSettings(year);
-      return yearSettingsByYear[key];
-    }
-    function saveYearSettings() {
-      localStorage.setItem(YEAR_SETTINGS_KEY, JSON.stringify(yearSettingsByYear));
-    }
-    // Per-year amounts (minor units). Settings saved before these keys existed fall back to the region defaults.
-    function openingFor(year, property) {
-      const saved = yearSettings(year).openings?.[property];
-      return Number.isFinite(saved) ? saved : year === 2026 ? regions[property].opening : 0;
-    }
-    function budgetFor(year, property) {
-      const saved = yearSettings(year).budgets?.[property];
-      return Number.isFinite(saved) ? saved : regions[property].budget;
-    }
+    function yearSettings(year) { return store.settings(year); }
+    function saveYearSettings() { store.saveSettings(); }
+    function openingFor(year, property) { return store.openingFor(year, property); }
+    function budgetFor(year, property) { return store.budgetFor(year, property); }
     function saveTransactions() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+        store.saveTransactions();
         const saveState = document.querySelector('.save-state');
         if (saveState) saveState.innerHTML = '<span class="save-dot"></span> All changes saved';
       } catch (error) {
@@ -122,16 +80,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function dayLabel(date) {
       return new Date(`${date}T12:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
     }
-    function iconFor(category, type) {
-      if (type === 'income') return 'ti-arrow-down-left';
-      const key = category.toLowerCase();
-      if (key.includes('food') || key.includes('dining') || key.includes('grocer')) return 'ti-tools-kitchen-2';
-      if (key.includes('travel') || key.includes('transport')) return 'ti-train';
-      if (key.includes('house') || key.includes('rent')) return 'ti-home';
-      if (key.includes('util')) return 'ti-bolt';
-      if (key.includes('shop')) return 'ti-shopping-bag';
-      return 'ti-receipt';
-    }
+    function iconFor(category, type) { return ExpenseStore.iconFor(category, type); }
     function propertyStats(property) {
       const items = monthTransactions(property);
       const income = totalFor(items, 'income');
@@ -153,8 +102,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const budget = budgetFor(currentMonth.getFullYear(), property);
       const stats = propertyStats(property);
       const spentPercent = Math.min(100, stats.expense / budget * 100);
-      const content = `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${formatMoney(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${formatMoney(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${formatMoney(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${balanceSpark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${formatMoney(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${formatMoney(budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${renderRecent(property)}</div></section></div>`;
-      target.innerHTML = content;
+      target.innerHTML = LedgerBlueprints.PropertyCard({ region, property, stats, budget, spentPercent, recentHtml: renderRecent(property) }, { fmt: formatMoney, spark: balanceSpark });
     }
     function renderTransactions() {
       const searchInput = document.querySelector('#transaction-search');
@@ -173,49 +121,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return [...totals.entries()].sort((a, b) => b[1] - a[1]);
     }
     // ---- Monthly ledger (months.html) ----
-    const SYMBOLS = { india: '₹', japan: '¥' };
-    const orderedCurrencies = currencies => Object.keys(regions).filter(property => currencies.includes(property));
-    function flowStats(items) {
-      const income = totalFor(items, 'income');
-      const expense = totalFor(items, 'expense');
-      return { income, expense, net: income - expense, count: items.length };
-    }
-    function netClass(minor) {
-      return minor > 0 ? 'income' : minor < 0 ? 'expense' : '';
-    }
-    function ledgerItems(year, property, month = null) {
-      const prefix = month === null ? `${year}-` : `${year}-${String(month + 1).padStart(2, '0')}`;
-      return transactions.filter(item => item.property === property && item.date.startsWith(prefix));
-    }
-    // Groups a month's entries into the year's configured sections; anything unmatched lands in an "Other" bucket so nothing is hidden.
-    // Opening balance for the year plus every month's net up to and including `month`.
-    function closingBalance(year, property, month) {
-      const cutoff = `${year}-${String(month + 1).padStart(2, '0')}`;
-      const items = ledgerItems(year, property).filter(item => item.date.slice(0, 7) <= cutoff);
-      return openingFor(year, property) + flowStats(items).net;
-    }
-    function groupIntoSections(items, settings) {
-      const claimed = new Set();
-      const groups = [...settings.sections]
-        .sort((a, b) => (a.type === 'income' ? 0 : 1) - (b.type === 'income' ? 0 : 1))
-        .map(section => {
-          const sectionItems = items.filter(item => item.type === section.type && !claimed.has(item) && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));
-          sectionItems.forEach(item => claimed.add(item));
-          return { ...section, items: sectionItems };
-        });
-      ['income', 'expense'].forEach(type => {
-        const leftover = items.filter(item => item.type === type && !claimed.has(item));
-        if (leftover.length) groups.push({ name: type === 'income' ? 'Other income' : 'Other expenses', type, subsections: [], items: leftover });
-      });
-      return groups;
-    }
+    function closingBalance(year, property, month) { return store.closingBalance(year, property, month); }
     // Inline ledger drafts: subsection adds and unsaved transaction fields.
     let ledgerDraft = null;
     let entryDraft = null;
     let noteDraftId = null;
     let noteDraftValue = '';
     let subEntryDraftParentId = null;
-    const expandedEntryNotes = new Set();
+    const expandedEntries = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
     const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -227,172 +140,32 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function saveExpandedMonths() {
       sessionStorage.setItem(`${STORAGE_KEY}-open-months`, JSON.stringify([...expandedMonths]));
     }
-    function renderLedgerSection(section, property, mKey) {
-      const total = totalFor(section.items, section.type);
-      const configured = section.subsections.length > 0; // the "Other" catch-all buckets are not in the year config
-      const names = [...new Set([...section.subsections, ...section.items.map(item => item.category)])];
-      const categories = names
-        .map(name => ({ name, items: section.items.filter(item => item.category === name) }))
-        .map(category => ({ ...category, amount: totalFor(category.items, section.type) }));
-      const shown = categories.filter(category => category.items.length).sort((a, b) => b.amount - a.amount);
-      const empty = categories.filter(category => !shown.includes(category));
-      const addData = name => `data-month="${mKey}" data-property="${property}" data-section="${escapeHtml(section.name)}" data-type="${section.type}" data-category="${escapeHtml(name)}"`;
-      const draftMatches = name => entryDraft && entryDraft.month === mKey && entryDraft.property === property && entryDraft.section === section.name && entryDraft.category === name;
-      const entryForm = name => `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" ${addData(name)} novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
-      const subEntryForm = parentId => `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${escapeHtml(parentId)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day (optional)" aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount (optional)" aria-label="Amount"><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-sub-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
-      const rows = shown.map(category => {
-        const entries = [...category.items]
-          .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-          .map(item => {
-            const showingSubEntryForm = subEntryDraftParentId === item.id;
-            const subEntryContent = showingSubEntryForm ? subEntryForm(item.id) : '';
-            return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" aria-label="Entry details" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></button><button type="button" class="mini-add ledger-entry-add" data-add-sub-entry data-entry-id="${escapeHtml(item.id)}" aria-label="Add sub-entry to ${escapeHtml(item.description)}" title="Add sub-entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>${subEntryContent}</div>`;
-          }).join('');
-        return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}${draftMatches(category.name) ? entryForm(category.name) : ''}</div></details>`;
-      }).join('');
-      const emptyButtons = empty.filter(category => !draftMatches(category.name));
-      const emptyLine = empty.length ? `${emptyButtons.length ? `<p class="ledger-none">No entries · ${emptyButtons.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : ''}${empty.filter(category => draftMatches(category.name)).map(category => `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}" open><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count">0</span><strong>${formatMoney(0, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entryForm(category.name)}</div></details>`).join('')}` : '';
-      const subForm = ledgerDraft && ledgerDraft.month === mKey && ledgerDraft.property === property && ledgerDraft.section === section.name
-        ? `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${escapeHtml(section.name)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`
-        : '';
-      const sectionAdd = configured ? `<button type="button" class="mini-add" data-add-subsection data-month="${mKey}" data-property="${property}" data-section="${escapeHtml(section.name)}" aria-label="Add subsection to ${escapeHtml(section.name)}" title="Add subsection"><i class="ti ti-plus" aria-hidden="true"></i></button>` : '<span></span>';
-      return `<section class="ledger-sec ${section.type}"><header class="ledger-sec-head"><h4>${escapeHtml(section.name)}</h4><span>${section.items.length}</span><strong class="${section.type}">${formatMoney(total, property)}</strong>${sectionAdd}</header>${subForm}${rows || (subForm ? '' : '<p class="ledger-none">Nothing recorded</p>')}${emptyLine}</section>`;
-    }
-    function renderLedgerPanel(property, year, month, settings) {
-      const region = regions[property];
-      const items = ledgerItems(year, property, month);
-      const stats = flowStats(items);
-      const allSections = groupIntoSections(items, settings);
-      const mKey = keyOf(year, month);
-
-      const sectionsByType = {};
-      allSections.forEach(section => {
-        if (!sectionsByType[section.type]) sectionsByType[section.type] = [];
-        sectionsByType[section.type].push(section);
-      });
-
-      const entryForm = name => `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${type}" data-type="${type}" data-category="${escapeHtml(name)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
-      const draftMatches = name => entryDraft && entryDraft.month === mKey && entryDraft.property === property && entryDraft.section === type && entryDraft.category === name;
-
-      const renderTypeSection = (type, isOpen) => {
-        const typeSections = sectionsByType[type] || [];
-        if (!typeSections.length) return '';
-        const total = typeSections.reduce((sum, section) => sum + totalFor(section.items, type), 0);
-        const categoriesHtml = typeSections.map(section => {
-          const categories = [...new Set([...section.subsections, ...section.items.map(item => item.category)])];
-          return categories
-            .map(name => ({ name, items: section.items.filter(item => item.category === name) }))
-            .map(cat => ({ ...cat, amount: totalFor(cat.items, type) }))
-            .filter(cat => cat.items.length)
-            .sort((a, b) => b.amount - a.amount)
-            .map(cat => {
-              const entries = [...cat.items]
-                .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-                .map(item => {
-                  const showingSubEntryForm = subEntryDraftParentId === item.id;
-                  const subEntryContent = showingSubEntryForm ? `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${escapeHtml(item.id)}" novalidate><input name="day" type="number" min="1" max="${new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate()}" step="1" inputmode="numeric" placeholder="Day (optional)" aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount (optional)" aria-label="Amount"><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-sub-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>` : '';
-                  return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" aria-label="Entry details" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong></button><button type="button" class="mini-add ledger-entry-add" data-add-sub-entry data-entry-id="${escapeHtml(item.id)}" aria-label="Add sub-entry to ${escapeHtml(item.description)}" title="Add sub-entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>${subEntryContent}</div>`;
-                }).join('');
-              return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, type, cat.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(cat.name)}</span><strong>${formatMoney(cat.amount, property)}</strong><button type="button" class="mini-add" data-month="${mKey}" data-property="${property}" data-section="${type}" data-type="${type}" data-category="${escapeHtml(cat.name)}" data-add-entry-row aria-label="Add entry to ${escapeHtml(cat.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}${draftMatches(cat.name) ? entryForm(cat.name) : ''}</div></details>`;
-            }).join('');
-        }).join('');
-        const title = type === 'income' ? 'Income' : 'Expenses';
-        const colorClass = type === 'income' ? 'income' : 'expense';
-        return `<details class="ledger-type-section" ${isOpen ? 'open' : ''}><summary><strong>${title}</strong><span class="${colorClass}">${formatMoney(total, property)}</span></summary><div>${categoriesHtml || '<p class="ledger-none">Nothing recorded</p>'}</div></details>`;
-      };
-
-      const sections = renderTypeSection('expense', true) + renderTypeSection('income', false);
-
-      return `<section class="ledger-panel ${property}" aria-label="${region.name}">
-        <header class="ledger-panel-head">
-          <h3>${region.name}<small>${region.code}</small></h3>
-          <div class="ledger-totals"><span class="income">${formatMoney(stats.income, property)}</span><span class="expense">${formatMoney(stats.expense, property)}</span><span class="balance" title="Closing balance at month end">${formatMoney(closingBalance(year, property, month), property)}</span></div>
-        </header>
-        <div class="ledger-sections">${sections}</div>
-      </section>`;
-    }
-    function renderYearKpis(year, settings) {
-      return orderedCurrencies(settings.currencies).map(property => {
-        const region = regions[property];
-        const stats = flowStats(ledgerItems(year, property));
-        const rate = stats.income ? Math.round(stats.net / stats.income * 100) : null;
-        return `<article class="kpi-card ${property}">
-          <header class="kpi-head"><strong>${region.name}</strong><span>${region.code} · ${year} to date</span></header>
-          <dl class="kpi-values">
-            <div><dt>Income</dt><dd class="income">${formatMoney(stats.income, property)}</dd></div>
-            <div><dt>Expenses</dt><dd class="expense">${formatMoney(stats.expense, property)}</dd></div>
-            <div><dt>Net</dt><dd class="${netClass(stats.net)}">${signedMoney(stats.net, property)}</dd></div>
-            <div><dt>Saved</dt><dd>${rate === null ? '—' : `${rate}%`}</dd></div>
-            <div title="Opening ${formatMoney(openingFor(year, property), property)} + net"><dt>Balance</dt><dd>${formatMoney(openingFor(year, property) + stats.net, property)}</dd></div>
-          </dl>
-        </article>`;
-      }).join('');
-    }
-    // Priority order: this month, then finished months (newest first), then upcoming months (soonest first).
-    function monthOrder(year) {
-      const today = new Date();
-      const months = Array.from({ length: 12 }, (_, month) => month);
-      if (year !== today.getFullYear()) return months.reverse();
-      const now = today.getMonth();
-      return [now, ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
-    }
-    // Pills shown next to a closed month's name: entry count, then In / Out / Bal per currency.
-    // Upcoming months get a single countdown pill instead.
-    function renderMonthSummary(year, month, settings, isFuture) {
-      const today = new Date();
-      if (isFuture) {
-        const days = Math.ceil((new Date(year, month, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
-        return `<span class="month-summary"><span class="month-tag">Upcoming · in ${days} ${days === 1 ? 'day' : 'days'}</span></span>`;
-      }
-      const rows = orderedCurrencies(settings.currencies).map(property => ({ property, stats: flowStats(ledgerItems(year, property, month)), balance: closingBalance(year, property, month) }));
-      const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${formatMoney(amount, property)}">${compactMoney(amount, property)}</span>`;
-      return `<span class="month-summary">${rows.map(({ property, stats, balance }) =>
-        `<span class="month-tag ms-cur ${property}">${regions[property].code}${value(stats.income, property, 'income', 'In')}${value(stats.expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
-    }
-    function renderMonthBlock(year, month, settings) {
-      const today = new Date();
-      const mKey = keyOf(year, month);
-      const isNow = year === today.getFullYear() && month === today.getMonth();
-      const isFuture = new Date(year, month, 1) > today;
-      const open = expandedMonths.has(mKey);
-      const label = monthLabel(new Date(year, month, 1));
-      return `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}" data-month-key="${mKey}" aria-label="${label}">
-        <header class="month-ledger-head">
-          <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label}">${label}</button></h2>
-          ${open ? '<button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>' : renderMonthSummary(year, month, settings, isFuture)}
-        </header>
-        ${open ? `<div class="ledger-panels${settings.currencies.length === 1 ? ' is-single' : ''}" id="month-body-${mKey}">${orderedCurrencies(settings.currencies).map(property => renderLedgerPanel(property, year, month, settings)).join('')}</div>` : ''}
-      </section>`;
-    }
-    // Months grouped by priority: this month, earlier months (newest first), then the ones still to come.
-    function renderMonthGroups(year, settings) {
-      const today = new Date();
-      const order = monthOrder(year);
-      const groups = year === today.getFullYear()
-        ? [['This month', order.slice(0, 1)], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
-        : [[`${year}, newest first`, order]];
-      return groups.filter(([, months]) => months.length).map(([title, months]) =>
-        `<div class="month-group"><p class="month-group-label"><span>${title}</span>${months.length > 1 ? `<small>${months.length} months</small>` : ''}</p>${months.map(month => renderMonthBlock(year, month, settings)).join('')}</div>`).join('');
-    }
+    // The ledger is painted from the ExpenseStore tree by LedgerRenderer using LedgerBlueprints.
+    // Inline-edit state lives here and is handed to each render, so blueprints stay pure.
+    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft });
+    const ledgerRenderer = new LedgerRenderer(store, {
+      fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions, firstYear: FIRST_YEAR,
+      netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
+    });
+    function renderLedgerPanel(property, year, month) { return ledgerRenderer.currencyPanel(property, year, month, renderState()); }
+    function renderYearKpis(year) { return ledgerRenderer.yearKpis(year); }
+    function renderMonthBlock(year, month) { return ledgerRenderer.monthBlock(year, month, renderState()); }
+    function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     function renderLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
-      const lastYear = new Date().getFullYear();
-      const settings = yearSettings(year);
-      const yearCount = settings.currencies.reduce((sum, property) => sum + ledgerItems(year, property).length, 0);
-      document.querySelector('#year-tabs').innerHTML = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset)
-        .map(value => `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="${value === year}">${value}</button>`).join('');
+      const yearCount = ledgerRenderer.yearEntryCount(year);
+      document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year);
       document.querySelector('#year-meta').textContent = `${yearCount} ${yearCount === 1 ? 'entry' : 'entries'} in ${year}`;
-      document.querySelector('#year-kpis').innerHTML = renderYearKpis(year, settings);
+      document.querySelector('#year-kpis').innerHTML = renderYearKpis(year);
       const toggle = document.querySelector('[data-toggle-universe]');
       toggle.setAttribute('aria-pressed', String(universeOpen));
       toggle.querySelector('span').textContent = universeOpen ? 'Hide summary' : 'Year summary';
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open]')].map(cat => cat.dataset.key);
-      host.innerHTML = renderMonthGroups(year, settings);
+      host.innerHTML = renderMonthGroups(year);
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
       host.querySelector('[data-ledger-form="subsection"]')?.elements.name.focus();
@@ -490,9 +263,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
         const addSub = event.target.closest('[data-add-subsection]');
         const addEntry = event.target.closest('[data-add-entry-row]');
-        const subEntryAdd = event.target.closest('[data-add-sub-entry]');
         if (addEntry) event.preventDefault();
-        if ((addSub || addEntry || subEntryAdd) && (ledgerDraft || entryDraft || subEntryDraftParentId)) {
+        if ((addSub || addEntry) && (ledgerDraft || entryDraft || subEntryDraftParentId)) {
           showToast('Save or cancel the current inline edit first.');
           return;
         }
@@ -505,10 +277,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           revealKey = catKey(entryDraft.month, entryDraft.property, entryDraft.section, entryDraft.category);
           return renderLedger();
         }
-        if (subEntryAdd) {
-          subEntryDraftParentId = subEntryAdd.dataset.entryId;
-          renderLedger();
-          return ledger.querySelector('[data-ledger-form="sub-entry"] .ledger-entry-desc')?.focus();
+        const toggleEntry = event.target.closest('[data-toggle-entry]');
+        if (toggleEntry) {
+          const entryId = toggleEntry.dataset.entryId;
+          if (expandedEntries.has(entryId)) expandedEntries.delete(entryId);
+          else expandedEntries.add(entryId);
+          return renderLedger();
         }
         if (event.target.closest('[data-cancel-draft]')) {
           ledgerDraft = null;
@@ -577,13 +351,141 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (form.dataset.ledgerForm === 'subsection' && ledgerDraft) saveDraftSubsection(form);
       });
       ledger.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && event.target.closest('[data-ledger-form]')) {
-          if (event.target.closest('[data-ledger-form="entry"]')) entryDraft = null;
-          else if (event.target.closest('[data-ledger-form="sub-entry"]')) subEntryDraftParentId = null;
+        const form = event.target.closest('[data-ledger-form]');
+        if (!form) return;
+
+        if (event.key === 'Escape') {
+          if (form.dataset.ledgerForm === 'entry') entryDraft = null;
+          else if (form.dataset.ledgerForm === 'sub-entry') subEntryDraftParentId = null;
           else ledgerDraft = null;
           renderLedger();
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          const isEntryForm = form.dataset.ledgerForm === 'entry' || form.dataset.ledgerForm === 'sub-entry';
+          if (!isEntryForm) return;
+
+          event.preventDefault();
+          const fields = form.elements;
+          const fieldNames = ['day', 'description', 'place', 'amount'];
+          const currentField = event.target.name;
+          const currentIndex = fieldNames.indexOf(currentField);
+
+          if (currentIndex === -1) return;
+
+          if (currentIndex === fieldNames.length - 1) {
+            form.dispatchEvent(new Event('submit', { bubbles: true }));
+          } else {
+            const nextFieldName = fieldNames[currentIndex + 1];
+            const nextField = fields[nextFieldName];
+            if (nextField) nextField.focus();
+          }
         }
       });
+
+      let longPressTimer = null;
+      let longPressTarget = null;
+      let longPressStart = null;
+      const LONG_PRESS_DURATION = 2000;
+      const LONG_PRESS_MOVE_THRESHOLD = 10;
+
+      const getElement = (target) => {
+        while (target && target.nodeType === Node.TEXT_NODE) {
+          target = target.parentElement;
+        }
+        return target;
+      };
+
+      const triggerLongPress = (element) => {
+        element = getElement(element);
+        if (!element) return false;
+
+        const entryLine = element.closest('.ledger-entry-line');
+        const cat = element.closest('.ledger-cat');
+        const typeSection = element.closest('.ledger-type-section');
+
+        if (entryLine && entryLine.querySelector('[data-toggle-entry]')) {
+          const button = entryLine.querySelector('[data-toggle-entry]');
+          const entryId = button.dataset.entryId;
+          subEntryDraftParentId = entryId;
+          expandedEntries.add(entryId);
+          renderLedger();
+          showToast('✓ Long-press: Add sub-entry');
+          return true;
+        }
+
+        if (cat && typeSection && cat.querySelector('.ledger-cat-name')) {
+          const categoryName = cat.querySelector('.ledger-cat-name').textContent.trim();
+          const typeSummary = typeSection.querySelector('summary strong');
+          const section = typeSummary?.textContent.trim() === 'Income' ? 'income' : 'expense';
+          const mKey = keyOf(currentMonth.getFullYear(), currentMonth.getMonth());
+          entryDraft = { month: mKey, property: Object.keys(regions)[0], section, category: categoryName };
+          revealKey = catKey(mKey, Object.keys(regions)[0], section, categoryName);
+          renderLedger();
+          showToast('✓ Long-press: Add entry');
+          return true;
+        }
+
+        if (typeSection && !cat && typeSection.querySelector('summary strong')) {
+          const sectionName = typeSection.querySelector('summary strong').textContent.trim();
+          const type = sectionName === 'Income' ? 'income' : 'expense';
+          const mKey = keyOf(currentMonth.getFullYear(), currentMonth.getMonth());
+          ledgerDraft = { month: mKey, property: Object.keys(regions)[0], section: type === 'income' ? 'Income' : 'Expenses' };
+          renderLedger();
+          showToast('✓ Long-press: Add subsection');
+          return true;
+        }
+
+        return false;
+      };
+
+      const startLongPress = (target, e) => {
+        longPressTarget = getElement(target);
+        longPressStart = { x: e.pageX, y: e.pageY };
+        longPressTimer = setTimeout(() => {
+          triggerLongPress(longPressTarget);
+          longPressTimer = null;
+        }, LONG_PRESS_DURATION);
+      };
+
+      const endLongPress = () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        longPressTarget = null;
+        longPressStart = null;
+      };
+
+      const checkLongPressMove = (e) => {
+        if (!longPressTimer || !longPressStart) return;
+        const dx = Math.abs(e.pageX - longPressStart.x);
+        const dy = Math.abs(e.pageY - longPressStart.y);
+        if (dx > LONG_PRESS_MOVE_THRESHOLD || dy > LONG_PRESS_MOVE_THRESHOLD) {
+          endLongPress();
+        }
+      };
+
+      ledger.addEventListener('touchstart', (e) => {
+        startLongPress(e.target, e);
+      });
+
+      ledger.addEventListener('touchend', endLongPress);
+      ledger.addEventListener('touchmove', (e) => {
+        checkLongPressMove(e);
+      });
+      ledger.addEventListener('touchcancel', endLongPress);
+
+      ledger.addEventListener('mousedown', (e) => {
+        if (e.button === 0) startLongPress(e.target, e);
+      });
+
+      ledger.addEventListener('mouseup', endLongPress);
+      ledger.addEventListener('mousemove', (e) => {
+        checkLongPressMove(e);
+      });
+
       document.querySelector('#year-settings-button').addEventListener('click', event => openYearSettings(Number(event.currentTarget.dataset.year)));
     }
     function renderBudgets() {
@@ -1004,6 +906,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           Object.keys(yearSettingsByYear).forEach(key => delete yearSettingsByYear[key]);
           Object.assign(yearSettingsByYear, JSON.parse(previous));
           transactions = JSON.parse(previousTransactions);
+          store.replaceTransactions(transactions);
           error.textContent = 'Could not save these settings in this browser.';
           error.hidden = false;
           return;

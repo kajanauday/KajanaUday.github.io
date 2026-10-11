@@ -1,0 +1,707 @@
+{
+  "_schema": {
+    "name": "expenses",
+    "version": 1,
+    "generated_from": "ExpenseStore.build() over starterTransactions + default year settings (scratchpad/gen-schema.js)",
+    "levels": [
+      "year",
+      "month",
+      "country",
+      "section",
+      "category",
+      "entry",
+      "sub-entry"
+    ],
+    "amounts": "Minor units: paise for INR, sen for JPY. Divide by 100 for display.",
+    "_meta": "Every node carries a _meta block derived from its children (totals, counts, balances). ExpenseStore computes it once per build and reuses it for every render until the next save invalidates the tree.",
+    "settings": "Per-year configuration (active currencies, opening balances, budgets, section/subsection taxonomy) lives under years.<year>.settings. Adding a currency or a subsection is a settings edit, not a code change.",
+    "sample_note": "This file documents the in-memory tree the UI renders from; the app persists the flat transaction list and settings in localStorage and rebuilds this tree on load. Months with no entries are omitted here; the live tree holds all twelve per year."
+  },
+  "years": {
+    "2025": {
+      "_meta": {
+        "id": "2025",
+        "entries": 0,
+        "income": 0,
+        "expense": 0,
+        "net": 0,
+        "currencies": [
+          "india"
+        ]
+      },
+      "settings": {
+        "currencies": [
+          "india"
+        ],
+        "sections": [
+          {
+            "name": "Expenses",
+            "type": "expense",
+            "subsections": [
+              "Housing",
+              "Food",
+              "Utilities",
+              "Transport",
+              "Shopping"
+            ]
+          },
+          {
+            "name": "Income",
+            "type": "income",
+            "subsections": [
+              "Salary",
+              "Freelance",
+              "Other"
+            ]
+          }
+        ]
+      },
+      "months": {}
+    },
+    "2026": {
+      "_meta": {
+        "id": "2026",
+        "entries": 13,
+        "income": 43300000,
+        "expense": 11582000,
+        "net": 31718000,
+        "currencies": [
+          "india",
+          "japan"
+        ]
+      },
+      "settings": {
+        "currencies": [
+          "india",
+          "japan"
+        ],
+        "sections": [
+          {
+            "name": "Expenses",
+            "type": "expense",
+            "subsections": [
+              "Travel",
+              "Food",
+              "Utilities",
+              "Housing",
+              "Shopping",
+              "Dining",
+              "Rent",
+              "Transport",
+              "Groceries"
+            ]
+          },
+          {
+            "name": "Income",
+            "type": "income",
+            "subsections": [
+              "Salary",
+              "Freelance",
+              "Rental income"
+            ]
+          }
+        ]
+      },
+      "months": {
+        "2026-10": {
+          "_meta": {
+            "id": "2026-10",
+            "year": 2026,
+            "month": 10,
+            "entries": 13,
+            "income": 43300000,
+            "expense": 11582000,
+            "net": 31718000
+          },
+          "countries": {
+            "india": {
+              "_meta": {
+                "id": "india",
+                "name": "India",
+                "code": "INR",
+                "symbol": "₹",
+                "color": "india",
+                "home": "Pune home",
+                "icon": "ti-home-2",
+                "entries": 7,
+                "income": 13300000,
+                "expense": 4082000,
+                "net": 9218000,
+                "opening": 1973800,
+                "closing": 11191800,
+                "budget": 5500000,
+                "spentPercent": 74.21818181818182
+              },
+              "sections": {
+                "Income": {
+                  "_meta": {
+                    "id": "Income",
+                    "type": "income",
+                    "entries": 2,
+                    "total": 13300000,
+                    "subsections": [
+                      "Salary",
+                      "Freelance",
+                      "Rental income"
+                    ]
+                  },
+                  "categories": {
+                    "Salary": {
+                      "_meta": {
+                        "id": "Salary",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 1,
+                        "total": 12500000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-2",
+                          "date": "2026-10-08",
+                          "description": "Monthly salary",
+                          "place": "",
+                          "amount": 12500000,
+                          "notes": null,
+                          "category": "Salary",
+                          "type": "income",
+                          "property": "india",
+                          "_meta": {
+                            "total": 12500000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Freelance": {
+                      "_meta": {
+                        "id": "Freelance",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 1,
+                        "total": 800000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-6",
+                          "date": "2026-10-02",
+                          "description": "Project payment",
+                          "place": "",
+                          "amount": 800000,
+                          "notes": null,
+                          "category": "Freelance",
+                          "type": "income",
+                          "property": "india",
+                          "_meta": {
+                            "total": 800000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Rental income": {
+                      "_meta": {
+                        "id": "Rental income",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    }
+                  }
+                },
+                "Expenses": {
+                  "_meta": {
+                    "id": "Expenses",
+                    "type": "expense",
+                    "entries": 5,
+                    "total": 4082000,
+                    "subsections": [
+                      "Travel",
+                      "Food",
+                      "Utilities",
+                      "Housing",
+                      "Shopping",
+                      "Dining",
+                      "Rent",
+                      "Transport",
+                      "Groceries"
+                    ]
+                  },
+                  "categories": {
+                    "Travel": {
+                      "_meta": {
+                        "id": "Travel",
+                        "icon": "ti-train",
+                        "entries": 1,
+                        "total": 80000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-1",
+                          "date": "2026-10-09",
+                          "description": "Airport transfer",
+                          "place": "",
+                          "amount": 80000,
+                          "notes": null,
+                          "category": "Travel",
+                          "type": "expense",
+                          "property": "india",
+                          "_meta": {
+                            "total": 80000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Food": {
+                      "_meta": {
+                        "id": "Food",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 1,
+                        "total": 370000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-3",
+                          "date": "2026-10-07",
+                          "description": "Dinner with family",
+                          "place": "",
+                          "amount": 370000,
+                          "notes": null,
+                          "category": "Food",
+                          "type": "expense",
+                          "property": "india",
+                          "_meta": {
+                            "total": 370000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Utilities": {
+                      "_meta": {
+                        "id": "Utilities",
+                        "icon": "ti-bolt",
+                        "entries": 1,
+                        "total": 432000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-4",
+                          "date": "2026-10-05",
+                          "description": "Electricity & internet",
+                          "place": "",
+                          "amount": 432000,
+                          "notes": null,
+                          "category": "Utilities",
+                          "type": "expense",
+                          "property": "india",
+                          "_meta": {
+                            "total": 432000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Housing": {
+                      "_meta": {
+                        "id": "Housing",
+                        "icon": "ti-receipt",
+                        "entries": 1,
+                        "total": 2200000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-5",
+                          "date": "2026-10-04",
+                          "description": "Apartment maintenance",
+                          "place": "",
+                          "amount": 2200000,
+                          "notes": null,
+                          "category": "Housing",
+                          "type": "expense",
+                          "property": "india",
+                          "_meta": {
+                            "total": 2200000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Shopping": {
+                      "_meta": {
+                        "id": "Shopping",
+                        "icon": "ti-shopping-bag",
+                        "entries": 1,
+                        "total": 1000000
+                      },
+                      "entries": [
+                        {
+                          "id": "in-7",
+                          "date": "2026-10-01",
+                          "description": "Household essentials",
+                          "place": "",
+                          "amount": 1000000,
+                          "notes": null,
+                          "category": "Shopping",
+                          "type": "expense",
+                          "property": "india",
+                          "_meta": {
+                            "total": 1000000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Dining": {
+                      "_meta": {
+                        "id": "Dining",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Rent": {
+                      "_meta": {
+                        "id": "Rent",
+                        "icon": "ti-home",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Transport": {
+                      "_meta": {
+                        "id": "Transport",
+                        "icon": "ti-train",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Groceries": {
+                      "_meta": {
+                        "id": "Groceries",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    }
+                  }
+                }
+              }
+            },
+            "japan": {
+              "_meta": {
+                "id": "japan",
+                "name": "Japan",
+                "code": "JPY",
+                "symbol": "¥",
+                "color": "japan",
+                "home": "Tokyo home",
+                "icon": "ti-building-community",
+                "entries": 6,
+                "income": 30000000,
+                "expense": 7500000,
+                "net": 22500000,
+                "opening": 1973800,
+                "closing": 24473800,
+                "budget": 9800000,
+                "spentPercent": 76.53061224489795
+              },
+              "sections": {
+                "Income": {
+                  "_meta": {
+                    "id": "Income",
+                    "type": "income",
+                    "entries": 2,
+                    "total": 30000000,
+                    "subsections": [
+                      "Salary",
+                      "Freelance",
+                      "Rental income"
+                    ]
+                  },
+                  "categories": {
+                    "Salary": {
+                      "_meta": {
+                        "id": "Salary",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 1,
+                        "total": 15000000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-3",
+                          "date": "2026-10-07",
+                          "description": "Monthly salary",
+                          "place": "",
+                          "amount": 15000000,
+                          "notes": null,
+                          "category": "Salary",
+                          "type": "income",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 15000000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Freelance": {
+                      "_meta": {
+                        "id": "Freelance",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Rental income": {
+                      "_meta": {
+                        "id": "Rental income",
+                        "icon": "ti-arrow-down-left",
+                        "entries": 1,
+                        "total": 15000000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-6",
+                          "date": "2026-10-01",
+                          "description": "Property income",
+                          "place": "",
+                          "amount": 15000000,
+                          "notes": null,
+                          "category": "Rental income",
+                          "type": "income",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 15000000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    }
+                  }
+                },
+                "Expenses": {
+                  "_meta": {
+                    "id": "Expenses",
+                    "type": "expense",
+                    "entries": 4,
+                    "total": 7500000,
+                    "subsections": [
+                      "Travel",
+                      "Food",
+                      "Utilities",
+                      "Housing",
+                      "Shopping",
+                      "Dining",
+                      "Rent",
+                      "Transport",
+                      "Groceries"
+                    ]
+                  },
+                  "categories": {
+                    "Travel": {
+                      "_meta": {
+                        "id": "Travel",
+                        "icon": "ti-train",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Food": {
+                      "_meta": {
+                        "id": "Food",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Utilities": {
+                      "_meta": {
+                        "id": "Utilities",
+                        "icon": "ti-bolt",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Housing": {
+                      "_meta": {
+                        "id": "Housing",
+                        "icon": "ti-receipt",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Shopping": {
+                      "_meta": {
+                        "id": "Shopping",
+                        "icon": "ti-shopping-bag",
+                        "entries": 0,
+                        "total": 0
+                      },
+                      "entries": []
+                    },
+                    "Dining": {
+                      "_meta": {
+                        "id": "Dining",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 1,
+                        "total": 1250000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-1",
+                          "date": "2026-10-09",
+                          "description": "Dinner in Shibuya",
+                          "place": "",
+                          "amount": 1250000,
+                          "notes": null,
+                          "category": "Dining",
+                          "type": "expense",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 1250000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Rent": {
+                      "_meta": {
+                        "id": "Rent",
+                        "icon": "ti-home",
+                        "entries": 1,
+                        "total": 4500000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-2",
+                          "date": "2026-10-08",
+                          "description": "Monthly rent",
+                          "place": "",
+                          "amount": 4500000,
+                          "notes": null,
+                          "category": "Rent",
+                          "type": "expense",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 4500000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Transport": {
+                      "_meta": {
+                        "id": "Transport",
+                        "icon": "ti-train",
+                        "entries": 1,
+                        "total": 750000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-4",
+                          "date": "2026-10-05",
+                          "description": "Suica & rail pass",
+                          "place": "",
+                          "amount": 750000,
+                          "notes": null,
+                          "category": "Transport",
+                          "type": "expense",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 750000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    },
+                    "Groceries": {
+                      "_meta": {
+                        "id": "Groceries",
+                        "icon": "ti-tools-kitchen-2",
+                        "entries": 1,
+                        "total": 1000000
+                      },
+                      "entries": [
+                        {
+                          "id": "jp-5",
+                          "date": "2026-10-03",
+                          "description": "Weekend groceries",
+                          "place": "",
+                          "amount": 1000000,
+                          "notes": null,
+                          "category": "Groceries",
+                          "type": "expense",
+                          "property": "japan",
+                          "_meta": {
+                            "total": 1000000,
+                            "children": 0
+                          },
+                          "subEntries": []
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "_example_entry_with_sub_entries": {
+    "_note": "Shape of an entry split with long-press. Its displayed amount is _meta.total = sum of sub-entries when any exist, else its own amount. notes is the free-text leaf.",
+    "id": "in-5",
+    "date": "2026-10-04",
+    "description": "Apartment maintenance",
+    "place": "",
+    "amount": 2200000,
+    "notes": "Paid via NEFT",
+    "category": "Housing",
+    "type": "expense",
+    "property": "india",
+    "_meta": {
+      "total": 24000,
+      "children": 2
+    },
+    "subEntries": [
+      {
+        "id": "in-5-sub-1",
+        "date": "2026-10-12",
+        "description": "Arigatou",
+        "place": "Tobu",
+        "amount": 12000,
+        "notes": null
+      },
+      {
+        "id": "in-5-sub-2",
+        "date": "2026-10-12",
+        "description": "Plumber",
+        "place": "",
+        "amount": 12000,
+        "notes": null
+      }
+    ]
+  }
+}

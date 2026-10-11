@@ -329,7 +329,7 @@
     .ledger-totals span.balance { color: var(--ink); }
     .ledger-sections { display: grid; gap: 0; align-items: start; }
     .ledger-type-section { border: 0; background: transparent; padding: 0; margin-bottom: 10px; }
-    .ledger-type-section > summary { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; list-style: none; user-select: none; }
+    .ledger-type-section > summary { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); cursor: pointer; list-style: none; user-select: none; gap: 16px; }
     .ledger-type-section > summary::-webkit-details-marker { display: none; }
     .ledger-type-section > summary strong { font: 700 14px var(--display); }
     .ledger-type-section > summary span { font: 700 13px var(--mono); font-variant-numeric: tabular-nums; }
@@ -342,32 +342,38 @@
     .ledger-sec-head strong.income, .ledger-entry strong.income { color: var(--income); }
     .ledger-sec-head strong.expense, .ledger-entry strong.expense { color: var(--expense); }
     .ledger-cat + .ledger-cat { border-top: 1px solid #f0f2ed; }
-    .ledger-cat > summary { min-height: 30px; display: grid; grid-template-columns: 12px minmax(0, 1fr) 18px auto 16px; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; list-style: none; }
+    .ledger-cat > summary { min-height: 32px; display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(70px, auto); align-items: center; gap: 12px; cursor: pointer; font-size: 12px; list-style: none; padding: 0; }
     .ledger-cat > summary::-webkit-details-marker { display: none; }
     .ledger-cat > summary:hover .ledger-cat-name { color: var(--forest-dark); }
     .ledger-cat > summary > i { color: #a3a99f; font-size: 12px; transition: transform .15s; }
+    .ledger-cat > summary > strong { justify-self: end; }
     .ledger-cat[open] > summary > i { transform: rotate(90deg); }
     .ledger-cat-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-cat-count { color: var(--muted); font: 500 10px var(--mono); text-align: right; }
     .ledger-cat > summary strong { font: 500 12px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-    .ledger-entries { container-type: inline-size; display: grid; padding: 0 0 6px 20px; }
-    .ledger-entry { min-height: 24px; display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .7fr) auto 20px; align-items: center; gap: 8px; color: #4f574e; font-size: 11px; }
-    .ledger-entry-line { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 20px; align-items: center; gap: 4px; }
-    .ledger-entry-cell + .ledger-entry-cell { border-top: 1px dotted var(--line); }
-    .ledger-entry-toggle { width: 100%; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .7fr) auto; padding: 0; border: 0; background: transparent; cursor: pointer; text-align: left; }
+    .ledger-entries { container-type: inline-size; display: grid; gap: 0; padding: 0 0 0 20px; }
+    .ledger-entry-cell { display: grid; grid-template-columns: 20px minmax(0, 1.7fr) minmax(0, 0.73fr) minmax(70px, auto); align-items: center; gap: 8px; min-height: 26px; padding: 4px 0; border-top: 1px dotted var(--line); color: #4f574e; font-size: 11px; }
+    .ledger-entry-cell:first-child { border-top: none; }
+    .ledger-entry-line { min-width: 0; display: contents; }
+    .ledger-entry { min-height: 26px; display: contents; }
+    .ledger-entry-toggle { display: contents; }
     .ledger-entry-toggle:hover .ledger-entry-desc { color: var(--forest-dark); }
     .ledger-entry time { color: var(--muted); font: 500 10px var(--mono); }
     .ledger-entry-desc, .ledger-entry-place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-entry-place { color: var(--muted); }
-    .ledger-entry strong { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
-    .ledger-entry-form { grid-template-columns: 52px minmax(110px, 1.25fr) minmax(72px, .9fr) minmax(70px, .7fr) 40px; padding: 4px 0; border-top: 1px dotted var(--line); }
+    .ledger-sub-entry { grid-column: 1 / -1; padding-left: 28px; opacity: 0.75; }
+    .ledger-entry strong { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; justify-self: end; }
+    .ledger-entry-form { display: grid; grid-template-columns: 20px minmax(0, 1.7fr) minmax(0, 0.73fr) minmax(60px, auto); gap: 8px; align-items: center; padding: 8px 0; border-top: 1px dotted var(--line); }
     .ledger-entry-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); font: 11px var(--sans); }
-    .ledger-entry-form input::placeholder { color: #9aa097; opacity: 1; }
+    .ledger-entry-form input[type="number"] { -webkit-appearance: none; -moz-appearance: textfield; }
+    .ledger-entry-form input[type="number"]::-webkit-outer-spin-button,
+    .ledger-entry-form input[type="number"]::-webkit-inner-spin-button { display: none; }
+    .ledger-entry-form input::placeholder { display: none; }
     .ledger-entry-form input:focus { border-bottom-color: var(--forest); outline: 0; }
     .ledger-entry-form input[aria-invalid="true"] { border-bottom-color: var(--expense); background: var(--expense-soft); }
-    .ledger-entry-form input[name="day"], .ledger-entry-form input[name="amount"] { font-family: var(--mono); }
-    .ledger-entry-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
-    .ledger-entry-actions .mini-btn { flex: none; }
+    .ledger-entry-form input[name="day"], .ledger-entry-form input[name="amount"] { font-family: var(--mono); text-align: right; }
+    .ledger-entry-form input[name="amount"] { min-width: 0; }
+    .ledger-entry-actions { display: none; }
     .ledger-entries:has(.ledger-entry-form) { overflow-x: auto; }
     .ledger-entry-note { padding: 3px 8px 7px 28px; color: #5f685f; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
     .ledger-note-empty { color: #9aa097; font-style: italic; }
