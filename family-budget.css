@@ -347,20 +347,21 @@
     .ledger-cat-count { color: var(--muted); font: 500 10px var(--mono); text-align: right; }
     .ledger-cat > summary strong { font: 500 12px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .ledger-entries { display: grid; padding: 0 0 6px 20px; }
-    .ledger-entry { min-height: 24px; display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .7fr) auto; align-items: center; gap: 8px; color: #4f574e; font-size: 11px; }
+    .ledger-entry { min-height: 24px; display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .7fr) auto 20px; align-items: center; gap: 8px; color: #4f574e; font-size: 11px; }
     .ledger-entry + .ledger-entry { border-top: 1px dotted var(--line); }
     .ledger-entry time { color: var(--muted); font: 500 10px var(--mono); }
     .ledger-entry-desc, .ledger-entry-place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-entry-place { color: var(--muted); }
     .ledger-entry strong { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
     @container (max-width: 340px) {
-      .ledger-entry { grid-template-columns: 20px minmax(0, 1fr) auto; }
+      .ledger-entry { grid-template-columns: 20px minmax(0, 1fr) auto 20px; }
       .ledger-entry-place { display: none; }
     }
     .ledger-none { margin: 0; padding: 6px 0 3px; color: #9aa097; font-size: 11px; line-height: 1.9; }
-    /* Smallest possible, low-contrast "+" for adding subsections (section head) and entries (subsection row). */
+    /* Small, low-contrast "+" buttons keep add actions available without crowding the ledger. */
     .mini-add { width: 16px; height: 16px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #b9bfb6; cursor: pointer; font-size: 12px; }
     .mini-add:hover, .mini-add:focus-visible { background: var(--forest-soft); color: var(--forest-dark); }
+    .ledger-entry-add { justify-self: end; }
     .ledger-empty-cat { display: inline-flex; align-items: center; gap: 1px; margin: 0 2px; padding: 0 3px 0 5px; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
     .ledger-empty-cat i { color: #c3c8bf; font-size: 10px; }
     .ledger-empty-cat:hover, .ledger-empty-cat:focus-visible { background: var(--forest-soft); color: var(--forest-dark); }
@@ -389,7 +390,7 @@
     .entry-modal-fields .field.wide { grid-column: 1 / -1; }
     .entry-modal-fields input { height: 40px; font-size: 14px; }
     .entry-modal-fields .entry-amount input { font: 600 18px var(--mono); }
-    .entry-modal-fields .entry-day input { font: 500 14px var(--mono); text-align: center; }
+    .entry-modal-fields input[type="date"] { font: 500 14px var(--mono); }
     .entry-modal-fields input[aria-invalid] { border-color: var(--expense); background: var(--expense-soft); }
     .entry-modal-log { display: grid; gap: 2px; max-height: 120px; margin: 0 18px 10px; padding: 0; overflow-y: auto; list-style: none; }
     .entry-modal-log:empty { display: none; }

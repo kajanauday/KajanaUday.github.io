@@ -63,9 +63,9 @@
         <button type="button" class="icon-button" data-close-entry aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
       </header>
       <div class="entry-modal-fields">
+        <label class="field wide">Date<input name="date" type="date" required></label>
         <label class="field wide">Description<input name="description" maxlength="80" autocomplete="off" placeholder="What was it?"></label>
         <label class="field entry-amount">Amount<input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></label>
-        <label class="field entry-day">Day<input name="day" type="number" min="1" step="1" inputmode="numeric"></label>
         <label class="field wide">Place (optional)<input name="place" maxlength="60" autocomplete="off" placeholder="Where?"></label>
       </div>
       <ol class="entry-modal-log" id="entry-modal-log" aria-label="Added just now"></ol>

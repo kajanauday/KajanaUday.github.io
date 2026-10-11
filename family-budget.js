@@ -234,7 +234,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const rows = shown.map(category => {
         const entries = [...category.items]
           .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-          .map(item => `<div class="ledger-entry" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong></div>`).join('');
+          .map(item => `<div class="ledger-entry" title="${escapeHtml(dayLabel(item.date))} · ${escapeHtml(item.description)}${item.place ? ` · ${escapeHtml(item.place)}` : ''}"><time datetime="${item.date}">${item.date.slice(8, 10)}</time><span class="ledger-entry-desc">${escapeHtml(item.description)}</span><span class="ledger-entry-place">${escapeHtml(item.place || '')}</span><strong class="${section.type}">${formatMoney(item.amount, property)}</strong><button type="button" class="mini-add ledger-entry-add" data-add-entry-row ${addData(category.name)} aria-label="Add another entry like ${escapeHtml(item.description)}" title="Add another entry"><i class="ti ti-plus" aria-hidden="true"></i></button></div>`).join('');
         return `<details class="ledger-cat" data-key="${escapeHtml(catKey(mKey, property, section.name, category.name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${escapeHtml(category.name)}</span><span class="ledger-cat-count" title="${category.items.length} ${category.items.length === 1 ? 'entry' : 'entries'}">${category.items.length}</span><strong>${formatMoney(category.amount, property)}</strong><button type="button" class="mini-add" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry"><i class="ti ti-plus" aria-hidden="true"></i></button></summary><div class="ledger-entries">${entries}</div></details>`;
       }).join('');
       const emptyLine = empty.length ? `<p class="ledger-none">No entries · ${empty.map(category => `<button type="button" class="ledger-empty-cat" data-add-entry-row ${addData(category.name)} aria-label="Add entry to ${escapeHtml(category.name)}" title="Add entry to ${escapeHtml(category.name)}">${escapeHtml(category.name)}<i class="ti ti-plus" aria-hidden="true"></i></button>`).join('')}</p>` : '';
@@ -406,14 +406,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const today = new Date();
       const month = dateOf(target.month);
       const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+      const firstDate = `${target.month}-01`;
+      const lastDate = `${target.month}-${String(days).padStart(2, '0')}`;
       form.reset();
       form.elements.again.checked = entryAgain;
       form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
-      form.elements.day.max = days;
-      form.elements.day.value = monthKey(today) === target.month ? today.getDate() : 1;
+      form.elements.date.min = firstDate;
+      form.elements.date.max = lastDate;
+      form.elements.date.value = monthKey(today) === target.month ? `${target.month}-${String(today.getDate()).padStart(2, '0')}` : firstDate;
       dialog.querySelector('#entry-modal-path').innerHTML = `<span class="property-dot ${target.property}" aria-hidden="true"></span>${regions[target.property].name} › ${escapeHtml(target.section)}`;
       dialog.querySelector('#entry-modal-title').textContent = target.category;
-      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel(month)} · day 1–${days}`;
+      dialog.querySelector('#entry-modal-month').textContent = `${monthLabel(month)} · date must be in this month`;
       dialog.querySelector('#entry-modal-log').replaceChildren();
       dialog.dataset.type = target.type;
       dialog.showModal();
@@ -426,10 +429,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       form.addEventListener('submit', event => {
         event.preventDefault();
         const fields = form.elements;
-        const day = Number(fields.day.value);
+        const date = fields.date.value;
         const amount = Number(fields.amount.value);
         const checks = [
-          [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+          [fields.date, /^\d{4}-\d{2}-\d{2}$/.test(date) && date.startsWith(`${entryTarget.month}-`) && date >= fields.date.min && date <= fields.date.max],
           [fields.description, fields.description.value.trim() !== ''],
           [fields.amount, Number.isFinite(amount) && amount > 0]
         ];
@@ -437,7 +440,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const invalid = checks.find(([, ok]) => !ok);
         if (invalid) return invalid[0].focus();
         const { month, property, section, type, category } = entryTarget;
-        const item = { id: `new-${Date.now()}`, property, date: `${month}-${String(day).padStart(2, '0')}`, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
+        const item = { id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type };
         transactions.push(item);
         saveTransactions();
         revealKey = catKey(month, property, section, category);
@@ -446,9 +449,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           dialog.close();
           return showToast(`Saved to ${category}.`);
         }
-        // Stay open for the next item: keep the day, clear the rest, and list what was added in this sitting.
+        // Stay open for the next item: keep the date, clear the rest, and list what was added in this sitting.
         const logged = document.createElement('li');
-        logged.innerHTML = `<time>${String(day).padStart(2, '0')}</time><span>${escapeHtml(item.description)}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong>`;
+        logged.innerHTML = `<time>${date.slice(8, 10)}</time><span>${escapeHtml(item.description)}</span><strong class="${type}">${formatMoney(item.amount, property)}</strong>`;
         dialog.querySelector('#entry-modal-log').prepend(logged);
         fields.description.value = '';
         fields.place.value = '';
