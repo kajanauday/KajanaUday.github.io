@@ -7,11 +7,11 @@
   const daysIn = mKey => new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate();
 
   // Inline forms --------------------------------------------------------------------------------
-  const EntryForm = ({ mKey, property, type, category }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${type}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric"  aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal"  aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
+  const EntryForm = ({ mKey, property, type, category, sectionName }, ctx) =>
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount"  aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
 
   const SubEntryForm = ({ mKey, parentId }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric"  aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal"  aria-label="Amount"><span class="ledger-entry-actions"></span></form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount"  aria-label="Amount"><span class="ledger-entry-actions"></span></form>`;
 
   const SubsectionForm = ({ sectionName }, ctx) =>
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
@@ -34,32 +34,41 @@
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
-  const CategoryBlock = (name, category, { mKey, type, property }, state, ctx) => {
+  const entryDraftMatches = (d, { mKey, property, sectionName, name }) =>
+    Boolean(d && d.month === mKey && d.property === property && d.section === sectionName && d.category === name);
+
+  const CategoryBlock = (name, category, { mKey, type, property, sectionName }, state, ctx) => {
     const entries = [...category.entries]
       .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
       .map(entry => EntryRow(entry, { mKey, type, property }, state, ctx))
       .join('');
-    const d = state.entryDraft;
-    const draftHere = d && d.month === mKey && d.property === property && d.section === type && d.category === name;
-    return `<details class="ledger-cat" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span><strong>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name }, ctx) : ''}</div></details>`;
+    const draftHere = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
+    return `<details class="ledger-cat" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span><strong>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
   };
 
-  // Level 3: Income / Expenses block. Merges every configured section of that type, shows only categories with entries.
+  // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
+  // have entries (plus one being added to). A block holding an open form is forced open so the form is visible.
   const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen) => {
     if (!sections.length) return '';
     const categories = [];
     sections.forEach(section => {
+      const sectionName = section._meta.id;
       Object.entries(section.categories).forEach(([name, category]) => {
-        if (category.entries.length) categories.push([name, category]);
+        if (category.entries.length || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName });
       });
     });
-    const total = categories.reduce((sum, [, category]) => sum + category._meta.total, 0);
+    const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0);
     const categoriesHtml = categories
-      .sort((a, b) => b[1]._meta.total - a[1]._meta.total)
-      .map(([name, category]) => CategoryBlock(name, category, { mKey, type, property }, state, ctx))
+      .sort((a, b) => b.category._meta.total - a.category._meta.total)
+      .map(({ name, category, sectionName }) => CategoryBlock(name, category, { mKey, type, property, sectionName }, state, ctx))
       .join('');
+    const l = state.ledgerDraft;
+    const subForm = l && l.month === mKey && l.property === property && sections.some(section => section._meta.id === l.section)
+      ? SubsectionForm({ sectionName: l.section }, ctx)
+      : '';
     const title = type === 'income' ? 'Income' : 'Expenses';
-    return `<details class="ledger-type-section" ${isOpen ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${categoriesHtml || '<p class="ledger-none">Nothing recorded</p>'}</div></details>`;
+    const open = isOpen || Boolean(subForm) || categoriesHtml.includes('data-ledger-form=');
+    return `<details class="ledger-type-section" ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${subForm}${categoriesHtml || (subForm ? '' : '<p class="ledger-none">Nothing recorded</p>')}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.

@@ -362,13 +362,17 @@
     .ledger-entry-desc, .ledger-entry-place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-entry-place { color: var(--muted); }
     .ledger-sub-entry { grid-column: 1 / -1; padding-left: 28px; opacity: 0.75; }
+    /* Rows are added by double-click or a 2s hold: stop the double-click selecting text and the hold raising the touch callout. */
+    .ledger { touch-action: manipulation; }
+    .ledger-type-section > summary, .ledger-cat > summary, .ledger-entry-cell { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .ledger-entry-form, .ledger-entry-form input, .ledger-form input { user-select: text; -webkit-user-select: text; }
     .ledger-entry strong { font: 500 11px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; justify-self: end; }
-    .ledger-entry-form { display: grid; grid-template-columns: 20px minmax(0, 1.7fr) minmax(0, 0.73fr) minmax(60px, auto); gap: 8px; align-items: center; padding: 8px 0; border-top: 1px dotted var(--line); }
+    .ledger-entry-form { display: grid; grid-template-columns: 20px minmax(0, 1.7fr) minmax(0, 0.73fr) minmax(70px, auto); gap: 8px; align-items: center; margin: 2px -4px; padding: 6px 4px; border-top: 1px dotted var(--line); border-radius: 4px; background: var(--forest-soft); }
     .ledger-entry-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); font: 11px var(--sans); }
     .ledger-entry-form input[type="number"] { -webkit-appearance: none; -moz-appearance: textfield; }
     .ledger-entry-form input[type="number"]::-webkit-outer-spin-button,
     .ledger-entry-form input[type="number"]::-webkit-inner-spin-button { display: none; }
-    .ledger-entry-form input::placeholder { display: none; }
+    .ledger-entry-form input::placeholder { color: #9aa097; opacity: 1; }
     .ledger-entry-form input:focus { border-bottom-color: var(--forest); outline: 0; }
     .ledger-entry-form input[aria-invalid="true"] { border-bottom-color: var(--expense); background: var(--expense-soft); }
     .ledger-entry-form input[name="day"], .ledger-entry-form input[name="amount"] { font-family: var(--mono); text-align: right; }
@@ -400,7 +404,7 @@
     .ledger-empty-cat:hover, .ledger-empty-cat:focus-visible { background: var(--forest-soft); color: var(--forest-dark); }
     .ledger-empty-cat:hover i { color: var(--forest-dark); }
     .ledger-form { display: grid; align-items: center; gap: 5px; }
-    .sub-form { grid-template-columns: 52px minmax(110px, 1.25fr) minmax(72px, .9fr) minmax(70px, .7fr) 40px; padding: 4px 0; border-top: 1px dotted var(--line); }
+    .sub-form { grid-template-columns: minmax(0, 1fr) 20px 20px; padding: 4px 0; border-top: 1px dotted var(--line); }
     .sub-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); font: 11px var(--sans); }
     .sub-form input::placeholder { color: #9aa097; opacity: 1; }
     .sub-form input:focus { border-bottom-color: var(--forest); outline: 0; }

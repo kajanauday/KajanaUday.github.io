@@ -32,7 +32,10 @@
     loadTransactions() {
       try {
         const saved = JSON.parse(localStorage.getItem(this.storageKey));
-        return Array.isArray(saved) ? saved : this.starter.map(item => ({ ...item }));
+        if (!Array.isArray(saved)) return this.starter.map(item => ({ ...item }));
+        // Entries saved by an earlier build stamped the type ("expense") as their section; let them fall back to subsection matching.
+        saved.forEach(item => { if (item.section === item.type) delete item.section; });
+        return saved;
       } catch (error) {
         return this.starter.map(item => ({ ...item }));
       }

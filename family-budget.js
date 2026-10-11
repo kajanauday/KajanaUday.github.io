@@ -169,7 +169,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
       host.querySelector('[data-ledger-form="subsection"]')?.elements.name.focus();
-      host.querySelector('[data-ledger-form="entry"]')?.elements.description.focus();
+      host.querySelector('[data-ledger-form="entry"], [data-ledger-form="sub-entry"]')?.elements.day.focus();
       document.querySelector('#year-settings-button').dataset.year = year;
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
@@ -218,7 +218,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const { month, property } = ledgerDraft;
       ledgerDraft = null;
       entryDraft = { month, property, section: section.name, type: section.type, category: name };
-      revealKey = catKey(month, property, section.name, name);
+      revealKey = catKey(month, property, section.type, name);
       renderLedger();
       showToast(`Added "${name}" to ${section.name}.`);
     }
@@ -239,14 +239,47 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       transactions.push({ id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), type });
       saveTransactions();
       entryDraft = null;
-      revealKey = catKey(month, property, section, category);
+      revealKey = catKey(month, property, type, category);
       renderLedger();
       showToast(`Saved to ${category}.`);
     }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
+      // Adding works by a 2s hold or a double-click. A hold re-renders under the pointer, so the click that
+      // follows it is swallowed; a double-click is two clicks on the same row within DOUBLE_CLICK_MS.
+      let longPressFired = false;
+      let suppressClickUntil = 0;
+      let lastClick = { key: null, time: 0 };
+      const DOUBLE_CLICK_MS = 400;
+      const addKeyFor = target => {
+        const el = getElement(target);
+        if (!el || el.closest('form')) return null;
+        const entryCell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
+        const toggle = entryCell?.querySelector('[data-toggle-entry]');
+        if (toggle) return `entry:${toggle.dataset.entryId}`;
+        const cat = el.closest('.ledger-cat > summary');
+        if (cat) return `cat:${cat.parentElement.dataset.key}`;
+        const type = el.closest('.ledger-type-section > summary');
+        if (type) return `type:${type.closest('.month-block')?.dataset.monthKey}|${type.closest('.ledger-panel')?.className}|${type.querySelector('strong')?.textContent}`;
+        return null;
+      };
       ledger.addEventListener('click', event => {
+        // The click released from a hold must not toggle the row that was just re-rendered. Enter-to-submit
+        // synthesises a click on the form's button, so clicks inside forms are never swallowed.
+        if (Date.now() < suppressClickUntil && !event.target.closest('form')) {
+          suppressClickUntil = 0;
+          return event.preventDefault();
+        }
+        const addKey = addKeyFor(event.target);
+        if (addKey) {
+          const isDouble = lastClick.key === addKey && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
+          lastClick = isDouble ? { key: null, time: 0 } : { key: addKey, time: Date.now() };
+          if (isDouble) {
+            event.preventDefault();
+            return triggerLongPress(event.target);
+          }
+        }
         const yearTab = event.target.closest('[data-ledger-year]');
         if (yearTab) return selectLedgerYear(Number(yearTab.dataset.ledgerYear));
         if (event.target.closest('[data-toggle-universe]')) return setUniverse(!universeOpen);
@@ -397,55 +430,72 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return target;
       };
 
+      // Opens the inline add form for whatever was pressed: an entry → sub-entry, a category → entry,
+      // an Income/Expenses header → subsection. Month and currency come from the pressed panel, not the page state.
       const triggerLongPress = (element) => {
         element = getElement(element);
-        if (!element) return false;
-
-        const entryLine = element.closest('.ledger-entry-line');
+        if (!element || element.closest('form')) return false;
+        const panel = element.closest('.ledger-panel');
+        const monthBlock = element.closest('.month-block');
+        if (!panel || !monthBlock) return false;
+        const property = Object.keys(regions).find(key => panel.classList.contains(key));
+        const mKey = monthBlock.dataset.monthKey;
+        const settings = yearSettings(Number(mKey.slice(0, 4)));
+        if (ledgerDraft || entryDraft || subEntryDraftParentId) {
+          showToast('Save or cancel the current inline edit first.');
+          return true;
+        }
+        const entryCell = element.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
+        const toggle = entryCell?.querySelector('[data-toggle-entry]');
         const cat = element.closest('.ledger-cat');
         const typeSection = element.closest('.ledger-type-section');
+        const type = typeSection?.querySelector('summary strong')?.textContent.trim() === 'Income' ? 'income' : 'expense';
 
-        if (entryLine && entryLine.querySelector('[data-toggle-entry]')) {
-          const button = entryLine.querySelector('[data-toggle-entry]');
-          const entryId = button.dataset.entryId;
+        if (toggle) {
+          const entryId = toggle.dataset.entryId;
           subEntryDraftParentId = entryId;
           expandedEntries.add(entryId);
           renderLedger();
-          showToast('✓ Long-press: Add sub-entry');
+          showToast('Add a sub-entry below.');
           return true;
         }
-
-        if (cat && typeSection && cat.querySelector('.ledger-cat-name')) {
+        if (cat && typeSection) {
           const categoryName = cat.querySelector('.ledger-cat-name').textContent.trim();
-          const typeSummary = typeSection.querySelector('summary strong');
-          const section = typeSummary?.textContent.trim() === 'Income' ? 'income' : 'expense';
-          const mKey = keyOf(currentMonth.getFullYear(), currentMonth.getMonth());
-          entryDraft = { month: mKey, property: Object.keys(regions)[0], section, category: categoryName };
-          revealKey = catKey(mKey, Object.keys(regions)[0], section, categoryName);
+          const candidates = settings.sections.filter(item => item.type === type);
+          const section = candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
+          if (!section) {
+            showToast('Configure a section for this year first.');
+            return true;
+          }
+          entryDraft = { month: mKey, property, section: section.name, type, category: categoryName };
+          revealKey = catKey(mKey, property, type, categoryName);
           renderLedger();
-          showToast('✓ Long-press: Add entry');
+          showToast(`Add an entry to ${categoryName}.`);
           return true;
         }
-
-        if (typeSection && !cat && typeSection.querySelector('summary strong')) {
-          const sectionName = typeSection.querySelector('summary strong').textContent.trim();
-          const type = sectionName === 'Income' ? 'income' : 'expense';
-          const mKey = keyOf(currentMonth.getFullYear(), currentMonth.getMonth());
-          ledgerDraft = { month: mKey, property: Object.keys(regions)[0], section: type === 'income' ? 'Income' : 'Expenses' };
+        if (typeSection) {
+          const section = settings.sections.find(item => item.type === type);
+          if (!section) {
+            showToast('Configure a section for this year first.');
+            return true;
+          }
+          ledgerDraft = { month: mKey, property, section: section.name };
           renderLedger();
-          showToast('✓ Long-press: Add subsection');
+          showToast(`Add a subsection to ${section.name}.`);
           return true;
         }
-
         return false;
       };
 
+      const pointOf = e => e.touches?.[0] ?? e;
       const startLongPress = (target, e) => {
+        suppressClickUntil = 0; // a new press means the previous press's click has happened or never will
+        longPressFired = false;
         longPressTarget = getElement(target);
-        longPressStart = { x: e.pageX, y: e.pageY };
+        longPressStart = { x: pointOf(e).pageX, y: pointOf(e).pageY };
         longPressTimer = setTimeout(() => {
-          triggerLongPress(longPressTarget);
           longPressTimer = null;
+          longPressFired = triggerLongPress(longPressTarget);
         }, LONG_PRESS_DURATION);
       };
 
@@ -454,14 +504,18 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
+        if (longPressFired) {
+          suppressClickUntil = Date.now() + 400;
+          longPressFired = false;
+        }
         longPressTarget = null;
         longPressStart = null;
       };
 
       const checkLongPressMove = (e) => {
         if (!longPressTimer || !longPressStart) return;
-        const dx = Math.abs(e.pageX - longPressStart.x);
-        const dy = Math.abs(e.pageY - longPressStart.y);
+        const dx = Math.abs(pointOf(e).pageX - longPressStart.x);
+        const dy = Math.abs(pointOf(e).pageY - longPressStart.y);
         if (dx > LONG_PRESS_MOVE_THRESHOLD || dy > LONG_PRESS_MOVE_THRESHOLD) {
           endLongPress();
         }
@@ -471,19 +525,30 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         startLongPress(e.target, e);
       });
 
-      ledger.addEventListener('touchend', endLongPress);
+      // After a touch the browser replays mousedown/mouseup/click; ignore that replay so it neither starts a
+      // second hold nor clears the click suppression.
+      let lastTouchEnd = 0;
+      const endTouch = () => {
+        lastTouchEnd = Date.now();
+        endLongPress();
+      };
+      ledger.addEventListener('touchend', endTouch);
       ledger.addEventListener('touchmove', (e) => {
         checkLongPressMove(e);
       });
-      ledger.addEventListener('touchcancel', endLongPress);
+      ledger.addEventListener('touchcancel', endTouch);
 
       ledger.addEventListener('mousedown', (e) => {
-        if (e.button === 0) startLongPress(e.target, e);
+        if (e.button === 0 && Date.now() - lastTouchEnd > 500) startLongPress(e.target, e);
       });
 
       ledger.addEventListener('mouseup', endLongPress);
       ledger.addEventListener('mousemove', (e) => {
         checkLongPressMove(e);
+      });
+      // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
+      ledger.addEventListener('contextmenu', (e) => {
+        if (longPressTimer || longPressFired || Date.now() < suppressClickUntil) e.preventDefault();
       });
 
       document.querySelector('#year-settings-button').addEventListener('click', event => openYearSettings(Number(event.currentTarget.dataset.year)));
