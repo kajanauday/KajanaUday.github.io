@@ -6,16 +6,23 @@
 (function (global) {
   const daysIn = mKey => new Date(Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)), 0).getDate();
 
+  // An amount typed as a formula shows its total, with the formula on hover.
+  const amountTag = (type, formula, text, ctx) =>
+    `<strong class="${type}${formula ? ' has-formula' : ''}"${formula ? ` title="${ctx.esc(formula)}"` : ''}>${text}</strong>`;
+
   // Inline forms --------------------------------------------------------------------------------
+  // Save / Cancel buttons: hidden with a mouse (Enter and Esc do it), shown on touch screens, whose number pad has no Enter.
+  const FormActions = cancelAttr =>
+    `<span class="ledger-entry-actions"><button type="button" class="mini-btn" ${cancelAttr} aria-label="Cancel" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i><span>Cancel</span></button><button type="submit" class="mini-btn is-save" aria-label="Save" title="Save"><i class="ti ti-check" aria-hidden="true"></i><span>Save</span></button></span>`;
   const EntryForm = ({ mKey, property, type, category, sectionName }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount"  aria-label="Amount" required><span class="ledger-entry-actions"><button type="submit" class="mini-btn is-save" aria-label="Save entry" title="Save entry"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-entry aria-label="Cancel entry" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i></button></span></form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate><input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month" required><input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount" required>${FormActions('data-cancel-entry')}</form>`;
 
   const SubEntryForm = ({ mKey, parentId }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount"  aria-label="Amount"><span class="ledger-entry-actions"></span></form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate><input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month"><input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount">${FormActions('data-cancel-sub-entry')}</form>`;
 
   // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
   const EditEntryForm = ({ mKey, item, kind }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" value="${Number(item.date.slice(8, 10))}" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" value="${Number(item.amount) / 100}" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"></span></form>`;
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate><input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" value="${Number(item.date.slice(8, 10))}" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit')}</form>`;
 
   const SubsectionForm = ({ sectionName }, ctx) =>
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
@@ -23,7 +30,7 @@
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
-    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${sub.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(sub.description)}</span><span class="ledger-entry-place">${ctx.esc(sub.place || '')}</span><strong class="${type}">${ctx.fmt(sub.amount, property)}</strong></span></div></div>`;
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${sub.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(sub.description)}</span><span class="ledger-entry-place">${ctx.esc(sub.place || '')}</span>${amountTag(type, sub.formula, ctx.fmt(sub.amount, property), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property }, state, ctx) => {
@@ -33,12 +40,12 @@
     const showingSubEntryForm = state.subEntryDraftParentId === entry.id;
     const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
     const subEntryForm = showingSubEntryForm ? SubEntryForm({ mKey, parentId: entry.id }, ctx) : '';
-    const subContent = (isExpanded && hasSubItems) ? subEntriesHtml : '';
-    const allSubContent = subContent + (showingSubEntryForm || isExpanded ? subEntryForm : '');
+    // Notes are always in the DOM and only shown or hidden, so opening an entry needs no re-render.
+    const notes = (hasSubItems || subEntryForm) ? `<div class="ledger-notes"${isExpanded || subEntryForm ? '' : ' hidden'}>${subEntriesHtml}${subEntryForm}</div>` : '';
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
-      return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${subContent}</div>`;
+      return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" style="cursor: ${hasSubItems ? 'pointer' : 'default'}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}"><time datetime="${entry.date}">${entry.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(entry.description)}</span><span class="ledger-entry-place">${ctx.esc(entry.place || '')}</span><strong class="${type}">${ctx.fmt(entry._meta.total, property)}</strong></button></div>${allSubContent}</div>`;
+    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}"><time datetime="${entry.date}">${entry.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(entry.description)}</span><span class="ledger-entry-place">${ctx.esc(entry.place || '')}</span>${amountTag(type, entry._meta.children ? null : entry.formula, ctx.fmt(entry._meta.total, property), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -60,8 +67,8 @@
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
   // have entries (plus one being added to). A block holding an open form is forced open so the form is visible.
-  const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen) => {
-    if (!sections.length) return '';
+  const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null) => {
+    if (!sections.length && !carry) return '';
     const categories = [];
     sections.forEach(section => {
       const sectionName = section._meta.id;
@@ -69,7 +76,9 @@
         if (category.entries.length || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName });
       });
     });
-    const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0);
+    // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
+    const carryHtml = carry ? `<div class="ledger-carry" title="Previous balance brought into this month"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i><span>Brought forward from ${ctx.esc(carry.from)}</span><strong class="${type}">${ctx.fmt(carry.amount, property)}</strong></div>` : '';
+    const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0) + (carry ? carry.amount : 0);
     const categoriesHtml = categories
       .sort((a, b) => b.category._meta.total - a.category._meta.total)
       .map(({ name, category, sectionName }) => CategoryBlock(name, category, { mKey, type, property, sectionName }, state, ctx))
@@ -79,8 +88,8 @@
       ? SubsectionForm({ sectionName: l.section }, ctx)
       : '';
     const title = type === 'income' ? 'Income' : 'Expenses';
-    const open = isOpen || Boolean(subForm) || categoriesHtml.includes('data-ledger-form=');
-    return `<details class="ledger-type-section" ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${subForm}${categoriesHtml || (subForm ? '' : '<p class="ledger-none">Nothing recorded</p>')}</div></details>`;
+    const open = isOpen || Boolean(carry) || Boolean(subForm) || categoriesHtml.includes('data-ledger-form=');
+    return `<details class="ledger-type-section" data-type="${type}" ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${carryHtml}${subForm}${categoriesHtml || (subForm || carryHtml ? '' : '<p class="ledger-none">Nothing recorded</p>')}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -89,9 +98,11 @@
     const mKey = ctx.keyOf(year, monthIndex);
     const byType = { income: [], expense: [] };
     Object.values(country.sections).forEach(section => byType[section._meta.type].push(section));
-    const sections = TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true)
-      + TypeSection('income', byType.income, { mKey, property }, state, ctx, false);
     const m = country._meta;
+    const carried = Number(m.carried) || 0;
+    const carryFor = type => (type === 'income' ? carried > 0 : carried < 0) ? { amount: Math.abs(carried), from: m.carriedFrom } : null;
+    const sections = TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'))
+      + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'));
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.name}<small>${m.code}</small></h3>
@@ -117,8 +128,11 @@
         </article>`;
   };
 
+  // The selected year's tab also opens its settings, so it carries a small settings mark.
   const YearTabs = (years, activeYear) =>
-    years.map(value => `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="${value === activeYear}">${value}</button>`).join('');
+    years.map(value => value === activeYear
+      ? `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="true" title="${value} settings">${value}<i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>`
+      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
@@ -133,7 +147,7 @@
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
           <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label}">${label}</button></h2>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for month settings">${label}</button></h2>
           ${open ? '<button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>' : summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}

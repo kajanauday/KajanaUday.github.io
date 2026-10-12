@@ -14,8 +14,16 @@
       --forest: #286347;
       --forest-dark: #204e39;
       --forest-soft: #e8f2eb;
-      --income: #16835d;
-      --expense: #d75549;
+      /* Income amounts in the ledger go from forest green to teal, one shade per level, each at least 4.5:1 contrast
+         (WCAG AA) on the white, hover and edit-row backgrounds. Below the Expenses total, expense amounts use the row's text colour;
+         --expense (red) is kept for the month rows, panel headers and year summary. */
+      --income-1: #0b5c3f;
+      --income-2: #137a55;
+      --income-3: #0f7663;
+      --income-4: #0b7480;
+      --income: var(--income-2);
+      --expense: #c0392b;
+      --expense-soft-text: #c24a3f; /* the Expenses total: a milder red, still 4.8:1 on white */
       --expense-soft: #fbecea;
       --india: #3b82f6;
       --japan: #f97316;
@@ -54,6 +62,36 @@
     .quiet-button:hover, .icon-button:hover { border-color: #d3d8cf; background: #fafbf8; color: var(--ink); }
     .toast { position: fixed; z-index: 20; right: 25px; bottom: 90px; padding: 10px 14px; border-radius: 8px; background: #20271f; color: white; box-shadow: var(--shadow); font-size: 12.5px; animation: rise .2s both; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; clip-path: inset(50%); }
+    /* Dialog forms (add entry, month settings) */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field.wide { grid-column: 1 / -1; }
+    .field small { color: #a3a99f; font-weight: 500; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .choice-row { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+    .choice-row button { min-height: 30px; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12.5px; font-weight: 700; }
+    .choice-row button:hover { color: var(--ink); }
+    .choice-row button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px #1724161f; }
+    .choice-row button[aria-pressed="true"][data-value="expense"] { color: var(--expense); }
+    .choice-row button[aria-pressed="true"][data-value="income"] { color: var(--income); }
+    .cur-dot { width: 8px; height: 8px; flex: none; display: inline-block; border-radius: 2px; background: var(--india); }
+    .cur-dot.japan { background: var(--japan); }
+    .check-field { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); cursor: pointer; font-size: 12.5px; line-height: 1.4; }
+    .check-field input { width: 15px; height: 15px; flex: none; margin: 1px 0 0; accent-color: var(--forest); }
+    .check-field input:disabled + span { cursor: default; }
+    .check-field em { display: block; color: var(--muted); font-size: 11.5px; font-style: normal; }
+    .check-field.is-strong > span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
+    .check-field.is-strong em { flex-basis: 100%; font-weight: 500; }
+    .month-dialog { width: min(440px, calc(100% - 26px)); }
+    .month-currency-rows, .config-currency-rows { display: grid; gap: 8px; }
+    .month-currency { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcf9; }
+    .month-currency .check-field:not(.is-strong) { padding-left: 23px; }
+    .month-currency.is-off, .config-currency.is-off { background: var(--surface-soft); }
+    .config-currency { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: #fbfcf9; }
+    .config-cur-code { min-width: 46px; display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--mono); }
+    .config-currency .check-field { flex: 1 1 200px; }
+    .money-field.is-disabled { opacity: .5; }
+    .add-entry-button { min-height: 32px; padding: 0 12px; font-size: 12.5px; }
+    .add-entry-button:hover { transform: none; }
     .settings-error { margin: 0; color: var(--expense); font-size: 11px; font-weight: 600; }
     /* ---- Year configuration dialog ---- */
     .config-dialog { width: min(760px, calc(100% - 20px)); max-height: min(90vh, 860px); padding: 0; overflow: hidden; }
@@ -127,6 +165,9 @@
     .year-tab { min-width: 58px; height: 26px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .year-tab:hover { color: var(--ink); }
     .year-tab[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px #1724161c; }
+    .year-tab { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+    .year-tab i { color: #9aa097; font-size: 13px; }
+    .year-tab[aria-pressed="true"]:hover i { color: var(--forest); }
     .ledger { width: min(1440px, 100%); display: grid; gap: 12px; margin: 0 auto; padding: 14px clamp(14px, 2vw, 24px) 32px; }
     .kpi-card, .ledger-panel { --tint: var(--surface); --edge: var(--line); --accent: var(--india); }
     .kpi-card.japan, .ledger-panel.japan { --accent: var(--japan); }
@@ -213,8 +254,19 @@
     .ledger-type-section > summary strong { font: 700 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
     .ledger-type-section > summary span { font: 700 13px var(--mono); font-variant-numeric: tabular-nums; }
     .ledger-type-section > div { display: grid; gap: 0; padding: 0 0 8px; }
-    .ledger-entry strong.income { color: var(--income); }
-    .ledger-entry strong.expense { color: var(--expense); }
+    /* Level 1: Income / Expenses totals */
+    .ledger-type-section > summary span.income { color: var(--income-1); }
+    .ledger-type-section > summary span.expense { color: var(--expense-soft-text); }
+    /* Level 2: subsection totals (and the brought-forward line, which sits at that level) */
+    .ledger-type-section[data-type="income"] .ledger-cat > summary strong, .ledger-type-section[data-type="income"] .cat-rename-form strong { color: var(--income-2); font-weight: 600; }
+    /* Expenses inside the table stay in the row's own text colour; only income is coloured. */
+    .ledger-type-section[data-type="expense"] .ledger-cat > summary strong, .ledger-type-section[data-type="expense"] .cat-rename-form strong { color: inherit; }
+    /* Level 3: entries */
+    .ledger-entry strong.income { color: var(--income-3); font-weight: 500; }
+    .ledger-entry strong.expense { color: inherit; }
+    /* Level 4: notes */
+    .ledger-sub-entry .ledger-entry strong.income { color: var(--income-4); font-weight: 400; }
+    .ledger-sub-entry .ledger-entry strong.expense { color: inherit; }
     .ledger-cat + .ledger-cat { border-top: 1px solid var(--line-soft); }
     .ledger-cat > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) minmax(70px, auto); align-items: center; gap: 8px; margin: 0 -6px; padding: 0 6px; border-radius: 6px; cursor: pointer; font-size: 12.5px; list-style: none; }
     .ledger-cat > summary:hover { background: #f7f8f5; }
@@ -230,7 +282,10 @@
     .ledger-entries { --entry-cols: 30px minmax(0, 1.7fr) minmax(0, 0.73fr) 96px; }
     .ledger-entry-cell { display: grid; grid-template-columns: var(--entry-cols); align-items: center; gap: 8px; min-height: 26px; padding: 3px 0; border-top: 1px dotted var(--line); color: #4f574e; font-size: 12px; }
     .ledger-entry-cell:first-child { border-top: none; }
-    .ledger-entry-line { min-width: 0; display: contents; }
+    .ledger-entry-line { grid-column: 1 / -1; min-width: 0; min-height: 26px; display: grid; grid-template-columns: subgrid; align-items: center; border-radius: 5px; transition: background-color .12s; }
+    .ledger-entry-line.has-notes { cursor: pointer; }
+    .ledger-entry-line:hover { background: #f7f8f5; }
+    .ledger-notes { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
     .ledger-entry-cell, .ledger-entry-toggle { text-align: left; }
     .ledger-entry { min-height: 26px; display: contents; }
     .ledger-entry-toggle { display: contents; }
@@ -239,7 +294,7 @@
     .ledger-entry-desc, .ledger-entry-place { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-entry-place { color: var(--muted); }
     /* Notes sit inside their entry's row and reuse its columns (subgrid); a soft tint marks them as one level down. */
-    .ledger-entry-cell > .ledger-sub-entry, .ledger-entry-cell > .ledger-entry-form { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; width: auto; min-width: 0; margin: 0; }
+    .ledger-notes > .ledger-sub-entry, .ledger-notes > .ledger-entry-form, .ledger-entry-cell > .ledger-entry-form { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; width: auto; min-width: 0; margin: 0; }
     .ledger-sub-entry { min-height: 24px; padding: 2px 0; border-top: 1px dotted var(--line-soft); color: #6b7369; }
     .ledger-sub-entry time { position: relative; padding-left: 12px; }
     .ledger-sub-entry time::before { content: ""; position: absolute; top: 50%; left: 1px; width: 7px; height: 6px; margin-top: -6px; border-bottom: 1px solid #c3c8bf; border-left: 1px solid #c3c8bf; border-bottom-left-radius: 3px; }
@@ -259,6 +314,16 @@
     .ledger-entry-form input[name="day"], .ledger-entry-form input[name="amount"] { font-family: var(--mono); text-align: right; }
     .ledger-entry-form input[name="amount"] { min-width: 0; }
     .ledger-entry-actions { display: none; }
+    @media (pointer: coarse) {
+      .ledger-entry-form .ledger-entry-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; padding: 6px 0 2px; }
+      .ledger-entry-actions .mini-btn { width: auto; height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 700; }
+      .ledger-entry-actions .mini-btn.is-save { border-color: var(--forest); background: var(--forest); color: #fff; }
+    }
+    /* Hold feedback: a fill sweeps across the row and completes exactly when the 0.8s hold fires.
+       It starts after a short pause so ordinary clicks never flash. */
+    .is-pressing { position: relative; isolation: isolate; }
+    .is-pressing::after { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: 6px; background: var(--forest-soft); transform: scaleX(0); transform-origin: left center; animation: press-fill .65s .15s linear forwards; pointer-events: none; }
+    @keyframes press-fill { to { transform: scaleX(1); } }
     .ledger-entry-form.is-edit { background: #fdf5e6; }
     .ledger-entry-form.is-edit input:focus { border-bottom-color: #b26a1d; }
     .cat-rename-form { grid-template-columns: minmax(0, 1fr) minmax(70px, auto); gap: 10px; min-height: 30px; margin: 0 -6px; padding: 2px 6px 2px 28px; border-radius: 6px; background: #fdf5e6; }
@@ -272,6 +337,15 @@
     @container (max-width: 420px) {
       .ledger-totals { flex-wrap: wrap; }
     }
+    /* An amount entered as a formula: a quiet dotted underline says "hover to see how it was worked out". */
+    .has-formula { cursor: help; text-decoration: underline dotted #b9bfb6; text-underline-offset: 3px; }
+    .amount-preview { min-height: 14px; color: var(--income-2); font: 500 11.5px var(--mono); }
+    .amount-preview.is-error { color: var(--muted); }
+    .ledger-carry { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 12px; font-style: italic; }
+    .ledger-carry i { color: #a3a99f; font-size: 13px; }
+    .ledger-carry strong { font: 500 12.5px var(--mono); font-style: normal; font-variant-numeric: tabular-nums; }
+    .ledger-carry strong.income { color: var(--income-2); }
+    .ledger-carry strong.expense { color: inherit; }
     .ledger-none { margin: 0; padding: 4px 0 6px; color: #9aa097; font-size: 12px; line-height: 1.9; }
     .ledger-form { display: grid; align-items: center; gap: 5px; }
     .sub-form { grid-template-columns: minmax(0, 1fr) 20px 20px; padding: 4px 0; border-top: 1px dotted var(--line); }
@@ -308,6 +382,9 @@
     @media (max-width: 700px) {
       .ledger-topbar { height: 52px; padding: 0 12px; }
       .ledger-topbar .brand-word { display: none; }
+      .add-entry-button { width: 34px; padding: 0; }
+      .add-entry-button span { display: none; }
+      .form-grid { grid-template-columns: 1fr; }
       .ledger-topbar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
       .ms-kv { min-width: 6ch; }
       .ms-kv + .ms-kv { min-width: 8ch; }

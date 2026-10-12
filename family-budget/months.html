@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f8f4">
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261012e4">
+  <link rel="stylesheet" href="../family-budget.css?v=20261012f1">
   <script src="../firebase-config.js?v=20261012a" defer></script>
-  <script src="../data-layer.js?v=20261012m1" defer></script>
-  <script src="../component-blueprints.js?v=20261012e2" defer></script>
-  <script src="../renderer-engine.js?v=20261012m1" defer></script>
-  <script src="../family-budget.js?v=20261012e1" defer></script>
+  <script src="../data-layer.js?v=20261012f1" defer></script>
+  <script src="../component-blueprints.js?v=20261012f1" defer></script>
+  <script src="../renderer-engine.js?v=20261012c3" defer></script>
+  <script src="../family-budget.js?v=20261012f1" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -18,7 +18,7 @@
     <div></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
-      <button type="button" class="icon-button" id="year-settings-button" aria-label="Year settings" title="Year settings"><i class="ti ti-settings" aria-hidden="true"></i></button>
+      <button type="button" class="primary-button add-entry-button" id="add-entry-button" title="Add an expense or income"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
   </header>
@@ -36,17 +36,18 @@
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
+
   <dialog class="modal config-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
     <form id="year-settings-form" novalidate>
       <header class="config-head">
-        <div class="modal-header"><div><p>Configuration</p><h2 id="year-settings-title">Year configuration</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <div class="modal-header"><div><p>Year settings</p><h2 id="year-settings-title">Year configuration</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
         <div class="config-years" id="config-years" role="group" aria-label="Year to configure"></div>
       </header>
       <div class="config-body">
         <section class="config-block" aria-labelledby="config-general-title">
-          <div class="config-block-head"><h3 id="config-general-title">General</h3></div>
-          <div class="kv-row"><span class="kv-key">Currencies</span><div class="kv-value" id="config-currencies"></div></div>
-          <div class="kv-row"><span class="kv-key">Opening balance</span><div class="kv-value kv-money" id="config-openings"></div></div>        </section>
+          <div class="config-block-head"><h3 id="config-general-title">Currencies</h3></div>
+          <div class="config-currency-rows" id="config-currencies"></div>
+        </section>
         <section class="config-block" aria-labelledby="config-sections-title">
           <div class="config-block-head"><h3 id="config-sections-title">Sections</h3><select id="config-copy" class="filter-select" aria-label="Copy setup from another year"></select><button type="button" class="quiet-button" id="config-add-section"><i class="ti ti-plus" aria-hidden="true"></i> Add section</button></div>
           <div class="config-sections" id="config-sections"></div>
@@ -58,6 +59,32 @@
         <button type="button" class="quiet-button" data-close-dialog>Cancel</button>
         <button type="submit" class="primary-button">Save</button>
       </footer>
+    </form>
+  </dialog>
+
+  <dialog class="modal month-dialog" id="month-settings-dialog" aria-labelledby="month-settings-title">
+    <form id="month-settings-form" novalidate>
+      <div class="modal-header"><div><p>Month settings</p><h2 id="month-settings-title">Month</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="month-currency-rows" id="month-currency-rows"></div>
+      <p class="settings-error" id="month-settings-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="modal entry-dialog" id="entry-dialog" aria-labelledby="entry-dialog-title">
+    <form id="entry-form" novalidate>
+      <div class="modal-header"><div><p>New entry</p><h2 id="entry-dialog-title">Add an expense</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="form-grid">
+        <div class="field wide"><span>Type</span><div class="choice-row" id="entry-type" role="group" aria-label="Type"><button type="button" data-value="expense" aria-pressed="true">Expense</button><button type="button" data-value="income" aria-pressed="false">Income</button></div></div>
+        <label class="field">Date<input name="date" id="entry-date" type="date" required></label>
+        <div class="field"><span>Currency</span><div class="choice-row" id="entry-currency" role="group" aria-label="Currency"></div></div>
+        <label class="field wide">Subsection<select name="category" id="entry-category" required></select></label>
+        <label class="field wide">Description<input name="description" maxlength="80" autocomplete="off" required></label>
+        <label class="field"><span>Place <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
+        <label class="field">Amount<input name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="e.g. 450 or =(210+178)+62" required><small class="amount-preview" id="entry-amount-preview" aria-live="polite"></small></label>
+      </div>
+      <p class="settings-error" id="entry-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save entry</button></div>
     </form>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
