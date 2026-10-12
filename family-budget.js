@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'family-budget-static-demo-v1';
-    // Data now lives in Firebase; drop the copy older builds kept in this browser.
-    try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
+    // Data now lives in Firebase; drop what older builds kept in this browser.
+    try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`, `${STORAGE_KEY}-view`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
+    if (sessionStorage.getItem(`${STORAGE_KEY}-passkey-signed-in`) !== 'true') window.location.replace('../family-budget-vertical.html');
     (async () => {
     let store;
     try {
@@ -32,7 +33,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
 
     function saveTransactions() { trackSave(store.saveTransactions()); }
     function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
-    function activeCurrencies(date = currentMonth) { return store.monthCurrencies(date.getFullYear(), date.getMonth()); }
     function trackSave(write) {
       const saveState = document.querySelector('.save-state');
       if (saveState) saveState.textContent = 'Saving…';
@@ -46,10 +46,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     function monthKey(date = currentMonth) {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    }
-    function monthTransactions(property = null) {
-      const key = monthKey();
-      return transactions.filter(item => item.date.startsWith(key) && (!property || item.property === property));
     }
     const localeOf = property => regions[property]?.locale || 'en-US';
     function formatMoney(minor, property) {
@@ -75,102 +71,15 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function dayLabel(date) {
       return new Date(`${date}T12:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
     }
-    function iconFor(category, type) { return ExpenseStore.iconFor(category, type); }
-    // Card figures are the month's stored metadata; only the recent-activity list needs the month's entries.
-    function propertyStats(property) {
-      const totals = store.monthTotals(currentMonth.getFullYear(), currentMonth.getMonth(), property);
-      return { items: monthTransactions(property).filter(item => !item.parentId), income: totals.income, expense: totals.expenses, balance: totals.closing };
-    }
-    function renderRecent(property) {
-      const items = propertyStats(property).items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 5);
-      if (!items.length) return '<p class="transaction-meta">No activity this month yet.</p>';
-      return items.map(item => `<div class="transaction-row"><span class="transaction-icon"><i class="ti ${iconFor(item.category, item.type)}" aria-hidden="true"></i></span><div class="transaction-copy"><p class="transaction-title">${escapeHtml(item.description)}</p><span class="transaction-meta">${item.section ? `${escapeHtml(item.section)} · ` : ''}${escapeHtml(item.category)} · ${dayLabel(item.date)}</span></div><span class="transaction-amount ${item.type}">${item.type === 'expense' ? '−' : '+'}${formatMoney(item.amount, property)}</span></div>`).join('');
-    }
-    function propertyCard(property) {
-      const budget = store.budgetFor(property);
-      const stats = propertyStats(property);
-      const spentPercent = budget ? Math.min(100, stats.expense / budget * 100) : 0;
-      return LedgerBlueprints.PropertyCard({ region: regions[property], property, stats, budget, spentPercent, recentHtml: renderRecent(property) }, { fmt: formatMoney });
-    }
-    // Overview: one card per currency active this month. Country pages: their own currency, or a note when it is not active.
-    function renderProperties() {
-      const active = activeCurrencies();
-      const grid = document.querySelector('#property-grid');
-      if (grid) {
-        grid.innerHTML = active.map(property => `<article class="property-card ${regions[property].color}" id="property-${property}" data-property="${property}">${propertyCard(property)}</article>`).join('')
-          || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
-      }
-      document.querySelectorAll('.property-card[data-currency]').forEach(target => {
-        const property = target.dataset.currency;
-        const title = document.querySelector('#property-title');
-        if (title && regions[property]) title.textContent = regions[property].name;
-        target.classList.add(regions[property]?.color || property);
-        target.innerHTML = active.includes(property) ? propertyCard(property) : `<p class="transaction-meta" style="padding:20px">${escapeHtml(regions[property]?.code || property)} is not active in ${monthLabel()}.</p>`;
-      });
-    }
-    // Overview footer: the month's biggest expense categories and a few headline figures, per active currency.
-    function renderOverviewPanels() {
-      const spend = document.querySelector('#overview-spend');
-      const glance = document.querySelector('#overview-glance');
-      if (!spend || !glance) return;
-      const year = currentMonth.getFullYear();
-      const month = currentMonth.getMonth();
-      const active = activeCurrencies();
-      const none = `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
-      spend.innerHTML = active.map(property => {
-        const region = regions[property];
-        const { expense } = propertyStats(property);
-        const rows = categoryTotals(property).slice(0, 5);
-        const body = !store.isLoaded(year, month) ? '<p class="transaction-meta">Loading entries…</p>'
-          : rows.map(([name, amount]) => `<div class="spend-row"><span>${escapeHtml(name)}</span><div class="spend-bar"><i class="${region.color}" style="width:${expense ? Math.max(2, amount / expense * 100) : 0}%"></i></div><strong>${formatMoney(amount, property)}</strong></div>`).join('')
-            || '<p class="transaction-meta">No expenses recorded.</p>';
-        return `<div class="spend-group"><div class="spend-head"><span class="property-dot ${region.color}"></span><strong>${escapeHtml(region.name)}</strong><span>${formatMoney(expense, property)} ${escapeHtml(region.code)}</span></div>${body}</div>`;
-      }).join('') || none;
-      glance.innerHTML = active.map(property => {
-        const region = regions[property];
-        const stats = propertyStats(property);
-        const budget = store.budgetFor(property);
-        const left = budget - stats.expense;
-        const saved = stats.income ? Math.round((stats.income - stats.expense) / stats.income * 100) : null;
-        const entries = store.monthTotals(year, month, property).entries;
-        return `<div class="glance-row"><div class="glance-name"><span class="property-dot ${region.color}"></span><strong>${escapeHtml(region.code)}</strong></div><dl><div><dt>Saved</dt><dd class="${saved > 0 ? 'income' : saved < 0 ? 'expense' : ''}">${saved === null ? '—' : `${saved}%`}</dd></div><div><dt>Budget left</dt><dd class="${left < 0 ? 'expense' : ''}">${formatMoney(left, property)}</dd></div><div><dt>Balance</dt><dd>${formatMoney(stats.balance, property)}</dd></div><div><dt>Entries</dt><dd>${entries}</dd></div></dl></div>`;
-      }).join('') || none;
-    }
-    function renderTransactions() {
-      const searchInput = document.querySelector('#transaction-search');
-      const propertyFilter = document.querySelector('#property-filter');
-      const rows = document.querySelector('#activity-rows');
-      if (!searchInput || !propertyFilter || !rows) return;
-      const search = searchInput.value.trim().toLowerCase();
-      const active = activeCurrencies();
-      const options = ['all', ...active];
-      if ([...propertyFilter.options].map(option => option.value).join() !== options.join()) {
-        const previous = propertyFilter.value;
-        propertyFilter.replaceChildren(new Option('All properties', 'all'), ...active.map(key => new Option(`${regions[key].name} · ${regions[key].code}`, key)));
-        propertyFilter.value = options.includes(previous) ? previous : 'all';
-      }
-      const property = propertyFilter.value;
-      const items = monthTransactions().filter(item => (property === 'all' || item.property === property) && `${item.description} ${item.section || ''} ${item.category} ${regions[item.property].name}`.toLowerCase().includes(search)).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-      document.querySelector('#transaction-count').textContent = `${items.length} ${items.length === 1 ? 'entry' : 'entries'}`;
-      rows.innerHTML = items.length ? items.map(item => `<tr><td>${dayLabel(item.date)}</td><td><strong>${escapeHtml(item.description)}</strong></td><td><span class="property-pill" title="${escapeHtml(regions[item.property].name)}"><span class="property-dot ${regions[item.property].color}"></span>${escapeHtml(regions[item.property].code)}</span></td><td>${item.section ? `${escapeHtml(item.section)} · ` : ''}${escapeHtml(item.category)}</td><td class="amount-cell ${item.type}">${item.type === 'expense' ? '−' : '+'}${formatMoney(item.amount, item.property)}</td></tr>`).join('') : `<tr><td colspan="5" style="padding:24px 12px;color:#777e75">${store.isLoaded(currentMonth.getFullYear(), currentMonth.getMonth()) ? 'No transactions match this month and filter.' : 'Loading entries…'}</td></tr>`;
-    }
-    function categoryTotals(property) {
-      const totals = new Map();
-      monthTransactions(property).filter(item => item.type === 'expense' && !item.parentId).forEach(item => totals.set(item.category, (totals.get(item.category) || 0) + store.entryTotal(item.id)));
-      return [...totals.entries()].sort((a, b) => b[1] - a[1]);
-    }
     // ---- Monthly ledger (months.html) ----
     // Inline ledger drafts: subsection adds and unsaved transaction fields.
     let ledgerDraft = null;
     let entryDraft = null;
-    let noteDraftId = null;
-    let noteDraftValue = '';
     let subEntryDraftParentId = null;
     const expandedEntries = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
     const keyOf = (year, month) => `${year}-${String(month + 1).padStart(2, '0')}`;
-    const dateOf = key => new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1);
     // Months whose ledger is open. A fresh session opens the current month on wider screens; on phones every month
     // starts closed so the whole year's list fits on screen (an open month is several screens tall there).
     const isPhone = () => window.matchMedia('(max-width: 700px)').matches;
@@ -597,68 +506,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
 
       document.querySelector('#year-settings-button').addEventListener('click', event => openYearSettings(Number(event.currentTarget.dataset.year)));
     }
-    function renderBudgets() {
-      const panels = document.querySelector('#budget-panels');
-      if (!panels) return;
-      panels.innerHTML = activeCurrencies().map(property => {
-        const region = regions[property];
-        const budget = store.budgetFor(property);
-        const stats = propertyStats(property);
-        const categories = categoryTotals(property);
-        const remainder = Math.max(0, budget - stats.expense);
-        return `<section class="surface-panel"><div class="panel-title-row"><h2><span class="property-dot ${region.color}" style="display:inline-block;margin-right:7px"></span>${region.name} · ${region.code}</h2><span>${monthLabel()}</span></div><div class="category-budget">${categories.map(([name, amount]) => { const percent = budget ? Math.min(100, amount / budget * 100) : 0; return `<div class="category-budget-row"><div class="category-budget-top"><strong>${escapeHtml(name)}</strong><span>${formatMoney(amount, property)} · ${Math.round(percent)}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%;background:var(--${region.color})"></div></div></div>`; }).join('') || '<p class="transaction-meta">No expenses recorded for this month.</p>'}</div><div class="budget-foot"><span>Monthly limit</span><strong>${formatMoney(budget, property)}</strong></div><div class="budget-foot"><span>Remaining</span><strong>${formatMoney(remainder, property)}</strong></div></section>`;
-      }).join('') || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
-    }
-    function renderInsights() {
-      const panels = document.querySelector('#insight-panels');
-      if (!panels) return;
-      panels.innerHTML = activeCurrencies().map(property => {
-        const region = regions[property];
-        const stats = propertyStats(property);
-        const topCategory = categoryTotals(property)[0];
-        const rate = stats.income ? Math.round((stats.income - stats.expense) / stats.income * 100) : 0;
-        return `<section class="surface-panel"><div class="panel-title-row"><h2>${region.name} household</h2><span>${region.code}</span></div><div class="insight-stat"><span>Income this month</span><strong style="color:var(--income)">${formatMoney(stats.income, property)}</strong><small>Recorded in ${monthLabel()}</small></div><div class="insight-stat"><span>Expenses this month</span><strong style="color:var(--expense)">${formatMoney(stats.expense, property)}</strong><small>${stats.income ? `${rate}% of income retained` : 'No income recorded yet'}</small></div><div class="insight-stat"><span>Largest category</span><strong>${topCategory ? escapeHtml(topCategory[0]) : 'No activity'}</strong><small>${topCategory ? formatMoney(topCategory[1], property) : 'Add activity to see patterns'}</small></div></section>`;
-      }).join('') || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
-    }
-    function render() {
-      document.querySelectorAll('.month-label').forEach(el => { el.textContent = monthLabel(); });
-      document.querySelectorAll('.month-label-copy').forEach(el => el.textContent = monthLabel());
-      renderProperties();
-      renderOverviewPanels();
-      renderTransactions();
-      renderBudgets();
-      renderInsights();
-      renderLedger();
-    }
-    // Pages other than the ledger paint from metadata first, then repaint once the month's entries arrive.
-    function refresh() {
-      render();
-      const year = currentMonth.getFullYear();
-      const month = currentMonth.getMonth();
-      if (document.querySelector('#ledger') || !store.monthNode(year, month) || store.isLoaded(year, month)) return;
-      store.ensureMonth(year, month).then(render, error => {
-        console.error('Could not load entries from Firebase.', error);
-        showToast('Could not load entries from Firebase.');
-      });
-    }
-    // Opens the add form for the month on screen, optionally preset to a currency, type and section.
-    // Each preset goes through the hidden selects so the year-specific options and buttons refresh in order.
-    function openEntryDialog({ property, type, section } = {}) {
-      const dialog = document.querySelector('#transaction-dialog');
-      if (!dialog || dialog.open) return;
-      const dateInput = document.querySelector('#entry-date');
-      const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-      dateInput.value = `${monthKey()}-${String(Math.min(new Date().getDate(), daysInMonth)).padStart(2, '0')}`;
-      dateInput.dispatchEvent(new Event('change'));
-      [['#entry-property', property], ['#entry-type', type], ['#entry-section', section]].forEach(([selector, value]) => {
-        const select = document.querySelector(selector);
-        if (!select || !value || ![...select.options].some(option => option.value === value)) return;
-        select.value = value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-      dialog.showModal();
-      document.querySelector('#entry-description')?.focus();
-    }
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
     }
@@ -668,83 +515,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       toast.hidden = false;
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toast.hidden = true; }, 2500);
-    }
-    function setupTransactionTaxonomy() {
-      const form = document.querySelector('#transaction-form');
-      const dateInput = document.querySelector('#entry-date');
-      const propertySelect = document.querySelector('#entry-property');
-      const typeSelect = document.querySelector('#entry-type');
-      const categoryLabel = document.querySelector('label[for="entry-category"]');
-      const categoryInput = document.querySelector('#entry-category');
-      if (!form || !dateInput || !propertySelect || !typeSelect || !categoryLabel || !categoryInput) return;
-
-      const sectionLabel = document.createElement('label');
-      sectionLabel.className = 'field';
-      sectionLabel.htmlFor = 'entry-section';
-      sectionLabel.innerHTML = 'Section<select id="entry-section" name="section" required></select>';
-      categoryInput.replaceWith(Object.assign(document.createElement('select'), { id: 'entry-category', name: 'category', required: true }));
-      sectionLabel.querySelector('select').className = 'taxonomy-select';
-      categoryLabel.parentNode.insertBefore(sectionLabel, categoryLabel);
-
-      const sectionSelect = sectionLabel.querySelector('select');
-      const subsectionSelect = document.querySelector('#entry-category');
-      const refreshOptions = () => {
-        const date = dateInput.value ? new Date(`${dateInput.value}T12:00:00`) : currentMonth;
-        const currencies = activeCurrencies(date);
-        const previousProperty = propertySelect.value;
-        propertySelect.replaceChildren(...currencies.map(property => new Option(`${regions[property].name} · ${regions[property].code}`, property)));
-        if (currencies.includes(previousProperty)) propertySelect.value = previousProperty;
-        const previousSection = sectionSelect.value;
-        const matchingSections = store.sections(date.getFullYear()).filter(section => section.type === typeSelect.value);
-        sectionSelect.replaceChildren(...matchingSections.map(section => new Option(section.name, section.name)));
-        if (matchingSections.some(section => section.name === previousSection)) sectionSelect.value = previousSection;
-        const section = matchingSections.find(item => item.name === sectionSelect.value) || matchingSections[0];
-        const previousSubsection = subsectionSelect.value;
-        subsectionSelect.replaceChildren(...(section?.subsections || []).map(name => new Option(name, name)));
-        if (section?.subsections.includes(previousSubsection)) subsectionSelect.value = previousSubsection;
-        sectionSelect.disabled = matchingSections.length === 0;
-        subsectionSelect.disabled = !section?.subsections.length;
-        const amountLabel = document.querySelector('label[for="entry-amount"]');
-        if (amountLabel?.firstChild?.nodeType === Node.TEXT_NODE) amountLabel.firstChild.textContent = `Amount · ${regions[propertySelect.value]?.code || ''}`;
-      };
-      dateInput.addEventListener('change', refreshOptions);
-      propertySelect.addEventListener('change', refreshOptions);
-      typeSelect.addEventListener('change', refreshOptions);
-      sectionSelect.addEventListener('change', refreshOptions);
-      form.addEventListener('reset', () => setTimeout(refreshOptions));
-      refreshOptions();
-      segmentize(propertySelect);
-      segmentize(typeSelect);
-      segmentize(sectionSelect);
-      segmentize(subsectionSelect, { wrap: true });
-      categoryLabel.classList.add('wide');
-    }
-    // Turns a <select> into one-click buttons. The hidden select stays the source of truth, so option lists
-    // rebuilt elsewhere (per-year currencies, sections, subsections) are mirrored automatically.
-    function segmentize(select, { wrap = false } = {}) {
-      if (!select || select.dataset.segmented) return;
-      select.dataset.segmented = 'true';
-      const group = document.createElement('div');
-      group.className = `segment-group${wrap ? ' is-wrap' : ''}`;
-      group.setAttribute('role', 'group');
-      group.setAttribute('aria-label', select.closest('label')?.firstChild?.textContent.trim() || select.name);
-      select.hidden = true;
-      select.after(group);
-      const draw = () => {
-        group.innerHTML = [...select.options].map(option => `<button type="button" class="segment" data-value="${escapeHtml(option.value)}" aria-pressed="${option.value === select.value}">${escapeHtml(option.textContent)}</button>`).join('')
-          || '<span class="segment-empty">Nothing configured for this month</span>';
-      };
-      group.addEventListener('click', event => {
-        const button = event.target.closest('[data-value]');
-        if (!button || select.disabled) return;
-        select.value = button.dataset.value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        draw();
-      });
-      select.addEventListener('change', draw);
-      new MutationObserver(draw).observe(select, { childList: true });
-      select.form?.addEventListener('reset', () => setTimeout(draw));
-      draw();
     }
     // ---- Year configuration (months.html) ----
     // Edits are held as per-year drafts so the user can hop between year boxes; Save validates and writes every touched year.
@@ -931,7 +701,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const sections = (previous?.sections || []).map(section => ({ ...section, subsections: [...section.subsections] }));
       saveYearConfig(year, { currencies, sections });
       showConfigYear(year);
-      render();
+      renderLedger();
       showToast(`Added ${year}. Review its currencies and sections.`);
     }
     function validateDraft(draft) {
@@ -1036,88 +806,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         });
         if (touched.length) saveTransactions();
         dialog.close();
-        render();
-        document.querySelector('#entry-date')?.dispatchEvent(new Event('change'));
+        renderLedger();
         showToast(touched.length ? `Saved ${touched.map(([year]) => year).join(' & ')} configuration.` : 'No changes to save.');
       });
     }
     setupYearConfig();
-    setupTransactionTaxonomy();
-    const loginForm = document.querySelector('#login-form');
-    if (loginForm) {
-      loginForm.addEventListener('submit', event => {
-        event.preventDefault();
-        const passkey = new FormData(loginForm).get('passkey');
-        if (passkey !== 'kajanauday') {
-          const loginError = document.querySelector('#login-error');
-          loginError.textContent = 'That passkey was not recognized.';
-          loginError.hidden = false;
-          return;
-        }
-        sessionStorage.setItem(`${STORAGE_KEY}-passkey-signed-in`, 'true');
-        sessionStorage.removeItem(`${STORAGE_KEY}-universe`);
-        sessionStorage.removeItem(`${STORAGE_KEY}-open-months`);
-        const today = new Date();
-        sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
-        window.location.href = 'family-budget/months.html';
-      });
-    } else {
-      if (sessionStorage.getItem(`${STORAGE_KEY}-passkey-signed-in`) !== 'true') {
-        window.location.replace('../family-budget-vertical.html');
-      }
-      setupLedger();
-      document.querySelectorAll('[data-month-shift]').forEach(button => button.addEventListener('click', () => {
-      const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + Number(button.dataset.monthShift), 1);
-      if (!store.monthNode(next.getFullYear(), next.getMonth())) return showToast(`${monthLabel(next)} is not set up in Firebase.`);
-      currentMonth = next;
-      sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
-      refresh();
-    }));
-    document.querySelectorAll('.device-button').forEach(button => button.addEventListener('click', () => {
-      const grid = document.querySelector('#property-grid');
-      if (!grid) return;
-      grid.dataset.device = button.dataset.device;
-      document.querySelectorAll('.device-button').forEach(choice => choice.setAttribute('aria-pressed', String(choice === button)));
-      try { localStorage.setItem(`${STORAGE_KEY}-view`, button.dataset.device); } catch (error) { /* Layout preference is optional. */ }
-    }));
-    document.querySelector('#transaction-search')?.addEventListener('input', renderTransactions);
-    document.querySelector('#property-filter')?.addEventListener('change', renderTransactions);
-    document.querySelector('#add-button')?.addEventListener('click', () => openEntryDialog());
+    setupLedger();
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
-    document.querySelector('#transaction-form')?.addEventListener('submit', event => {
-      event.preventDefault();
-      const form = event.currentTarget;
-      const values = Object.fromEntries(new FormData(form));
-      const amount = Number(values.amount);
-      if (!Number.isFinite(amount) || amount <= 0) return;
-      const date = new Date(`${values.date}T12:00:00`);
-      if (!activeCurrencies(date).includes(values.property)) return showToast(`No currency is set up for ${monthLabel(date)}.`);
-      // The month's entries must be loaded first, or saving it would replace what Firebase already holds.
-      store.ensureMonth(date.getFullYear(), date.getMonth()).then(() => {
-        transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, section: values.section, category: values.category.trim(), description: values.description.trim(), place: values.place.trim(), amount: Math.round(amount * 100), type: values.type });
-        saveTransactions();
-        form.reset();
-        document.querySelector('#transaction-dialog').close();
-        render();
-        showToast('Transaction added to your activity.');
-      }, error => {
-        console.error('Could not load the month from Firebase.', error);
-        showToast('Could not load that month from Firebase. Try again.');
-      });
-    });
-    document.querySelector('#logout-button')?.addEventListener('click', () => {
+    document.querySelector('#logout-button').addEventListener('click', () => {
       sessionStorage.removeItem(`${STORAGE_KEY}-passkey-signed-in`);
       sessionStorage.removeItem(`${STORAGE_KEY}-signed-in`);
       window.location.href = '../family-budget-vertical.html';
     });
-    try {
-      const preferredView = localStorage.getItem(`${STORAGE_KEY}-view`);
-      const grid = document.querySelector('#property-grid');
-      if (grid && (preferredView === 'mobile' || preferredView === 'desktop')) {
-        grid.dataset.device = preferredView;
-        document.querySelectorAll('.device-button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.device === preferredView)));
-      }
-    } catch (error) { /* Layout preference is optional. */ }
-    refresh();
-    }
+    renderLedger();
     })();

@@ -1,7 +1,7 @@
 // ExpenseStore: the single owner of ledger data, backed by Firebase Realtime Database (REST API).
 //
 // Firebase layout under `root`:
-//   currencies/<cur>                 display config per currency (name, code, symbol, locale, color, icon, home, budget, order)
+//   currencies/<cur>                 display config per currency (name, code, symbol, locale, color, order)
 //   years/<year>                     one year, small enough to render the whole shell from:
 //     currencies/<cur>               { from: "August", opening }  the month a currency starts and its opening balance
 //     sections[]                     { name, type, subsections[] }  the year's section taxonomy
@@ -146,7 +146,6 @@
     yearTotals(year, currency) {
       return { income: 0, expenses: 0, balance: 0, entries: 0, opening: 0, closing: 0, ...this.year(year)?.metadata[currency] };
     }
-    budgetFor(currency) { return Number(this.currencies[currency]?.budget) || 0; }
 
     // ---- lazy month loading ----
     isLoaded(year, monthIndex) { return this.synced.has(monthIdOf(year, monthIndex)); }
