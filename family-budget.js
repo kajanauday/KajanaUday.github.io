@@ -76,6 +76,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     let ledgerDraft = null;
     let entryDraft = null;
     let subEntryDraftParentId = null;
+    let editDraft = null; // { kind: 'entry' | 'note', id } or { kind: 'category', month, property, type, category }
+    const hasDraft = () => Boolean(ledgerDraft || entryDraft || subEntryDraftParentId || editDraft);
     const expandedEntries = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
@@ -89,7 +91,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     // The ledger is painted from the ExpenseStore tree by LedgerRenderer using LedgerBlueprints.
     // Inline-edit state lives here and is handed to each render, so blueprints stay pure.
-    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft });
+    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft, editDraft });
     const ledgerRenderer = new LedgerRenderer(store, {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
@@ -115,6 +117,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       revealKey = null;
       host.querySelector('[data-ledger-form="subsection"]')?.elements.name.focus();
       host.querySelector('[data-ledger-form="entry"], [data-ledger-form="sub-entry"]')?.elements.day.focus();
+      host.querySelector('[data-ledger-form="edit-entry"], [data-ledger-form="edit-note"]')?.elements.description.focus();
+      host.querySelector('[data-ledger-form="rename-category"]')?.elements.name.select();
       document.querySelector('#year-settings-button').dataset.year = year;
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
@@ -196,18 +200,89 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderLedger();
       showToast(`Saved to ${category}.`);
     }
+    // Double-click edit of an entry or a note: same day/description/place/amount fields as when it was added.
+    function saveEditDraft(form) {
+      const item = transactions.find(t => t.id === form.dataset.entryId);
+      if (!item) {
+        editDraft = null;
+        renderLedger();
+        return showToast('Could not find that entry. Refresh and try again.');
+      }
+      const fields = form.elements;
+      const isNote = form.dataset.ledgerForm === 'edit-note';
+      const day = Number(fields.day.value);
+      const amount = Number(fields.amount.value);
+      const checks = [
+        [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+        [fields.description, fields.description.value.trim() !== ''],
+        [fields.amount, fields.amount.value !== '' && Number.isFinite(amount) && (isNote ? amount >= 0 : amount > 0)]
+      ];
+      checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
+      const invalid = checks.find(([, ok]) => !ok);
+      if (invalid) return invalid[0].focus();
+      Object.assign(item, {
+        date: `${item.date.slice(0, 7)}-${String(day).padStart(2, '0')}`,
+        description: fields.description.value.trim(),
+        place: fields.place.value.trim(),
+        amount: Math.round(amount * 100)
+      });
+      saveTransactions();
+      editDraft = null;
+      renderLedger();
+      showToast(isNote ? 'Note updated.' : 'Entry updated.');
+    }
+    // Renaming a subsection applies to the whole year: its section lists and every entry filed under it.
+    function saveCategoryRename(form) {
+      const { month, property, type, category } = form.dataset;
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const year = Number(month.slice(0, 4));
+      if (name === category) {
+        editDraft = null;
+        return renderLedger();
+      }
+      const sections = store.sections(year).filter(section => section.type === type);
+      const taken = sections.some(section => section.subsections.some(existing => existing !== category && existing.toLowerCase() === name.toLowerCase()));
+      const problem = !name ? 'Type a name first.' : taken ? `"${name}" already exists.` : '';
+      if (problem) {
+        hint.textContent = problem;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      store.ensureYear(year).then(() => {
+        sections.forEach(section => {
+          const index = section.subsections.indexOf(category);
+          if (index >= 0) section.subsections[index] = name;
+          else if (section.subsections.length && !sections.some(other => other.subsections.includes(name))) section.subsections.push(name);
+        });
+        transactions.forEach(item => { if (item.date.startsWith(`${year}-`) && item.type === type && item.category === category) item.category = name; });
+        saveYearConfig(year);
+        saveTransactions();
+        editDraft = null;
+        revealKey = catKey(month, property, type, name);
+        renderLedger();
+        showToast(`Renamed "${category}" to "${name}" for ${year}.`);
+      }, error => {
+        console.error('Could not load the year from Firebase.', error);
+        showToast(`Could not load ${year} from Firebase.`);
+      });
+    }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
-      // Adding works by a 1.5s hold or a double-click. A hold re-renders under the pointer, so the click that
-      // follows it is swallowed; a double-click is two clicks on the same row within DOUBLE_CLICK_MS.
+      // A 1.5s hold adds a child (entry → note, subsection → entry, Income/Expenses → subsection); a double-click edits
+      // the row itself. A hold re-renders under the pointer, so the click that follows it is swallowed. Rows re-render
+      // on the first click, so a double-click is detected as two clicks on the same row within DOUBLE_CLICK_MS.
       let longPressFired = false;
       let suppressClickUntil = 0;
       let lastClick = { key: null, time: 0 };
       const DOUBLE_CLICK_MS = 400;
-      const addKeyFor = target => {
+      const rowKeyFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form')) return null;
+        const note = el.closest('[data-note-id]');
+        if (note) return `note:${note.dataset.noteId}`;
         const entryCell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         const toggle = entryCell?.querySelector('[data-toggle-entry]');
         if (toggle) return `entry:${toggle.dataset.entryId}`;
@@ -224,13 +299,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           suppressClickUntil = 0;
           return event.preventDefault();
         }
-        const addKey = addKeyFor(event.target);
-        if (addKey) {
-          const isDouble = lastClick.key === addKey && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
-          lastClick = isDouble ? { key: null, time: 0 } : { key: addKey, time: Date.now() };
+        const rowKey = rowKeyFor(event.target);
+        if (rowKey) {
+          const isDouble = lastClick.key === rowKey && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
+          lastClick = isDouble ? { key: null, time: 0 } : { key: rowKey, time: Date.now() };
           if (isDouble) {
             event.preventDefault();
-            return triggerLongPress(event.target);
+            return triggerEdit(event.target, rowKey);
           }
         }
         const yearTab = event.target.closest('[data-ledger-year]');
@@ -244,13 +319,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           saveExpandedMonths();
           if (ledgerDraft?.month === key) ledgerDraft = null;
           if (entryDraft?.month === key) entryDraft = null;
+          editDraft = null;
           renderLedger();
           return document.querySelector(`[data-toggle-month="${key}"]`)?.focus();
         }
         const addSub = event.target.closest('[data-add-subsection]');
         const addEntry = event.target.closest('[data-add-entry-row]');
         if (addEntry) event.preventDefault();
-        if ((addSub || addEntry) && (ledgerDraft || entryDraft || subEntryDraftParentId)) {
+        if ((addSub || addEntry) && hasDraft()) {
           showToast('Save or cancel the current inline edit first.');
           return;
         }
@@ -295,6 +371,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (!form) return;
         event.preventDefault();
         if (form.dataset.ledgerForm === 'entry') return saveEntryDraft(form);
+        if (form.dataset.ledgerForm === 'edit-entry' || form.dataset.ledgerForm === 'edit-note') return saveEditDraft(form);
+        if (form.dataset.ledgerForm === 'rename-category') return saveCategoryRename(form);
         if (form.dataset.ledgerForm === 'sub-entry') {
           const description = form.elements.description.value.trim();
           if (!description) {
@@ -343,13 +421,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (event.key === 'Escape') {
           if (form.dataset.ledgerForm === 'entry') entryDraft = null;
           else if (form.dataset.ledgerForm === 'sub-entry') subEntryDraftParentId = null;
+          else if (['edit-entry', 'edit-note', 'rename-category'].includes(form.dataset.ledgerForm)) editDraft = null;
           else ledgerDraft = null;
           renderLedger();
           return;
         }
 
         if (event.key === 'Enter') {
-          const isEntryForm = form.dataset.ledgerForm === 'entry' || form.dataset.ledgerForm === 'sub-entry';
+          const isEntryForm = ['entry', 'sub-entry', 'edit-entry', 'edit-note'].includes(form.dataset.ledgerForm);
           if (!isEntryForm) return;
 
           event.preventDefault();
@@ -394,7 +473,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const property = panel.dataset.property;
         const mKey = monthBlock.dataset.monthKey;
         const sections = store.sections(Number(mKey.slice(0, 4)));
-        if (ledgerDraft || entryDraft || subEntryDraftParentId) {
+        if (hasDraft()) {
           showToast('Save or cancel the current inline edit first.');
           return true;
         }
@@ -409,7 +488,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           subEntryDraftParentId = entryId;
           expandedEntries.add(entryId);
           renderLedger();
-          showToast('Add a sub-entry below.');
+          showToast('Add a note below.');
           return true;
         }
         if (cat && typeSection) {
@@ -438,6 +517,33 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return true;
         }
         return false;
+      };
+
+      // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
+      // field; Income/Expenses opens Year settings, where sections are named.
+      const triggerEdit = (element, rowKey) => {
+        element = getElement(element);
+        const panel = element?.closest('.ledger-panel');
+        const monthBlock = element?.closest('.month-block');
+        if (!panel || !monthBlock) return;
+        if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+        const [kind, ...rest] = rowKey.split(':');
+        const id = rest.join(':');
+        if (kind === 'entry') {
+          // The first click of the pair toggled the entry open or closed; put it back.
+          if (expandedEntries.has(id)) expandedEntries.delete(id);
+          else expandedEntries.add(id);
+          editDraft = { kind: 'entry', id };
+        } else if (kind === 'note') {
+          editDraft = { kind: 'note', id };
+        } else if (kind === 'cat') {
+          const cat = element.closest('.ledger-cat');
+          const type = element.closest('.ledger-type-section')?.querySelector('summary strong')?.textContent.trim().toLowerCase() === 'income' ? 'income' : 'expense';
+          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim() };
+        } else {
+          return openYearSettings(Number(monthBlock.dataset.monthKey.slice(0, 4)));
+        }
+        renderLedger();
       };
 
       const pointOf = e => e.touches?.[0] ?? e;

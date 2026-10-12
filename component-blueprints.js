@@ -13,12 +13,17 @@
   const SubEntryForm = ({ mKey, parentId }, ctx) =>
     `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" placeholder="DD"  aria-label="Day of month"><input class="ledger-entry-desc" name="description" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" placeholder="Place"  aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" placeholder="Amount"  aria-label="Amount"><span class="ledger-entry-actions"></span></form>`;
 
+  // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
+  const EditEntryForm = ({ mKey, item, kind }, ctx) =>
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate><input name="day" type="number" min="1" max="${daysIn(mKey)}" step="1" inputmode="numeric" value="${Number(item.date.slice(8, 10))}" aria-label="Day of month" required><input class="ledger-entry-desc" name="description" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Place" aria-label="Place" autocomplete="off"><input name="amount" type="number" min="0" step="any" inputmode="decimal" value="${Number(item.amount) / 100}" placeholder="Amount" aria-label="Amount" required><span class="ledger-entry-actions"></span></form>`;
+
   const SubsectionForm = ({ sectionName }, ctx) =>
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
   // Level 6: sub-entry row ----------------------------------------------------------------------
-  const SubEntryRow = (sub, { type, property }, ctx) =>
-    `<div class="ledger-entry-cell ledger-sub-entry"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${sub.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(sub.description)}</span><span class="ledger-entry-place">${ctx.esc(sub.place || '')}</span><strong class="${type}">${ctx.fmt(sub.amount, property)}</strong></span></div></div>`;
+  const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
+    ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${sub.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(sub.description)}</span><span class="ledger-entry-place">${ctx.esc(sub.place || '')}</span><strong class="${type}">${ctx.fmt(sub.amount, property)}</strong></span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property }, state, ctx) => {
@@ -26,10 +31,13 @@
     const subItems = entry.subEntries.filter(sub => sub.date.startsWith(mKey));
     const hasSubItems = subItems.length > 0;
     const showingSubEntryForm = state.subEntryDraftParentId === entry.id;
-    const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { type, property }, ctx)).join('');
+    const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
     const subEntryForm = showingSubEntryForm ? SubEntryForm({ mKey, parentId: entry.id }, ctx) : '';
     const subContent = (isExpanded && hasSubItems) ? subEntriesHtml : '';
     const allSubContent = subContent + (showingSubEntryForm || isExpanded ? subEntryForm : '');
+    if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
+      return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${subContent}</div>`;
+    }
     return `<div class="ledger-entry-cell"><div class="ledger-entry-line"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" style="cursor: ${hasSubItems ? 'pointer' : 'default'}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}"><time datetime="${entry.date}">${entry.date.slice(8, 10)}</time><span class="ledger-entry-desc">${ctx.esc(entry.description)}</span><span class="ledger-entry-place">${ctx.esc(entry.place || '')}</span><strong class="${type}">${ctx.fmt(entry._meta.total, property)}</strong></button></div>${allSubContent}</div>`;
   };
 
@@ -43,6 +51,10 @@
       .map(entry => EntryRow(entry, { mKey, type, property }, state, ctx))
       .join('');
     const draftHere = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
+    const e = state.editDraft;
+    if (e?.kind === 'category' && e.month === mKey && e.property === property && e.type === type && e.category === name) {
+      return `<div class="ledger-cat is-editing" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><form class="ledger-form cat-rename-form" data-ledger-form="rename-category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-category="${ctx.esc(name)}" novalidate><input name="name" value="${ctx.esc(name)}" maxlength="40" aria-label="Subsection name" autocomplete="off"><strong>${ctx.fmt(category._meta.total, property)}</strong><p class="ledger-form-hint" aria-live="polite"></p></form><div class="ledger-entries">${entries}</div></div>`;
+    }
     return `<details class="ledger-cat" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span><strong>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
   };
 
@@ -83,7 +95,7 @@
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.name}<small>${m.code}</small></h3>
-          <div class="ledger-totals"><span class="income" data-label="In">${ctx.fmt(m.income, property)}</span><span class="expense" data-label="Out">${ctx.fmt(m.expense, property)}</span><span class="balance" data-label="Balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span></div>
+          <div class="ledger-totals"><span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span></div>
         </header>
         <div class="ledger-sections">${sections}</div>
       </section>`;
@@ -111,9 +123,9 @@
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
-    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" data-label="${label}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? ctx.compact(amount, property) : '–'}</span>`;
+    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? ctx.compact(amount, property) : '–'}</span>`;
     return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
-      `<span class="month-tag ms-cur ${ctx.regions[property].color}">${ctx.regions[property].code}${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
@@ -130,5 +142,5 @@
   const MonthGroup = (title, count, blocksHtml) =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} months</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { EntryForm, SubEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
