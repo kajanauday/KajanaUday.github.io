@@ -1,7 +1,8 @@
-// LedgerRenderer: walks the ExpenseStore tree top-down and paints months.html.
-//   Level 1  year tabs + "N entries in YYYY" + year-to-date KPI cards (from year._meta, no re-summing)
-//   Level 2  month rows; an open month renders one CurrencyPanel per active currency (full width when there is one)
-//   Level 3+ inside each panel: Expenses/Income → categories → entries → sub-entries, all from cached _meta
+// LedgerRenderer: paints months.html from the ExpenseStore.
+//   Level 1  year tabs, "N entries in YYYY" and the year summary cards: straight from years/<year>/metadata
+//   Level 2  month rows from years/<year>/months, each showing only the currencies active that month; a closed row's
+//            figures are that month's stored metadata
+//   Level 3+ an opened month's panels (sections → categories → entries → sub-entries), built from its fetched entries
 // Interaction state (open months, expanded entries, inline drafts) is owned by the app and passed in per render,
 // so this file never touches storage or event wiring.
 (function (global) {
@@ -10,43 +11,41 @@
   class LedgerRenderer {
     constructor(store, ctx) {
       this.store = store;
-      this.ctx = ctx; // { fmt, compact, signed, netClass, esc, dayLabel, keyOf, catKey, monthLabel, regions, firstYear }
+      this.ctx = ctx; // { fmt, compact, signed, netClass, esc, dayLabel, keyOf, catKey, monthLabel, regions }
+    }
+
+    // Month indexes the year actually has in Firebase, in calendar order.
+    months(year) {
+      return Object.values(this.store.year(year)?.months || {}).map(month => month.month - 1).sort((a, b) => a - b);
     }
 
     // Priority order: this month, then finished months (newest first), then upcoming months (soonest first).
     monthOrder(year) {
       const today = new Date();
-      const months = Array.from({ length: 12 }, (_, month) => month);
+      const months = this.months(year);
       if (year !== today.getFullYear()) return months.reverse();
       const now = today.getMonth();
-      return [now, ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
-    }
-
-    orderedCurrencies(currencies) {
-      return Object.keys(this.ctx.regions).filter(property => currencies.includes(property));
+      return [...months.filter(month => month === now), ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
     }
 
     yearKpis(year) {
-      const node = this.store.year(year);
-      return this.orderedCurrencies(node.settings.currencies).map(property => {
-        const items = this.store.items(year, property);
-        const flow = this.store.flow(items);
-        const region = this.ctx.regions[property];
-        return B().YearKpiCard({ id: property, name: region.name, code: region.code, ...flow, opening: this.store.openingFor(year, property) }, year, this.ctx);
+      return this.store.yearCurrencies(year).map(currency => {
+        const totals = this.store.yearTotals(year, currency);
+        const region = this.ctx.regions[currency];
+        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing }, year, this.ctx);
       }).join('');
     }
 
-    currencyPanel(property, year, monthIndex, state) {
-      const country = this.store.country(year, monthIndex, property);
-      return B().CurrencyPanel(country, { year, monthIndex }, state, this.ctx);
+    currencyPanel(currency, year, monthIndex, state) {
+      return B().CurrencyPanel(this.store.country(year, monthIndex, currency), { year, monthIndex }, state, this.ctx);
     }
 
     monthSummary(year, monthIndex, currencies, isFuture) {
       const today = new Date();
       const daysAway = isFuture ? Math.ceil((new Date(year, monthIndex, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000) : 0;
-      const rows = this.orderedCurrencies(currencies).map(property => {
-        const flow = this.store.flow(this.store.items(year, property, monthIndex));
-        return { property, income: flow.income, expense: flow.expense, balance: this.store.closingBalance(year, property, monthIndex) };
+      const rows = currencies.map(currency => {
+        const totals = this.store.monthTotals(year, monthIndex, currency);
+        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
       });
       return B().MonthSummary(rows, { isFuture, daysAway }, this.ctx);
     }
@@ -54,9 +53,17 @@
     monthBlock(year, monthIndex, state) {
       const today = new Date();
       const mKey = this.ctx.keyOf(year, monthIndex);
-      const currencies = this.store.settings(year).currencies;
+      const currencies = this.store.monthCurrencies(year, monthIndex);
       const open = state.expandedMonths.has(mKey);
       const isFuture = new Date(year, monthIndex, 1) > today;
+      let panelsHtml = '';
+      if (open) {
+        panelsHtml = !currencies.length
+          ? '<p class="ledger-none">No currency is active this month.</p>'
+          : this.store.isLoaded(year, monthIndex)
+            ? currencies.map(currency => this.currencyPanel(currency, year, monthIndex, state)).join('')
+            : '<p class="ledger-none">Loading entries…</p>';
+      }
       return B().MonthBlock({
         mKey,
         month: monthIndex,
@@ -64,9 +71,10 @@
         open,
         isNow: year === today.getFullYear() && monthIndex === today.getMonth(),
         isFuture,
+        isEmpty: !isFuture && !this.store.monthNode(year, monthIndex)?.metadata.entries,
         summaryHtml: open ? '' : this.monthSummary(year, monthIndex, currencies, isFuture),
-        panelsHtml: open ? this.orderedCurrencies(currencies).map(property => this.currencyPanel(property, year, monthIndex, state)).join('') : '',
-        single: currencies.length === 1
+        panelsHtml,
+        single: currencies.length <= 1
       });
     }
 
@@ -75,7 +83,7 @@
       const today = new Date();
       const order = this.monthOrder(year);
       const groups = year === today.getFullYear()
-        ? [['This month', order.slice(0, 1)], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
+        ? [['This month', order.filter(month => month === today.getMonth())], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
         : [[`${year}, newest first`, order]];
       return groups.filter(([, months]) => months.length)
         .map(([title, months]) => B().MonthGroup(title, months.length, months.map(month => this.monthBlock(year, month, state)).join('')))
@@ -83,13 +91,11 @@
     }
 
     yearTabs(activeYear) {
-      const lastYear = new Date().getFullYear();
-      const years = Array.from({ length: lastYear - this.ctx.firstYear + 1 }, (_, offset) => lastYear - offset);
-      return B().YearTabs(years, activeYear);
+      return B().YearTabs(this.store.yearIds().map(Number).reverse(), activeYear);
     }
 
     yearEntryCount(year) {
-      return this.store.settings(year).currencies.reduce((sum, property) => sum + this.store.items(year, property).length, 0);
+      return this.store.year(year)?.metadata.entries || 0;
     }
   }
 

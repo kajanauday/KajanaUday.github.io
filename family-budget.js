@@ -1,51 +1,48 @@
 const STORAGE_KEY = 'family-budget-static-demo-v1';
-    const regions = {
-      india: { name: 'India', home: 'Pune home', code: 'INR', color: 'india', opening: 1973800, budget: 5500000, icon: 'ti-home-2' },
-      japan: { name: 'Japan', home: 'Tokyo home', code: 'JPY', color: 'japan', opening: 1973800, budget: 9800000, icon: 'ti-building-community' }
-    };
-    const starterTransactions = [
-      { id: 'in-1', property: 'india', date: '2026-10-09', category: 'Travel', description: 'Airport transfer', amount: 80000, type: 'expense' },
-      { id: 'in-2', property: 'india', date: '2026-10-08', category: 'Salary', description: 'Monthly salary', amount: 12500000, type: 'income' },
-      { id: 'in-3', property: 'india', date: '2026-10-07', category: 'Food', description: 'Dinner with family', amount: 370000, type: 'expense' },
-      { id: 'in-4', property: 'india', date: '2026-10-05', category: 'Utilities', description: 'Electricity & internet', amount: 432000, type: 'expense' },
-      { id: 'in-5', property: 'india', date: '2026-10-04', category: 'Housing', description: 'Apartment maintenance', amount: 2200000, type: 'expense' },
-      { id: 'in-6', property: 'india', date: '2026-10-02', category: 'Freelance', description: 'Project payment', amount: 800000, type: 'income' },
-      { id: 'in-7', property: 'india', date: '2026-10-01', category: 'Shopping', description: 'Household essentials', amount: 1000000, type: 'expense' },
-      { id: 'jp-1', property: 'japan', date: '2026-10-09', category: 'Dining', description: 'Dinner in Shibuya', amount: 1250000, type: 'expense' },
-      { id: 'jp-2', property: 'japan', date: '2026-10-08', category: 'Rent', description: 'Monthly rent', amount: 4500000, type: 'expense' },
-      { id: 'jp-3', property: 'japan', date: '2026-10-07', category: 'Salary', description: 'Monthly salary', amount: 15000000, type: 'income' },
-      { id: 'jp-4', property: 'japan', date: '2026-10-05', category: 'Transport', description: 'Suica & rail pass', amount: 750000, type: 'expense' },
-      { id: 'jp-5', property: 'japan', date: '2026-10-03', category: 'Groceries', description: 'Weekend groceries', amount: 1000000, type: 'expense' },
-      { id: 'jp-6', property: 'japan', date: '2026-10-01', category: 'Rental income', description: 'Property income', amount: 15000000, type: 'income' }
-    ];
-    const FIRST_YEAR = 2025;
-    const store = new ExpenseStore({ storageKey: STORAGE_KEY, regions, firstYear: FIRST_YEAR, starter: starterTransactions });
-    let transactions = store.transactions;
-    const yearSettingsByYear = store.settingsByYear;
+    // Data now lives in Firebase; drop the copy older builds kept in this browser.
+    try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
+    (async () => {
+    let store;
+    try {
+      store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT });
+    } catch (error) {
+      console.error('Could not load data from Firebase.', error);
+      const saveState = document.querySelector('.save-state');
+      if (saveState) saveState.textContent = 'Could not load data from Firebase';
+      return;
+    }
+    // Currencies, years and months all come from Firebase; entries are fetched per month as they are needed.
+    const regions = store.currencies;
+    const { MONTH_NAMES } = ExpenseStore;
+    const transactions = store.transactions;
+    // Start on the remembered month, else today's, else the newest month Firebase has.
     let currentMonth = (() => {
       const today = new Date();
       const savedMonth = sessionStorage.getItem(`${STORAGE_KEY}-month`);
-      if (!savedMonth || !/^\d{4}-\d{2}$/.test(savedMonth)) return new Date(today.getFullYear(), today.getMonth(), 1);
-      const [year, month] = savedMonth.split('-').map(Number);
-      if (year < FIRST_YEAR || year > today.getFullYear()) return new Date(today.getFullYear(), today.getMonth(), 1);
-      return new Date(year, month - 1, 1);
+      if (savedMonth && /^\d{4}-\d{2}$/.test(savedMonth)) {
+        const [year, month] = savedMonth.split('-').map(Number);
+        if (store.monthNode(year, month - 1)) return new Date(year, month - 1, 1);
+      }
+      if (store.monthNode(today.getFullYear(), today.getMonth())) return new Date(today.getFullYear(), today.getMonth(), 1);
+      const latest = Number(store.yearIds().pop());
+      return latest ? new Date(latest, latest < today.getFullYear() ? 11 : 0, 1) : new Date(today.getFullYear(), today.getMonth(), 1);
     })();
     let toastTimer;
     let universeOpen = sessionStorage.getItem(`${STORAGE_KEY}-universe`) === 'true';
 
-    function yearSettings(year) { return store.settings(year); }
-    function saveYearSettings() { store.saveSettings(); }
-    function openingFor(year, property) { return store.openingFor(year, property); }
-    function budgetFor(year, property) { return store.budgetFor(year, property); }
-    function saveTransactions() {
-      try {
-        store.saveTransactions();
-        const saveState = document.querySelector('.save-state');
+    function saveTransactions() { trackSave(store.saveTransactions()); }
+    function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
+    function activeCurrencies(date = currentMonth) { return store.monthCurrencies(date.getFullYear(), date.getMonth()); }
+    function trackSave(write) {
+      const saveState = document.querySelector('.save-state');
+      if (saveState) saveState.textContent = 'Saving…';
+      write.then(() => {
         if (saveState) saveState.innerHTML = '<span class="save-dot"></span> All changes saved';
-      } catch (error) {
-        const saveState = document.querySelector('.save-state');
-        if (saveState) saveState.textContent = 'Could not save locally';
-      }
+      }).catch(error => {
+        console.error('Could not save to Firebase.', error);
+        if (saveState) saveState.textContent = 'Could not save to Firebase';
+        showToast('Could not save to Firebase. Check your connection and try again.');
+      });
     }
     function monthKey(date = currentMonth) {
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -54,25 +51,23 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const key = monthKey();
       return transactions.filter(item => item.date.startsWith(key) && (!property || item.property === property));
     }
+    const localeOf = property => regions[property]?.locale || 'en-US';
     function formatMoney(minor, property) {
       const value = Number(minor || 0) / 100;
-      const formatted = new Intl.NumberFormat(property === 'japan' ? 'en-US' : 'en-IN', { maximumFractionDigits: 0 }).format(Math.abs(value));
+      const formatted = new Intl.NumberFormat(localeOf(property), { maximumFractionDigits: 0 }).format(Math.abs(value));
       return `${value < 0 ? '-' : ''}${formatted}`;
     }
     // Short form for dense cells: 1.33L / 40.8K for INR, 300K / 1.2M for JPY. Full value stays in titles and the ledger.
     // Suffixes are fixed here because browsers disagree on Intl compact labels for en-IN (some print "T" for thousand).
     function compactMoney(minor, property) {
       const value = Math.abs(Number(minor || 0) / 100);
-      const steps = property === 'japan' ? [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']] : [[1e7, 'Cr'], [1e5, 'L'], [1e3, 'K']];
+      const steps = localeOf(property) === 'en-IN' ? [[1e7, 'Cr'], [1e5, 'L'], [1e3, 'K']] : [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
       const [size, suffix] = steps.find(([limit]) => value >= limit) || [1, ''];
       const digits = suffix === 'L' || suffix === 'Cr' ? 2 : suffix && value / size < 100 ? 1 : 0;
       return `${minor < 0 ? '−' : ''}${new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value / size)}${suffix}`;
     }
     function signedMoney(minor, property, format = formatMoney) {
       return `${minor > 0 ? '+' : minor < 0 ? '−' : ''}${format(Math.abs(minor), property)}`;
-    }
-    function totalFor(items, type) {
-      return items.filter(item => item.type === type).reduce((sum, item) => sum + Number(item.amount), 0);
     }
     function monthLabel(date = currentMonth) {
       return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -81,28 +76,65 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return new Date(`${date}T12:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
     }
     function iconFor(category, type) { return ExpenseStore.iconFor(category, type); }
+    // Card figures are the month's stored metadata; only the recent-activity list needs the month's entries.
     function propertyStats(property) {
-      const items = monthTransactions(property);
-      const income = totalFor(items, 'income');
-      const expense = totalFor(items, 'expense');
-      return { items, income, expense, balance: regions[property].opening + income - expense };
-    }
-    function balanceSpark() {
-      return '<svg class="balance-spark" viewBox="0 0 78 34" fill="none" aria-hidden="true"><path d="M2 27 14 22 25 24 36 14 47 18 58 8 76 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 33H76" stroke="currentColor" stroke-opacity=".15"/></svg>';
+      const totals = store.monthTotals(currentMonth.getFullYear(), currentMonth.getMonth(), property);
+      return { items: monthTransactions(property).filter(item => !item.parentId), income: totals.income, expense: totals.expenses, balance: totals.closing };
     }
     function renderRecent(property) {
       const items = propertyStats(property).items.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).slice(0, 5);
       if (!items.length) return '<p class="transaction-meta">No activity this month yet.</p>';
       return items.map(item => `<div class="transaction-row"><span class="transaction-icon"><i class="ti ${iconFor(item.category, item.type)}" aria-hidden="true"></i></span><div class="transaction-copy"><p class="transaction-title">${escapeHtml(item.description)}</p><span class="transaction-meta">${item.section ? `${escapeHtml(item.section)} · ` : ''}${escapeHtml(item.category)} · ${dayLabel(item.date)}</span></div><span class="transaction-amount ${item.type}">${item.type === 'expense' ? '−' : '+'}${formatMoney(item.amount, property)}</span></div>`).join('');
     }
-    function renderProperty(property) {
-      const target = document.querySelector(`#property-${property}`);
-      if (!target) return;
-      const region = regions[property];
-      const budget = budgetFor(currentMonth.getFullYear(), property);
+    function propertyCard(property) {
+      const budget = store.budgetFor(property);
       const stats = propertyStats(property);
-      const spentPercent = Math.min(100, stats.expense / budget * 100);
-      target.innerHTML = LedgerBlueprints.PropertyCard({ region, property, stats, budget, spentPercent, recentHtml: renderRecent(property) }, { fmt: formatMoney, spark: balanceSpark });
+      const spentPercent = budget ? Math.min(100, stats.expense / budget * 100) : 0;
+      return LedgerBlueprints.PropertyCard({ region: regions[property], property, stats, budget, spentPercent, recentHtml: renderRecent(property) }, { fmt: formatMoney });
+    }
+    // Overview: one card per currency active this month. Country pages: their own currency, or a note when it is not active.
+    function renderProperties() {
+      const active = activeCurrencies();
+      const grid = document.querySelector('#property-grid');
+      if (grid) {
+        grid.innerHTML = active.map(property => `<article class="property-card ${regions[property].color}" id="property-${property}" data-property="${property}">${propertyCard(property)}</article>`).join('')
+          || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
+      }
+      document.querySelectorAll('.property-card[data-currency]').forEach(target => {
+        const property = target.dataset.currency;
+        const title = document.querySelector('#property-title');
+        if (title && regions[property]) title.textContent = regions[property].name;
+        target.classList.add(regions[property]?.color || property);
+        target.innerHTML = active.includes(property) ? propertyCard(property) : `<p class="transaction-meta" style="padding:20px">${escapeHtml(regions[property]?.code || property)} is not active in ${monthLabel()}.</p>`;
+      });
+    }
+    // Overview footer: the month's biggest expense categories and a few headline figures, per active currency.
+    function renderOverviewPanels() {
+      const spend = document.querySelector('#overview-spend');
+      const glance = document.querySelector('#overview-glance');
+      if (!spend || !glance) return;
+      const year = currentMonth.getFullYear();
+      const month = currentMonth.getMonth();
+      const active = activeCurrencies();
+      const none = `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
+      spend.innerHTML = active.map(property => {
+        const region = regions[property];
+        const { expense } = propertyStats(property);
+        const rows = categoryTotals(property).slice(0, 5);
+        const body = !store.isLoaded(year, month) ? '<p class="transaction-meta">Loading entries…</p>'
+          : rows.map(([name, amount]) => `<div class="spend-row"><span>${escapeHtml(name)}</span><div class="spend-bar"><i class="${region.color}" style="width:${expense ? Math.max(2, amount / expense * 100) : 0}%"></i></div><strong>${formatMoney(amount, property)}</strong></div>`).join('')
+            || '<p class="transaction-meta">No expenses recorded.</p>';
+        return `<div class="spend-group"><div class="spend-head"><span class="property-dot ${region.color}"></span><strong>${escapeHtml(region.name)}</strong><span>${formatMoney(expense, property)} ${escapeHtml(region.code)}</span></div>${body}</div>`;
+      }).join('') || none;
+      glance.innerHTML = active.map(property => {
+        const region = regions[property];
+        const stats = propertyStats(property);
+        const budget = store.budgetFor(property);
+        const left = budget - stats.expense;
+        const saved = stats.income ? Math.round((stats.income - stats.expense) / stats.income * 100) : null;
+        const entries = store.monthTotals(year, month, property).entries;
+        return `<div class="glance-row"><div class="glance-name"><span class="property-dot ${region.color}"></span><strong>${escapeHtml(region.code)}</strong></div><dl><div><dt>Saved</dt><dd class="${saved > 0 ? 'income' : saved < 0 ? 'expense' : ''}">${saved === null ? '—' : `${saved}%`}</dd></div><div><dt>Budget left</dt><dd class="${left < 0 ? 'expense' : ''}">${formatMoney(left, property)}</dd></div><div><dt>Balance</dt><dd>${formatMoney(stats.balance, property)}</dd></div><div><dt>Entries</dt><dd>${entries}</dd></div></dl></div>`;
+      }).join('') || none;
     }
     function renderTransactions() {
       const searchInput = document.querySelector('#transaction-search');
@@ -110,18 +142,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const rows = document.querySelector('#activity-rows');
       if (!searchInput || !propertyFilter || !rows) return;
       const search = searchInput.value.trim().toLowerCase();
+      const active = activeCurrencies();
+      const options = ['all', ...active];
+      if ([...propertyFilter.options].map(option => option.value).join() !== options.join()) {
+        const previous = propertyFilter.value;
+        propertyFilter.replaceChildren(new Option('All properties', 'all'), ...active.map(key => new Option(`${regions[key].name} · ${regions[key].code}`, key)));
+        propertyFilter.value = options.includes(previous) ? previous : 'all';
+      }
       const property = propertyFilter.value;
       const items = monthTransactions().filter(item => (property === 'all' || item.property === property) && `${item.description} ${item.section || ''} ${item.category} ${regions[item.property].name}`.toLowerCase().includes(search)).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
       document.querySelector('#transaction-count').textContent = `${items.length} ${items.length === 1 ? 'entry' : 'entries'}`;
-      rows.innerHTML = items.length ? items.map(item => `<tr><td>${dayLabel(item.date)}</td><td><strong>${escapeHtml(item.description)}</strong></td><td><span class="property-pill"><i class="ti ${regions[item.property].icon}" aria-hidden="true"></i>${regions[item.property].name}</span></td><td>${item.section ? `${escapeHtml(item.section)} · ` : ''}${escapeHtml(item.category)}</td><td class="amount-cell ${item.type}">${item.type === 'expense' ? '−' : '+'}${formatMoney(item.amount, item.property)}</td></tr>`).join('') : '<tr><td colspan="5" style="padding:24px 12px;color:#777e75">No transactions match this month and filter.</td></tr>';
+      rows.innerHTML = items.length ? items.map(item => `<tr><td>${dayLabel(item.date)}</td><td><strong>${escapeHtml(item.description)}</strong></td><td><span class="property-pill" title="${escapeHtml(regions[item.property].name)}"><span class="property-dot ${regions[item.property].color}"></span>${escapeHtml(regions[item.property].code)}</span></td><td>${item.section ? `${escapeHtml(item.section)} · ` : ''}${escapeHtml(item.category)}</td><td class="amount-cell ${item.type}">${item.type === 'expense' ? '−' : '+'}${formatMoney(item.amount, item.property)}</td></tr>`).join('') : `<tr><td colspan="5" style="padding:24px 12px;color:#777e75">${store.isLoaded(currentMonth.getFullYear(), currentMonth.getMonth()) ? 'No transactions match this month and filter.' : 'Loading entries…'}</td></tr>`;
     }
     function categoryTotals(property) {
       const totals = new Map();
-      monthTransactions(property).filter(item => item.type === 'expense').forEach(item => totals.set(item.category, (totals.get(item.category) || 0) + item.amount));
+      monthTransactions(property).filter(item => item.type === 'expense' && !item.parentId).forEach(item => totals.set(item.category, (totals.get(item.category) || 0) + store.entryTotal(item.id)));
       return [...totals.entries()].sort((a, b) => b[1] - a[1]);
     }
     // ---- Monthly ledger (months.html) ----
-    function closingBalance(year, property, month) { return store.closingBalance(year, property, month); }
     // Inline ledger drafts: subsection adds and unsaved transaction fields.
     let ledgerDraft = null;
     let entryDraft = null;
@@ -144,12 +182,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // Inline-edit state lives here and is handed to each render, so blueprints stay pure.
     const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft });
     const ledgerRenderer = new LedgerRenderer(store, {
-      fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions, firstYear: FIRST_YEAR,
+      fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
     });
-    function renderLedgerPanel(property, year, month) { return ledgerRenderer.currencyPanel(property, year, month, renderState()); }
     function renderYearKpis(year) { return ledgerRenderer.yearKpis(year); }
-    function renderMonthBlock(year, month) { return ledgerRenderer.monthBlock(year, month, renderState()); }
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     function renderLedger() {
       const ledger = document.querySelector('#ledger');
@@ -165,7 +201,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open]')].map(cat => cat.dataset.key);
-      host.innerHTML = renderMonthGroups(year);
+      host.innerHTML = store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
       host.querySelector('[data-ledger-form="subsection"]')?.elements.name.focus();
@@ -175,6 +211,19 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
       universe.setAttribute('aria-hidden', String(!universeOpen));
+      loadOpenMonths(year);
+    }
+    // Open months show "Loading entries…" until their entries arrive from Firebase, then the ledger repaints.
+    function loadOpenMonths(year) {
+      const pending = [...expandedMonths]
+        .filter(key => key.startsWith(`${year}-`))
+        .map(key => Number(key.slice(5, 7)) - 1)
+        .filter(month => store.monthNode(year, month) && !store.isLoaded(year, month));
+      if (!pending.length) return;
+      Promise.all(pending.map(month => store.ensureMonth(year, month))).then(renderLedger, error => {
+        console.error('Could not load entries from Firebase.', error);
+        showToast('Could not load entries from Firebase.');
+      });
     }
     function setUniverse(open) {
       universeOpen = open;
@@ -188,8 +237,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // A past year opens on its latest month with entries, unless one of its months is already open.
       const hasOpen = [...expandedMonths].some(key => key.startsWith(`${year}-`));
       if (!hasOpen && year !== today.getFullYear() && !isPhone()) {
-        const latest = transactions.filter(item => item.date.startsWith(`${year}-`)).map(item => item.date.slice(0, 7)).sort().pop();
-        if (latest) expandedMonths.add(latest);
+        const latest = ledgerRenderer.months(year).filter(month => store.monthNode(year, month).metadata.entries).pop();
+        if (latest !== undefined) expandedMonths.add(keyOf(year, latest));
         saveExpandedMonths();
       }
       ledgerDraft = null;
@@ -199,7 +248,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const input = form.elements.name;
       const name = input.value.trim().replace(/\s+/g, ' ');
       const hint = form.querySelector('.ledger-form-hint');
-      const section = yearSettings(Number(ledgerDraft.month.slice(0, 4))).sections.find(item => item.name === ledgerDraft.section);
+      const draftYear = Number(ledgerDraft.month.slice(0, 4));
+      const section = store.sections(draftYear).find(item => item.name === ledgerDraft.section);
       const problem = !name ? 'Type a name first.' : !section ? 'This section is no longer configured.' : section.subsections.some(existing => existing.toLowerCase() === name.toLowerCase()) ? `"${name}" already exists in ${section.name}.` : '';
       if (problem) {
         hint.textContent = problem;
@@ -207,13 +257,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return input.focus();
       }
       section.subsections.push(name);
-      try {
-        saveYearSettings();
-      } catch (error) {
-        section.subsections.pop();
-        hint.textContent = 'Could not save in this browser.';
-        return;
-      }
+      saveYearConfig(draftYear);
       // Go straight to the first entry for the new subsection.
       const { month, property } = ledgerDraft;
       ledgerDraft = null;
@@ -246,7 +290,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
-      // Adding works by a 2s hold or a double-click. A hold re-renders under the pointer, so the click that
+      // Adding works by a 1.5s hold or a double-click. A hold re-renders under the pointer, so the click that
       // follows it is swallowed; a double-click is two clicks on the same row within DOUBLE_CLICK_MS.
       let longPressFired = false;
       let suppressClickUntil = 0;
@@ -420,7 +464,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       let longPressTimer = null;
       let longPressTarget = null;
       let longPressStart = null;
-      const LONG_PRESS_DURATION = 2000;
+      const LONG_PRESS_DURATION = 1500;
       const LONG_PRESS_MOVE_THRESHOLD = 10;
 
       const getElement = (target) => {
@@ -438,9 +482,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const panel = element.closest('.ledger-panel');
         const monthBlock = element.closest('.month-block');
         if (!panel || !monthBlock) return false;
-        const property = Object.keys(regions).find(key => panel.classList.contains(key));
+        const property = panel.dataset.property;
         const mKey = monthBlock.dataset.monthKey;
-        const settings = yearSettings(Number(mKey.slice(0, 4)));
+        const sections = store.sections(Number(mKey.slice(0, 4)));
         if (ledgerDraft || entryDraft || subEntryDraftParentId) {
           showToast('Save or cancel the current inline edit first.');
           return true;
@@ -461,7 +505,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
         if (cat && typeSection) {
           const categoryName = cat.querySelector('.ledger-cat-name').textContent.trim();
-          const candidates = settings.sections.filter(item => item.type === type);
+          const candidates = sections.filter(item => item.type === type);
           const section = candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
           if (!section) {
             showToast('Configure a section for this year first.');
@@ -474,7 +518,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return true;
         }
         if (typeSection) {
-          const section = settings.sections.find(item => item.type === type);
+          const section = sections.find(item => item.type === type);
           if (!section) {
             showToast('Configure a section for this year first.');
             return true;
@@ -556,35 +600,46 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function renderBudgets() {
       const panels = document.querySelector('#budget-panels');
       if (!panels) return;
-      panels.innerHTML = Object.keys(regions).map(property => {
+      panels.innerHTML = activeCurrencies().map(property => {
         const region = regions[property];
-        const budget = budgetFor(currentMonth.getFullYear(), property);
+        const budget = store.budgetFor(property);
         const stats = propertyStats(property);
         const categories = categoryTotals(property);
         const remainder = Math.max(0, budget - stats.expense);
-        return `<section class="surface-panel"><div class="panel-title-row"><h2><span class="property-dot ${property}" style="display:inline-block;margin-right:7px"></span>${region.name} · ${region.code}</h2><span>${monthLabel()}</span></div><div class="category-budget">${categories.map(([name, amount]) => { const percent = Math.min(100, amount / budget * 100); return `<div class="category-budget-row"><div class="category-budget-top"><strong>${escapeHtml(name)}</strong><span>${formatMoney(amount, property)} · ${Math.round(percent)}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%;${property === 'japan' ? 'background:var(--japan)' : ''}"></div></div></div>`; }).join('') || '<p class="transaction-meta">No expenses recorded for this month.</p>'}</div><div class="budget-foot"><span>Monthly limit</span><strong>${formatMoney(budget, property)}</strong></div><div class="budget-foot"><span>Remaining</span><strong>${formatMoney(remainder, property)}</strong></div></section>`;
-      }).join('');
+        return `<section class="surface-panel"><div class="panel-title-row"><h2><span class="property-dot ${region.color}" style="display:inline-block;margin-right:7px"></span>${region.name} · ${region.code}</h2><span>${monthLabel()}</span></div><div class="category-budget">${categories.map(([name, amount]) => { const percent = budget ? Math.min(100, amount / budget * 100) : 0; return `<div class="category-budget-row"><div class="category-budget-top"><strong>${escapeHtml(name)}</strong><span>${formatMoney(amount, property)} · ${Math.round(percent)}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%;background:var(--${region.color})"></div></div></div>`; }).join('') || '<p class="transaction-meta">No expenses recorded for this month.</p>'}</div><div class="budget-foot"><span>Monthly limit</span><strong>${formatMoney(budget, property)}</strong></div><div class="budget-foot"><span>Remaining</span><strong>${formatMoney(remainder, property)}</strong></div></section>`;
+      }).join('') || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
     }
     function renderInsights() {
       const panels = document.querySelector('#insight-panels');
       if (!panels) return;
-      panels.innerHTML = Object.keys(regions).map(property => {
+      panels.innerHTML = activeCurrencies().map(property => {
         const region = regions[property];
         const stats = propertyStats(property);
         const topCategory = categoryTotals(property)[0];
         const rate = stats.income ? Math.round((stats.income - stats.expense) / stats.income * 100) : 0;
         return `<section class="surface-panel"><div class="panel-title-row"><h2>${region.name} household</h2><span>${region.code}</span></div><div class="insight-stat"><span>Income this month</span><strong style="color:var(--income)">${formatMoney(stats.income, property)}</strong><small>Recorded in ${monthLabel()}</small></div><div class="insight-stat"><span>Expenses this month</span><strong style="color:var(--expense)">${formatMoney(stats.expense, property)}</strong><small>${stats.income ? `${rate}% of income retained` : 'No income recorded yet'}</small></div><div class="insight-stat"><span>Largest category</span><strong>${topCategory ? escapeHtml(topCategory[0]) : 'No activity'}</strong><small>${topCategory ? formatMoney(topCategory[1], property) : 'Add activity to see patterns'}</small></div></section>`;
-      }).join('');
+      }).join('') || `<p class="transaction-meta">No currency is active in ${monthLabel()}.</p>`;
     }
     function render() {
       document.querySelectorAll('.month-label').forEach(el => { el.textContent = monthLabel(); });
       document.querySelectorAll('.month-label-copy').forEach(el => el.textContent = monthLabel());
-      renderProperty('india');
-      renderProperty('japan');
+      renderProperties();
+      renderOverviewPanels();
       renderTransactions();
       renderBudgets();
       renderInsights();
       renderLedger();
+    }
+    // Pages other than the ledger paint from metadata first, then repaint once the month's entries arrive.
+    function refresh() {
+      render();
+      const year = currentMonth.getFullYear();
+      const month = currentMonth.getMonth();
+      if (document.querySelector('#ledger') || !store.monthNode(year, month) || store.isLoaded(year, month)) return;
+      store.ensureMonth(year, month).then(render, error => {
+        console.error('Could not load entries from Firebase.', error);
+        showToast('Could not load entries from Firebase.');
+      });
     }
     // Opens the add form for the month on screen, optionally preset to a currency, type and section.
     // Each preset goes through the hidden selects so the year-specific options and buttons refresh in order.
@@ -634,13 +689,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const sectionSelect = sectionLabel.querySelector('select');
       const subsectionSelect = document.querySelector('#entry-category');
       const refreshOptions = () => {
-        const year = Number((dateInput.value || `${new Date().getFullYear()}-01-01`).slice(0, 4));
-        const config = yearSettings(year);
+        const date = dateInput.value ? new Date(`${dateInput.value}T12:00:00`) : currentMonth;
+        const currencies = activeCurrencies(date);
         const previousProperty = propertySelect.value;
-        propertySelect.replaceChildren(...config.currencies.map(property => new Option(`${regions[property].name} · ${regions[property].code}`, property)));
-        if (config.currencies.includes(previousProperty)) propertySelect.value = previousProperty;
+        propertySelect.replaceChildren(...currencies.map(property => new Option(`${regions[property].name} · ${regions[property].code}`, property)));
+        if (currencies.includes(previousProperty)) propertySelect.value = previousProperty;
         const previousSection = sectionSelect.value;
-        const matchingSections = config.sections.filter(section => section.type === typeSelect.value);
+        const matchingSections = store.sections(date.getFullYear()).filter(section => section.type === typeSelect.value);
         sectionSelect.replaceChildren(...matchingSections.map(section => new Option(section.name, section.name)));
         if (matchingSections.some(section => section.name === previousSection)) sectionSelect.value = previousSection;
         const section = matchingSections.find(item => item.name === sectionSelect.value) || matchingSections[0];
@@ -677,7 +732,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       select.after(group);
       const draw = () => {
         group.innerHTML = [...select.options].map(option => `<button type="button" class="segment" data-value="${escapeHtml(option.value)}" aria-pressed="${option.value === select.value}">${escapeHtml(option.textContent)}</button>`).join('')
-          || '<span class="segment-empty">Nothing configured for this year</span>';
+          || '<span class="segment-empty">Nothing configured for this month</span>';
       };
       group.addEventListener('click', event => {
         const button = event.target.closest('[data-value]');
@@ -693,22 +748,23 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     // ---- Year configuration (months.html) ----
     // Edits are held as per-year drafts so the user can hop between year boxes; Save validates and writes every touched year.
-    const CODE_TO_PROPERTY = Object.fromEntries(Object.entries(regions).map(([property, region]) => [region.code, property]));
+    // A year's currencies are { <cur>: { from: <month name>, opening } }; a currency is active from its `from` month to December.
     const configState = { year: null, drafts: {} };
     const toMajor = minor => String(Math.round(Number(minor || 0) / 100));
-    function draftFromSettings(year, source = yearSettings(year)) {
-      const properties = Object.keys(regions);
+    function draftFromYear(year) {
+      const node = store.year(year);
       return {
         dirty: false,
-        currencies: source.currencies.map(property => regions[property].code),
-        openings: Object.fromEntries(properties.map(property => [property, toMajor(source === yearSettings(year) ? openingFor(year, property) : source.openings?.[property] ?? 0)])),
-        sections: source.sections.map(section => ({ name: section.name, originalName: section.name, type: section.type, subsections: [...section.subsections] }))
+        from: Object.fromEntries(store.currencyKeys().map(key => [key, node?.currencies[key]?.from || ''])),
+        openings: Object.fromEntries(store.currencyKeys().map(key => [key, toMajor(node?.currencies[key]?.opening)])),
+        sections: (node?.sections || []).map(section => ({ name: section.name, originalName: section.name, type: section.type, subsections: [...section.subsections] }))
       };
     }
     function configDraft(year) {
-      configState.drafts[year] ||= draftFromSettings(year);
+      configState.drafts[year] ||= draftFromYear(year);
       return configState.drafts[year];
     }
+    const draftCurrencies = draft => store.currencyKeys().filter(key => draft.from[key]);
     function markConfigDirty() {
       configDraft(configState.year).dirty = true;
       document.querySelector(`[data-config-year="${configState.year}"]`)?.classList.add('is-dirty');
@@ -787,11 +843,16 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       draw();
       return root;
     }
+    function renderConfigCurrencies() {
+      const draft = configDraft(configState.year);
+      document.querySelector('#config-currencies').innerHTML = store.currencyKeys().map(key => `<label class="money-field"><span>${escapeHtml(regions[key].code)}</span><select data-config-from="${key}" aria-label="${escapeHtml(regions[key].code)} active from"><option value="">Not used</option>${MONTH_NAMES.map(name => `<option value="${name}"${draft.from[key] === name ? ' selected' : ''}>from ${name}</option>`).join('')}</select></label>`).join('')
+        || '<span class="config-muted">No currencies in Firebase</span>';
+    }
     function renderConfigMoney() {
       const year = configState.year;
       const draft = configDraft(year);
-      const properties = draft.currencies.map(code => CODE_TO_PROPERTY[code]);
-      const carry = year > FIRST_YEAR;
+      const properties = draftCurrencies(draft);
+      const carry = Boolean(store.year(year - 1));
       const field = (kind, property) => `<label class="money-field"><span>${regions[property].code}</span><input type="number" step="1" inputmode="numeric" value="${escapeHtml(draft[kind][property])}" data-config-money="${kind}" data-property="${property}"></label>`;
       document.querySelector('#config-openings').innerHTML = properties.length
         ? `${properties.map(property => field('openings', property)).join('')}${carry ? `<button type="button" class="link-button" data-config-carry>Use ${year - 1} closing</button>` : ''}`
@@ -827,41 +888,56 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     function renderConfig() {
       const year = configState.year;
-      const draft = configDraft(year);
-      const lastYear = new Date().getFullYear();
-      document.querySelector('#year-settings-title').textContent = `${year} configuration`;
-      document.querySelector('#config-years').innerHTML = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset).map(value => {
-        const summary = configState.drafts[value] || draftFromSettings(value);
-        return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${summary.currencies.join(' · ') || 'No currency'}</span><span>${summary.sections.length} section${summary.sections.length === 1 ? '' : 's'}</span></button>`;
-      }).join('');
-      const others = Array.from({ length: lastYear - FIRST_YEAR + 1 }, (_, offset) => lastYear - offset).filter(value => value !== year);
+      const years = store.yearIds().map(Number).reverse();
+      document.querySelector('#year-settings-title').textContent = year ? `${year} configuration` : 'No years yet';
+      document.querySelector('#config-years').innerHTML = years.map(value => {
+        const summary = configState.drafts[value] || draftFromYear(value);
+        const currencies = draftCurrencies(summary).map(key => `${regions[key].code}${summary.from[key] === 'January' ? '' : ` from ${summary.from[key].slice(0, 3)}`}`);
+        return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${currencies.join(' · ') || 'No currency'}</span><span>${summary.sections.length} section${summary.sections.length === 1 ? '' : 's'}</span></button>`;
+      }).join('') + `<button type="button" class="config-year" id="config-add-year" title="Add the next year to Firebase"><strong><i class="ti ti-plus" aria-hidden="true"></i> ${years.length ? years[0] + 1 : new Date().getFullYear()}</strong><span>Add year</span></button>`;
+      const others = years.filter(value => value !== year);
       document.querySelector('#config-copy').innerHTML = `<option value="">Copy from…</option>${others.map(value => `<option value="${value}">${value} setup</option>`).join('')}`;
-      document.querySelector('#config-copy').hidden = !others.length;
-      const currencySlot = document.querySelector('#config-currencies');
-      currencySlot.replaceChildren(chipInput({
-        values: draft.currencies,
-        label: 'Currencies',
-        placeholder: 'Add INR or JPY',
-        allowed: Object.values(regions).map(region => region.code),
-        countFor: code => usageCount(year, item => item.property === CODE_TO_PROPERTY[code]),
-        onChange: () => { markConfigDirty(); renderConfigMoney(); }
-      }));
+      document.querySelector('#config-copy').hidden = !others.length || !year;
+      document.querySelector('.config-body').hidden = !year;
+      if (!year) return;
+      renderConfigCurrencies();
       renderConfigMoney();
       renderConfigSections();
       document.querySelector('#year-settings-error').hidden = true;
     }
+    // Entry counts and section renames need the whole year's entries, so a year is loaded before it is shown here.
+    function showConfigYear(year) {
+      const ready = store.year(year) ? store.ensureYear(year) : Promise.resolve();
+      return ready.then(() => {
+        configState.year = store.year(year) ? year : null;
+        renderConfig();
+      }, error => {
+        console.error('Could not load the year from Firebase.', error);
+        showToast(`Could not load ${year} from Firebase.`);
+      });
+    }
     function openYearSettings(year) {
       const dialog = document.querySelector('#year-settings-dialog');
       if (!dialog) return;
-      configState.year = year;
       configState.drafts = {};
-      renderConfig();
-      dialog.showModal();
+      showConfigYear(year).then(() => dialog.showModal());
+    }
+    // A new year copies the latest year's sections and currencies, opening at that year's closing balances.
+    function addConfigYear() {
+      const years = store.yearIds().map(Number);
+      const year = years.length ? Math.max(...years) + 1 : new Date().getFullYear();
+      const previous = store.year(year - 1);
+      const currencies = Object.fromEntries((previous?.metadata.currencies || []).map(key => [key, { from: 'January', opening: store.yearTotals(year - 1, key).closing }]));
+      const sections = (previous?.sections || []).map(section => ({ ...section, subsections: [...section.subsections] }));
+      saveYearConfig(year, { currencies, sections });
+      showConfigYear(year);
+      render();
+      showToast(`Added ${year}. Review its currencies and sections.`);
     }
     function validateDraft(draft) {
       const names = draft.sections.map(section => section.name.trim().toLowerCase());
-      if (!draft.currencies.length) return 'Add at least one currency.';
-      const amounts = draft.currencies.map(code => draft.openings[CODE_TO_PROPERTY[code]]);
+      if (!draftCurrencies(draft).length) return 'Choose a start month for at least one currency.';
+      const amounts = draftCurrencies(draft).map(key => draft.openings[key]);
       if (amounts.some(value => String(value).trim() !== '' && !Number.isFinite(Number(value)))) return 'Opening balance must be a number.';
       if (!draft.sections.length) return 'Add at least one section.';
       if (names.some(name => !name)) return 'Every section needs a name.';
@@ -875,17 +951,16 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const form = document.querySelector('#year-settings-form');
       if (!dialog || !form) return;
       document.querySelector('#config-years').addEventListener('click', event => {
+        if (event.target.closest('#config-add-year')) return addConfigYear();
         const button = event.target.closest('[data-config-year]');
-        if (!button) return;
-        configState.year = Number(button.dataset.configYear);
-        renderConfig();
+        if (button) showConfigYear(Number(button.dataset.configYear));
       });
       document.querySelector('#config-copy').addEventListener('change', event => {
         const from = Number(event.target.value);
         if (!from) return;
-        const copy = draftFromSettings(from, { ...yearSettings(from), openings: undefined });
+        const copy = draftFromYear(from);
         const draft = configDraft(configState.year);
-        Object.assign(draft, { currencies: copy.currencies, sections: copy.sections.map(section => ({ ...section, originalName: null })) });
+        Object.assign(draft, { from: copy.from, sections: copy.sections.map(section => ({ ...section, originalName: null })) });
         markConfigDirty();
         renderConfig();
         showToast(`Copied the ${from} setup. Review and save.`);
@@ -896,7 +971,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (money) draft[money.dataset.configMoney][money.dataset.property] = money.value;
         const name = event.target.closest('.config-section-name');
         if (name) draft.sections[Number(name.dataset.sectionIndex)].name = name.value;
-        if (money || name) markConfigDirty();
+        const from = event.target.closest('[data-config-from]');
+        if (from) {
+          draft.from[from.dataset.configFrom] = from.value;
+          renderConfigMoney();
+        }
+        if (money || name || from) markConfigDirty();
       });
       form.addEventListener('click', event => {
         const draft = configDraft(configState.year);
@@ -919,9 +999,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           document.querySelector('#config-sections .config-section:last-child .config-section-name')?.focus();
         }
         if (event.target.closest('[data-config-carry]')) {
-          draft.currencies.forEach(code => {
-            const property = CODE_TO_PROPERTY[code];
-            draft.openings[property] = toMajor(closingBalance(configState.year - 1, property, 11));
+          draftCurrencies(draft).forEach(key => {
+            draft.openings[key] = toMajor(store.yearTotals(configState.year - 1, key).closing);
           });
           markConfigDirty();
           renderConfigMoney();
@@ -945,37 +1024,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             return;
           }
         }
-        const previous = JSON.stringify(yearSettingsByYear);
-        const previousTransactions = JSON.stringify(transactions);
         touched.forEach(([year, draft]) => {
-          const properties = draft.currencies.map(code => CODE_TO_PROPERTY[code]);
           const sections = draft.sections.map(section => ({ name: section.name.trim(), type: section.type, subsections: [...section.subsections] }));
           // Keep existing entries attached to a renamed section.
           draft.sections.forEach((section, index) => {
             if (!section.originalName || section.originalName === sections[index].name) return;
             transactions.forEach(item => { if (item.date.startsWith(`${year}-`) && item.section === section.originalName) item.section = sections[index].name; });
           });
-          yearSettingsByYear[year] = {
-            currencies: properties,
-            sections,
-            openings: Object.fromEntries(properties.map(property => [property, Math.round(Number(draft.openings[property] || 0) * 100)])),
-            // Budgets are no longer edited here; keep any saved value so the overview page is unchanged.
-            budgets: yearSettingsByYear[year]?.budgets
-          };
+          const currencies = Object.fromEntries(draftCurrencies(draft).map(key => [key, { from: draft.from[key], opening: Math.round(Number(draft.openings[key] || 0) * 100) }]));
+          saveYearConfig(Number(year), { currencies, sections });
         });
-        try {
-          saveYearSettings();
-          if (touched.length) localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-        } catch (saveError) {
-          console.error('Could not save year settings.', saveError);
-          Object.keys(yearSettingsByYear).forEach(key => delete yearSettingsByYear[key]);
-          Object.assign(yearSettingsByYear, JSON.parse(previous));
-          transactions = JSON.parse(previousTransactions);
-          store.replaceTransactions(transactions);
-          error.textContent = 'Could not save these settings in this browser.';
-          error.hidden = false;
-          return;
-        }
+        if (touched.length) saveTransactions();
         dialog.close();
         render();
         document.querySelector('#entry-date')?.dispatchEvent(new Event('change'));
@@ -1008,9 +1067,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       }
       setupLedger();
       document.querySelectorAll('[data-month-shift]').forEach(button => button.addEventListener('click', () => {
-      currentMonth.setMonth(currentMonth.getMonth() + Number(button.dataset.monthShift));
+      const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + Number(button.dataset.monthShift), 1);
+      if (!store.monthNode(next.getFullYear(), next.getMonth())) return showToast(`${monthLabel(next)} is not set up in Firebase.`);
+      currentMonth = next;
       sessionStorage.setItem(`${STORAGE_KEY}-month`, monthKey());
-      render();
+      refresh();
     }));
     document.querySelectorAll('.device-button').forEach(button => button.addEventListener('click', () => {
       const grid = document.querySelector('#property-grid');
@@ -1025,15 +1086,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
     document.querySelector('#transaction-form')?.addEventListener('submit', event => {
       event.preventDefault();
-      const values = Object.fromEntries(new FormData(event.currentTarget));
+      const form = event.currentTarget;
+      const values = Object.fromEntries(new FormData(form));
       const amount = Number(values.amount);
       if (!Number.isFinite(amount) || amount <= 0) return;
-      transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, section: values.section, category: values.category.trim(), description: values.description.trim(), place: values.place.trim(), amount: Math.round(amount * 100), type: values.type });
-      saveTransactions();
-      event.currentTarget.reset();
-      document.querySelector('#transaction-dialog').close();
-      render();
-      showToast('Transaction added to your activity.');
+      const date = new Date(`${values.date}T12:00:00`);
+      if (!activeCurrencies(date).includes(values.property)) return showToast(`No currency is set up for ${monthLabel(date)}.`);
+      // The month's entries must be loaded first, or saving it would replace what Firebase already holds.
+      store.ensureMonth(date.getFullYear(), date.getMonth()).then(() => {
+        transactions.push({ id: `new-${Date.now()}`, property: values.property, date: values.date, section: values.section, category: values.category.trim(), description: values.description.trim(), place: values.place.trim(), amount: Math.round(amount * 100), type: values.type });
+        saveTransactions();
+        form.reset();
+        document.querySelector('#transaction-dialog').close();
+        render();
+        showToast('Transaction added to your activity.');
+      }, error => {
+        console.error('Could not load the month from Firebase.', error);
+        showToast('Could not load that month from Firebase. Try again.');
+      });
     });
     document.querySelector('#logout-button')?.addEventListener('click', () => {
       sessionStorage.removeItem(`${STORAGE_KEY}-passkey-signed-in`);
@@ -1048,5 +1118,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         document.querySelectorAll('.device-button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.device === preferredView)));
       }
     } catch (error) { /* Layout preference is optional. */ }
-    render();
+    refresh();
     }
+    })();

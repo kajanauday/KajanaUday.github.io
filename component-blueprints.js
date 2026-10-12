@@ -80,10 +80,10 @@
     const sections = TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true)
       + TypeSection('income', byType.income, { mKey, property }, state, ctx, false);
     const m = country._meta;
-    return `<section class="ledger-panel ${property}" aria-label="${m.name}">
+    return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.name}<small>${m.code}</small></h3>
-          <div class="ledger-totals"><span class="income">${ctx.fmt(m.income, property)}</span><span class="expense">${ctx.fmt(m.expense, property)}</span><span class="balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span></div>
+          <div class="ledger-totals"><span class="income" data-label="In">${ctx.fmt(m.income, property)}</span><span class="expense" data-label="Out">${ctx.fmt(m.expense, property)}</span><span class="balance" data-label="Balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span></div>
         </header>
         <div class="ledger-sections">${sections}</div>
       </section>`;
@@ -91,16 +91,16 @@
 
   // Level 1: year-to-date KPI card, one per active currency ------------------------------------
   const YearKpiCard = (country, year, ctx) => {
-    const { id: property, name, code, income, expense, net, opening } = country;
+    const { id: property, name, code, color, income, expense, net, opening, closing } = country;
     const rate = income ? Math.round(net / income * 100) : null;
-    return `<article class="kpi-card ${property}">
+    return `<article class="kpi-card ${color}">
           <header class="kpi-head"><strong>${name}</strong><span>${code} · ${year} to date</span></header>
           <dl class="kpi-values">
             <div><dt>Income</dt><dd class="income">${ctx.fmt(income, property)}</dd></div>
             <div><dt>Expenses</dt><dd class="expense">${ctx.fmt(expense, property)}</dd></div>
             <div><dt>Net</dt><dd class="${ctx.netClass(net)}">${ctx.signed(net, property)}</dd></div>
             <div><dt>Saved</dt><dd>${rate === null ? '—' : `${rate}%`}</dd></div>
-            <div title="Opening ${ctx.fmt(opening, property)} + net"><dt>Balance</dt><dd>${ctx.fmt(opening + net, property)}</dd></div>
+            <div title="Opening ${ctx.fmt(opening, property)} + net"><dt>Balance</dt><dd>${ctx.fmt(closing, property)}</dd></div>
           </dl>
         </article>`;
   };
@@ -111,14 +111,14 @@
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
-    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${ctx.compact(amount, property)}</span>`;
+    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" data-label="${label}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? ctx.compact(amount, property) : '–'}</span>`;
     return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
-      `<span class="month-tag ms-cur ${property}">${ctx.regions[property].code}${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+      `<span class="month-tag ms-cur ${ctx.regions[property].color}">${ctx.regions[property].code}${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
-  const MonthBlock = ({ mKey, month, label, open, isNow, isFuture, summaryHtml, panelsHtml, single }) =>
-    `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}" data-month-key="${mKey}" aria-label="${label}">
+  const MonthBlock = ({ mKey, month, label, open, isNow, isFuture, isEmpty, summaryHtml, panelsHtml, single }) =>
+    `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
           <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
           <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label}">${label}</button></h2>
@@ -132,7 +132,7 @@
 
   // Overview / property pages: the per-country summary card ------------------------------------
   const PropertyCard = ({ region, property, stats, budget, spentPercent, recentHtml }, ctx) =>
-    `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${ctx.fmt(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${ctx.fmt(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${ctx.fmt(stats.balance, property)}</strong><span class="balance-change"><i class="ti ti-trending-up" aria-hidden="true"></i> ${stats.income ? 'On pace this month' : 'Opening balance'}</span></div>${ctx.spark()}</div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${ctx.fmt(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${ctx.fmt(budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${recentHtml}</div></section></div>`;
+    `<div class="property-inner"><header class="property-header"><div class="property-identity"><span class="property-badge"><i class="ti ${region.icon}" aria-hidden="true"></i></span><div><h2 class="property-title">${region.name.toUpperCase()}</h2><span class="property-meta">${region.home}</span></div></div><span class="currency-chip"><span>${region.code}</span></span></header><div class="property-stats"><div class="stat-box"><span class="stat-label">Income</span><strong class="stat-value income">${ctx.fmt(stats.income, property)}</strong></div><div class="stat-box"><span class="stat-label">Expenses</span><strong class="stat-value expense">${ctx.fmt(stats.expense, property)}</strong></div></div><div class="balance-box"><div><span class="balance-label">Current balance</span><strong class="balance-value">${ctx.fmt(stats.balance, property)}</strong><span class="balance-change">Closing balance for the month</span></div></div><section aria-label="Monthly budget"><div class="card-section-head"><h3>Monthly spend</h3><button type="button" class="subtle-action" data-page-link="budgets">Budget details <i class="ti ti-arrow-up-right" aria-hidden="true"></i></button></div><div class="budget-line"><span>${ctx.fmt(stats.expense, property)} spent</span><strong>${Math.round(spentPercent)}% of ${ctx.fmt(budget, property)}</strong></div><div class="progress-track"><div class="progress-fill" style="width:${spentPercent}%"></div></div></section><section aria-label="Recent transactions"><div class="card-section-head"><h3>Recent activity</h3><button type="button" class="subtle-action" data-page-link="transactions">See all <i class="ti ti-arrow-right" aria-hidden="true"></i></button></div><div class="transaction-list">${recentHtml}</div></section></div>`;
 
   global.LedgerBlueprints = { EntryForm, SubEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup, PropertyCard };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -5,16 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f8f4">
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261011b">
-  <script src="../data-layer.js?v=20261011b" defer></script>
-  <script src="../component-blueprints.js?v=20261011b" defer></script>
-  <script src="../renderer-engine.js?v=20261011b" defer></script>
-  <script src="../family-budget.js?v=20261011b" defer></script>
+  <link rel="stylesheet" href="../family-budget.css?v=20261012ui5">
+  <script src="../firebase-config.js?v=20261012a" defer></script>
+  <script src="../data-layer.js?v=20261012g" defer></script>
+  <script src="../component-blueprints.js?v=20261012ui3" defer></script>
+  <script src="../renderer-engine.js?v=20261012ui3" defer></script>
+  <script src="../family-budget.js?v=20261012ui3" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
     <a class="brand" href="months.html" aria-label="Expense Tracker"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Expense Tracker</span></a>
-    <div></div>
+    <nav class="top-nav" aria-label="Main navigation">
+      <a href="months.html" aria-current="page"><i class="ti ti-calendar-month" aria-hidden="true"></i><span>Ledger</span></a>
+      <a href="overview.html"><i class="ti ti-layout-dashboard" aria-hidden="true"></i><span>Overview</span></a>
+      <a href="transactions.html"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>Transactions</span></a>
+      <a href="budgets.html"><i class="ti ti-chart-donut-3" aria-hidden="true"></i><span>Budgets</span></a>
+      <a href="insights.html"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Insights</span></a>
+    </nav>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
       <button type="button" class="icon-button" id="year-settings-button" aria-label="Year settings" title="Year settings"><i class="ti ti-settings" aria-hidden="true"></i></button>
