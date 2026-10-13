@@ -7,7 +7,9 @@
 //                                    previous year's closing balance when carryIn is true
 //     monthConfig/<year>_<Month>     { <cur>: { active, carry } }  per-month overrides: currency on/off, and whether the month
 //                                    brings in the previous balance (default: active from `from`, carry on)
-//     sections[]                     { name, type, subsections[] }  the year's section taxonomy
+//     monthSections/<year>_<Month>/<cur>  { own: true, sections[{ name, type, subsections[] }] }  each month's own taxonomy per
+//                                    currency; a month without one has no sections. (A legacy year-wide `sections[]` is moved
+//                                    into every month once, on open, and then removed.)
 //     metadata                       { entries, currencies[], <cur>: { income, expenses, balance, entries, opening, closing } }
 //     months/<year>_<Month>          { name, month, currencies[], metadata: { entries, <cur>: { income, expenses, balance, entries,
 //                                    closing, carried, previous } } }
@@ -100,9 +102,12 @@
   }
 
   // Firebase drops empty arrays and objects, so restore them before the UI reads a year.
+  const normalizeSections = sections => (sections || []).map(section => ({ ...section, subsections: section.subsections || [] }));
   function normalizeYear(year = {}) {
     year.currencies ||= {};
-    year.sections = (year.sections || []).map(section => ({ ...section, subsections: section.subsections || [] }));
+    if (year.sections) year.sections = normalizeSections(year.sections);
+    year.monthSections ||= {};
+    Object.values(year.monthSections).forEach(month => Object.values(month).forEach(own => { own.sections = normalizeSections(own.sections); }));
     year.metadata ||= { entries: 0 };
     year.metadata.currencies ||= [];
     year.months ||= {};
@@ -194,7 +199,35 @@
       const store = new ExpenseStore({ db, currencies: ordered, years: years || {} });
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
+      await store.moveYearSectionsToMonths();
       return store;
+    }
+    // One-time move from year-wide sections to per-month lists. Every month and currency that is on or has entries, and has
+    // no list of its own, gets the year's sections with only the subsections it uses; then the year's list is dropped.
+    // Nothing is written unless every month of those years loaded. If the write fails, the moved lists stay in memory and
+    // the next save writes them with the year; the next open moves again from whatever Firebase still holds.
+    async moveYearSectionsToMonths() {
+      const years = this.yearIds().filter(year => this.year(year).sections?.length);
+      if (!years.length) return;
+      await Promise.all(years.map(year => this.ensureYear(year)));
+      years.forEach(year => {
+        const node = this.year(year);
+        MONTH_NAMES.forEach((_, monthIndex) => {
+          const id = monthIdOf(year, monthIndex);
+          const month = node.monthSections[id] || {};
+          const setup = this.monthSetup(year, monthIndex);
+          this.currencyKeys().forEach(currency => {
+            const items = this.items(year, currency, monthIndex);
+            if (month[currency] || !(setup[currency].active || items.length)) return;
+            const used = (type, name) => items.some(item => item.type === type && item.category === name);
+            month[currency] = { own: true, sections: node.sections.map(section => ({ ...section, subsections: section.subsections.filter(name => used(section.type, name)) })) };
+          });
+          if (Object.keys(month).length) node.monthSections[id] = month;
+        });
+        delete node.sections;
+      });
+      const update = this.recomputeFrom(years[0]);
+      await this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the per-month sections.', error));
     }
 
     // ---- shell: years, months and their metadata ----
@@ -202,7 +235,26 @@
     ordered(list) { return this.currencyKeys().filter(key => list.includes(key)); }
     yearIds() { return Object.keys(this.years).sort(); }
     year(year) { return this.years[String(year)]; }
-    sections(year) { return this.year(year)?.sections || []; }
+    // A month's sections for one currency; a month that has none set up has an empty list.
+    sections(year, monthIndex, currency) {
+      return this.year(year)?.monthSections[monthIdOf(year, monthIndex)]?.[currency]?.sections || [];
+    }
+    // An editable copy of a month's sections, for the month settings dialog.
+    sectionsDraft(year, monthIndex, currency) {
+      return this.sections(year, monthIndex, currency).map(section => ({ ...section, subsections: [...section.subsections] }));
+    }
+    // The month's own list for a currency, created empty if it has none yet.
+    ownSections(year, monthIndex, currency) {
+      const month = this.year(year).monthSections[monthIdOf(year, monthIndex)] ||= {};
+      month[currency] ||= { own: true, sections: [] };
+      return month[currency].sections;
+    }
+    saveMonthSections(year, monthIndex, currency, sections) {
+      const node = this.year(year);
+      (node.monthSections[monthIdOf(year, monthIndex)] ||= {})[currency] = { own: true, sections: normalizeSections(sections) };
+      const update = this.recomputeFrom(String(year));
+      return this.queue(() => this.db.patch(update));
+    }
     monthNode(year, monthIndex) { return this.year(year)?.months[monthIdOf(year, monthIndex)]; }
     monthCurrencies(year, monthIndex) { return this.ordered(this.monthNode(year, monthIndex)?.currencies || []); }
     yearCurrencies(year) { return this.ordered(this.year(year)?.metadata.currencies || []); }
@@ -271,7 +323,7 @@
       if (years.size) Object.assign(update, this.recomputeFrom([...years].sort()[0]));
       return this.queue(() => (Object.keys(update).length ? this.db.patch(update) : null));
     }
-    // Writes a year's configuration ({ currencies, sections }) and its rebuilt metadata. Creates the year if new.
+    // Writes a year's configuration ({ currencies }) and its rebuilt metadata. Creates the year if new.
     saveYear(year, config) {
       const key = String(year);
       this.years[key] = normalizeYear({ ...this.years[key], ...config });
@@ -358,7 +410,7 @@
       const totals = this.monthTotals(year, monthIndex, currency);
       const sections = {};
       const claimed = new Set();
-      [...this.sections(year)]
+      [...this.sections(year, monthIndex, currency)]
         .sort((a, b) => (a.type === 'income' ? 0 : 1) - (b.type === 'income' ? 0 : 1))
         .forEach(section => {
           const own = items.filter(item => item.type === section.type && !claimed.has(item) && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));

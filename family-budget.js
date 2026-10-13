@@ -33,6 +33,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
 
     function saveTransactions() { trackSave(store.saveTransactions()); }
     function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
+    const yearMonthOf = mKey => [Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)) - 1];
+    function saveMonthSections(mKey, property) {
+      const [year, monthIndex] = yearMonthOf(mKey);
+      trackSave(store.saveMonthSections(year, monthIndex, property, store.ownSections(year, monthIndex, property)));
+    }
     function trackSave(write) {
       const saveState = document.querySelector('.save-state');
       if (saveState) saveState.textContent = 'Saving…';
@@ -164,27 +169,32 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       ledgerDraft = null;
       renderLedger();
     }
+    // Adds a subsection to this month's own list for this currency; other months keep theirs.
     function saveDraftSubsection(form) {
       const input = form.elements.name;
       const name = input.value.trim().replace(/\s+/g, ' ');
       const hint = form.querySelector('.ledger-form-hint');
-      const draftYear = Number(ledgerDraft.month.slice(0, 4));
-      const section = store.sections(draftYear).find(item => item.name === ledgerDraft.section);
-      const problem = !name ? 'Type a name first.' : !section ? 'This section is no longer configured.' : section.subsections.some(existing => existing.toLowerCase() === name.toLowerCase()) ? `"${name}" already exists in ${section.name}.` : '';
+      const { month, property } = ledgerDraft;
+      const [year, monthIndex] = yearMonthOf(month);
+      const problem = !name ? 'Type a name first.' : !store.sections(year, monthIndex, property).some(item => item.name === ledgerDraft.section) ? 'This section is no longer set up for this month.' : '';
       if (problem) {
         hint.textContent = problem;
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      section.subsections.push(name);
-      saveYearConfig(draftYear);
-      // Go straight to the first entry for the new subsection.
-      const { month, property } = ledgerDraft;
+      const sections = store.ownSections(year, monthIndex, property);
+      const section = sections.find(item => item.name === ledgerDraft.section);
+      const existing = sections.filter(item => item.type === section.type).flatMap(item => item.subsections).find(item => item.toLowerCase() === name.toLowerCase());
+      const category = existing || name;
+      const holder = existing ? sections.find(item => item.type === section.type && item.subsections.includes(existing)) : section;
+      if (!existing) section.subsections.push(name);
+      saveMonthSections(month, property);
+      // Go straight to the first entry for the subsection.
       ledgerDraft = null;
-      entryDraft = { month, property, section: section.name, type: section.type, category: name };
-      revealKey = catKey(month, property, section.type, name);
+      entryDraft = { month, property, section: holder.name, type: section.type, category };
+      revealKey = catKey(month, property, section.type, category);
       renderLedger();
-      showToast(`Added "${name}" to ${section.name}.`);
+      showToast(existing ? `Add an entry to "${category}".` : `Added "${name}" to ${section.name} for this month.`);
     }
     function saveEntryDraft(form) {
       const fields = form.elements;
@@ -241,42 +251,105 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderLedger();
       showToast(isNote ? 'Note updated.' : 'Entry updated.');
     }
-    // Renaming a subsection applies to the whole year: its section lists and every entry filed under it.
+    // Deletes one ledger row and everything under it, limited to the month and currency the row is shown in.
+    // Deleting a subsection also takes it off that month's own section list.
+    function deleteRow({ deleteRow: kind, entryId, month, property, type, category }) {
+      const inRow = {
+        note: item => item.id === entryId,
+        entry: item => item.id === entryId,
+        category: item => !item.parentId && item.date.startsWith(month) && item.property === property && item.type === type && item.category === category
+      }[kind];
+      const rows = transactions.filter(inRow);
+      const [rowYear, rowMonth] = month ? yearMonthOf(month) : [];
+      const emptyListed = kind === 'category' && !rows.length && store.sections(rowYear, rowMonth, property).some(section => section.type === type && section.subsections.includes(category));
+      if (emptyListed) {
+        if (!window.confirm(`Remove the empty subsection "${category}" from ${monthLabel(new Date(rowYear, rowMonth, 1))}?`)) return;
+        store.ownSections(rowYear, rowMonth, property).filter(section => section.type === type).forEach(section => {
+          section.subsections = section.subsections.filter(name => name !== category);
+        });
+        saveMonthSections(month, property);
+        editDraft = null;
+        renderLedger();
+        return showToast(`Removed "${category}".`);
+      }
+      if (!rows.length) {
+        editDraft = null;
+        renderLedger();
+        return showToast('Nothing to delete. Refresh and try again.');
+      }
+      const ids = new Set(rows.map(item => item.id));
+      const doomed = new Set(transactions.filter(item => ids.has(item.id) || ids.has(item.parentId)));
+      const notes = [...doomed].filter(item => item.parentId).length;
+      const entries = doomed.size - notes;
+      const plural = (n, word) => `${n} ${n === 1 ? word : word === 'entry' ? 'entries' : `${word}s`}`;
+      const label = {
+        note: `the note "${rows[0].description}"`,
+        entry: `the entry "${rows[0].description}"`,
+        category: `"${category}"`
+      }[kind];
+      const scope = kind === 'note' ? '' : ` (${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''})`;
+      const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${monthLabel(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))}` : '';
+      if (!window.confirm(`Delete ${label}${scope}${where}? This cannot be undone.`)) return;
+      if (kind === 'category') {
+        const [year, monthIndex] = yearMonthOf(month);
+        store.ownSections(year, monthIndex, property).filter(section => section.type === type).forEach(section => {
+          section.subsections = section.subsections.filter(name => name !== category);
+        });
+        saveMonthSections(month, property);
+      }
+      for (let index = transactions.length - 1; index >= 0; index--) {
+        if (doomed.has(transactions[index])) transactions.splice(index, 1);
+      }
+      saveTransactions();
+      editDraft = null;
+      renderLedger();
+      showToast(kind === 'note' ? 'Note deleted.' : `Deleted ${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''}.`);
+    }
+    // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
     function saveCategoryRename(form) {
       const { month, property, type, category } = form.dataset;
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
       const name = input.value.trim().replace(/\s+/g, ' ');
-      const year = Number(month.slice(0, 4));
+      const [year, monthIndex] = yearMonthOf(month);
       if (name === category) {
         editDraft = null;
         return renderLedger();
       }
-      const sections = store.sections(year).filter(section => section.type === type);
-      const taken = sections.some(section => section.subsections.some(existing => existing !== category && existing.toLowerCase() === name.toLowerCase()));
-      const problem = !name ? 'Type a name first.' : taken ? `"${name}" already exists.` : '';
+      const inPanel = item => item.date.startsWith(month) && item.property === property && item.type === type;
+      const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
+      const taken = transactions.some(item => inPanel(item) && sameName(item.category));
+      const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used this month.` : '';
       if (problem) {
         hint.textContent = problem;
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      store.ensureYear(year).then(() => {
-        sections.forEach(section => {
-          const index = section.subsections.indexOf(category);
-          if (index >= 0) section.subsections[index] = name;
-          else if (section.subsections.length && !sections.some(other => other.subsections.includes(name))) section.subsections.push(name);
-        });
-        transactions.forEach(item => { if (item.date.startsWith(`${year}-`) && item.type === type && item.category === category) item.category = name; });
-        saveYearConfig(year);
-        saveTransactions();
-        editDraft = null;
-        revealKey = catKey(month, property, type, name);
-        renderLedger();
-        showToast(`Renamed "${category}" to "${name}" for ${year}.`);
-      }, error => {
-        console.error('Could not load the year from Firebase.', error);
-        showToast(`Could not load ${year} from Firebase.`);
+      // Copy the month's list before moving entries, so the copy still holds the old name.
+      const sections = store.ownSections(year, monthIndex, property).filter(section => section.type === type);
+      // Renaming onto an empty subsection already listed merges into it, keeping its spelling and section.
+      const target = sections.find(section => section.subsections.some(sameName));
+      const finalName = target ? target.subsections.find(sameName) : name;
+      const moved = transactions.filter(item => inPanel(item) && item.category === category);
+      moved.forEach(item => {
+        item.category = finalName;
+        if (target) item.section = target.name;
       });
+      sections.forEach(section => {
+        const index = section.subsections.indexOf(category);
+        if (index < 0) return;
+        if (target) section.subsections.splice(index, 1);
+        else section.subsections[index] = name;
+      });
+      if (!sections.some(section => section.subsections.includes(finalName))) {
+        sections.find(section => section.name === moved[0]?.section)?.subsections.push(finalName);
+      }
+      saveMonthSections(month, property);
+      saveTransactions();
+      editDraft = null;
+      revealKey = catKey(month, property, type, finalName);
+      renderLedger();
+      showToast(`Renamed "${category}" to "${finalName}" for this month.`);
     }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
@@ -318,6 +391,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (Date.now() < suppressClickUntil && !event.target.closest('form')) {
           suppressClickUntil = 0;
           return event.preventDefault();
+        }
+        const deleteButton = event.target.closest('[data-delete-row]');
+        if (deleteButton) {
+          event.preventDefault();
+          return deleteRow(deleteButton.dataset);
         }
         const rowKey = rowKeyFor(event.target);
         if (rowKey) {
@@ -510,7 +588,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (!panel || !monthBlock) return false;
         const property = panel.dataset.property;
         const mKey = monthBlock.dataset.monthKey;
-        const sections = store.sections(Number(mKey.slice(0, 4)));
+        const sections = store.sections(...yearMonthOf(mKey), property);
         if (hasDraft()) {
           showToast('Save or cancel the current inline edit first.');
           return true;
@@ -534,7 +612,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           const candidates = sections.filter(item => item.type === type);
           const section = candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
           if (!section) {
-            showToast('Configure a section for this year first.');
+            showToast('Add a section for this month first: double-click the month name.');
             return true;
           }
           entryDraft = { month: mKey, property, section: section.name, type, category: categoryName };
@@ -546,7 +624,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (typeSection) {
           const section = sections.find(item => item.type === type);
           if (!section) {
-            showToast('Configure a section for this year first.');
+            showToast('Add a section for this month first: double-click the month name.');
             return true;
           }
           ledgerDraft = { month: mKey, property, section: section.name };
@@ -558,7 +636,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       };
 
       // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
-      // field; Income/Expenses opens Year settings, where sections are named.
+      // field; Income/Expenses opens the month's settings, where its sections are named.
       const triggerEdit = (element, rowKey) => {
         element = getElement(element);
         const panel = element?.closest('.ledger-panel');
@@ -581,7 +659,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
-          return openYearSettings(Number(monthBlock.dataset.monthKey.slice(0, 4)));
+          return openMonthSettings(...yearMonthOf(monthBlock.dataset.monthKey));
         }
         renderLedger();
       };
@@ -682,8 +760,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       toastTimer = setTimeout(() => { toast.hidden = true; }, 2500);
     }
     // ---- Month settings: double-click a month name ----
-    // Per currency: whether it is used this month, and whether the month brings in the previous balance.
-    const monthState = { year: null, month: null, setup: null };
+    // Per currency: whether it is used this month, whether the month brings in the previous balance, and the month's own
+    // sections. Sections edited here belong to this month only.
+    const monthState = { year: null, month: null, setup: null, sections: {}, dirty: new Set() };
     function renderMonthSettings() {
       const { year, month, setup } = monthState;
       document.querySelector('#month-settings-title').textContent = monthLabel(new Date(year, month, 1));
@@ -700,15 +779,62 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           ${active ? `<label class="check-field"><input type="checkbox" data-month-carry="${key}"${carry ? ' checked' : ''}><span>Bring in the balance from ${escapeHtml(from)} <em>${escapeHtml(amount)}</em></span></label>` : ''}
         </div>`;
       }).join('');
+      renderMonthSections();
       document.querySelector('#month-settings-error').hidden = true;
+    }
+    function monthSectionsFor(key) {
+      const { year, month } = monthState;
+      monthState.sections[key] ||= store.sectionsDraft(year, month, key).map(section => ({ ...section, originalName: section.name }));
+      return monthState.sections[key];
+    }
+    function renderMonthSections() {
+      const { year, month, setup } = monthState;
+      const root = document.querySelector('#month-sections');
+      root.replaceChildren();
+      const items = key => transactions.filter(item => !item.parentId && item.property === key && item.date.startsWith(keyOf(year, month)));
+      store.currencyKeys().filter(key => setup[key].active).forEach(key => {
+        const list = monthSectionsFor(key);
+        const block = document.createElement('section');
+        block.className = 'config-block';
+        block.dataset.currency = key;
+        block.innerHTML = `<div class="config-block-head"><h3><span class="cur-dot ${regions[key].color}"></span> ${escapeHtml(regions[key].code)} sections</h3><button type="button" class="quiet-button" data-month-add-section><i class="ti ti-plus" aria-hidden="true"></i> Add section</button></div><div class="config-sections"></div>`;
+        const holder = block.querySelector('.config-sections');
+        list.forEach((section, index) => {
+          const box = document.createElement('fieldset');
+          box.className = `config-section ${section.type}`;
+          box.dataset.sectionIndex = index;
+          const entries = items(key).filter(item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category)))).length;
+          box.innerHTML = `<div class="config-section-head">
+              <input class="config-section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40">
+              <div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>
+              <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
+              <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            </div>
+            <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
+          box.querySelector('.kv-row').append(chipInput({
+            values: section.subsections,
+            label: `Subsections of ${section.name || 'section'}`,
+            placeholder: 'Type a name, press Enter or comma',
+            countFor: name => items(key).filter(item => item.type === section.type && item.category.toLowerCase() === name.toLowerCase()).length,
+            onChange: () => monthState.dirty.add(key)
+          }));
+          holder.append(box);
+        });
+        if (!list.length) holder.innerHTML = '<p class="config-muted">No sections this month yet. Add one to start categorising entries.</p>';
+        root.append(block);
+      });
     }
     function openMonthSettings(year, month) {
       if (!store.year(year)) return showToast(`${year} is not set up in Firebase.`);
-      monthState.year = year;
-      monthState.month = month;
-      monthState.setup = JSON.parse(JSON.stringify(store.monthSetup(year, month)));
-      renderMonthSettings();
-      document.querySelector('#month-settings-dialog').showModal();
+      // Section usage and the first copy of a month's sections need its entries.
+      store.ensureMonth(year, month).then(() => {
+        Object.assign(monthState, { year, month, setup: JSON.parse(JSON.stringify(store.monthSetup(year, month))), sections: {}, dirty: new Set() });
+        renderMonthSettings();
+        document.querySelector('#month-settings-dialog').showModal();
+      }, error => {
+        console.error('Could not load the month from Firebase.', error);
+        showToast('Could not load that month from Firebase.');
+      });
     }
     function setupMonthSettings() {
       const dialog = document.querySelector('#month-settings-dialog');
@@ -720,15 +846,64 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (carry) monthState.setup[carry.dataset.monthCarry].carry = carry.checked;
         if (active) renderMonthSettings();
       });
+      form.addEventListener('input', event => {
+        const name = event.target.closest('.config-section-name');
+        const block = event.target.closest('[data-currency]');
+        if (!name || !block) return;
+        monthSectionsFor(block.dataset.currency)[Number(name.closest('.config-section').dataset.sectionIndex)].name = name.value;
+        monthState.dirty.add(block.dataset.currency);
+      });
+      form.addEventListener('click', event => {
+        const block = event.target.closest('#month-sections [data-currency]');
+        if (!block) return;
+        const key = block.dataset.currency;
+        const list = monthSectionsFor(key);
+        const box = event.target.closest('.config-section');
+        const typeButton = event.target.closest('[data-section-type]');
+        const changed = (typeButton && box) || (event.target.closest('[data-remove-section]') && box) || event.target.closest('[data-month-add-section]');
+        if (!changed) return;
+        if (typeButton) list[Number(box.dataset.sectionIndex)].type = typeButton.dataset.sectionType;
+        else if (box) list.splice(Number(box.dataset.sectionIndex), 1);
+        else list.push({ name: '', originalName: null, type: 'expense', subsections: [] });
+        monthState.dirty.add(key);
+        renderMonthSections();
+        if (!box) document.querySelector(`#month-sections [data-currency="${key}"] .config-section:last-child .config-section-name`)?.focus();
+      });
+      form.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && event.target.matches('.config-section-name')) event.preventDefault();
+      });
       form.addEventListener('submit', event => {
         event.preventDefault();
         const { year, month, setup } = monthState;
-        if (!Object.values(setup).some(item => item.active)) {
-          const error = document.querySelector('#month-settings-error');
-          error.textContent = 'Keep at least one currency on.';
+        const error = document.querySelector('#month-settings-error');
+        const fail = message => {
+          error.textContent = message;
           error.hidden = false;
-          return;
+        };
+        if (!Object.values(setup).some(item => item.active)) return fail('Keep at least one currency on.');
+        const edited = [...monthState.dirty].filter(key => setup[key].active);
+        for (const key of edited) {
+          const names = monthSectionsFor(key).map(section => section.name.trim().toLowerCase());
+          if (names.some(name => !name)) return fail(`${regions[key].code}: every section needs a name.`);
+          if (new Set(names).size !== names.length) return fail(`${regions[key].code}: section names must be unique.`);
         }
+        let renamed = false;
+        edited.forEach(key => {
+          const list = monthSectionsFor(key);
+          // Entries follow a section renamed here, in this month and currency only.
+          list.forEach(section => {
+            const name = section.name.trim();
+            if (!section.originalName || section.originalName === name) return;
+            transactions.forEach(item => {
+              if (item.property === key && item.date.startsWith(keyOf(year, month)) && item.section === section.originalName) {
+                item.section = name;
+                renamed = true;
+              }
+            });
+          });
+          trackSave(store.saveMonthSections(year, month, key, list.map(section => ({ name: section.name.trim(), type: section.type, subsections: [...section.subsections] }))));
+        });
+        if (renamed) saveTransactions();
         trackSave(store.saveMonthSetup(year, month, setup));
         dialog.close();
         renderLedger();
@@ -752,7 +927,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         || `<span class="config-muted">${date && store.year(date.getFullYear()) ? 'No currency in this month' : 'This year is not set up'}</span>`;
       const select = document.querySelector('#entry-category');
       const previous = select.value;
-      const sections = date ? store.sections(date.getFullYear()).filter(section => section.type === entryState.type) : [];
+      const sections = date ? store.sections(date.getFullYear(), date.getMonth(), entryState.currency).filter(section => section.type === entryState.type) : [];
       select.innerHTML = sections.map(section => `<optgroup label="${escapeHtml(section.name)}">${section.subsections.map(name => `<option value="${escapeHtml(name)}" data-section="${escapeHtml(section.name)}">${escapeHtml(name)}</option>`).join('')}</optgroup>`).join('');
       if ([...select.options].some(option => option.value === previous)) select.value = previous;
       document.querySelector('#entry-dialog-title').textContent = entryState.type === 'income' ? 'Add income' : 'Add an expense';
@@ -813,7 +988,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const error = document.querySelector('#entry-error');
         const invalid = checks.find(([, ok]) => !ok);
         if (invalid || !entryState.currency) {
-          error.textContent = !date || !store.year(date.getFullYear()) ? 'That year is not set up yet. Add it in Year settings.' : !entryState.currency ? 'No currency is on for that month.' : 'Fill in the highlighted fields.';
+          error.textContent = !date || !store.year(date.getFullYear()) ? 'That year is not set up yet. Add it in Year settings.' : !entryState.currency ? 'No currency is on for that month.' : !fields.category.options.length ? 'That month has no subsections yet. Add one in its month settings (double-click the month name).' : 'Fill in the highlighted fields.';
           error.hidden = false;
           return invalid?.[0].focus();
         }
@@ -851,8 +1026,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         dirty: false,
         from: Object.fromEntries(store.currencyKeys().map(key => [key, node?.currencies[key]?.from || ''])),
         openings: Object.fromEntries(store.currencyKeys().map(key => [key, toMajor(node?.currencies[key]?.opening)])),
-        carryIn: Object.fromEntries(store.currencyKeys().map(key => [key, Boolean(node?.currencies[key]?.carryIn)])),
-        sections: (node?.sections || []).map(section => ({ name: section.name, originalName: section.name, type: section.type, subsections: [...section.subsections] }))
+        carryIn: Object.fromEntries(store.currencyKeys().map(key => [key, Boolean(node?.currencies[key]?.carryIn)]))
       };
     }
     function configDraft(year) {
@@ -864,31 +1038,21 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       configDraft(configState.year).dirty = true;
       document.querySelector(`[data-config-year="${configState.year}"]`)?.classList.add('is-dirty');
     }
-    function usageCount(year, filter) {
-      return transactions.filter(item => item.date.startsWith(`${year}-`) && filter(item)).length;
-    }
     // LinkedIn-style tag field: type and press Enter or comma, paste a comma list, Backspace removes the last chip, × removes any chip.
-    function chipInput({ values, label, placeholder, allowed = null, countFor = () => 0, onChange = () => {} }) {
+    function chipInput({ values, label, placeholder, countFor = () => 0, onChange = () => {} }) {
       const root = document.createElement('div');
       root.className = 'chip-field';
       root.innerHTML = `<div class="chip-input"><input type="text" aria-label="${escapeHtml(label)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div><p class="chip-hint" aria-live="polite"></p>`;
       const box = root.querySelector('.chip-input');
       const input = root.querySelector('input');
       const hint = root.querySelector('.chip-hint');
-      if (allowed) {
-        const list = document.createElement('datalist');
-        list.id = `chip-options-${Math.random().toString(36).slice(2)}`;
-        list.innerHTML = allowed.map(value => `<option value="${value}"></option>`).join('');
-        input.setAttribute('list', list.id);
-        root.append(list);
-      }
       const draw = () => {
         box.querySelectorAll('.chip').forEach(chip => chip.remove());
         values.forEach((value, index) => {
           const count = countFor(value);
           const chip = document.createElement('span');
           chip.className = 'chip';
-          chip.innerHTML = `<span>${escapeHtml(value)}</span>${count ? `<small title="${count} ${count === 1 ? 'entry' : 'entries'} this year">${count}</small>` : ''}<button type="button" aria-label="Remove ${escapeHtml(value)}" data-chip-index="${index}">×</button>`;
+          chip.innerHTML = `<span>${escapeHtml(value)}</span>${count ? `<small title="${count} ${count === 1 ? 'entry' : 'entries'} this month">${count}</small>` : ''}<button type="button" aria-label="Remove ${escapeHtml(value)}" data-chip-index="${index}">×</button>`;
           box.insertBefore(chip, input);
         });
         input.placeholder = values.length ? '' : placeholder;
@@ -897,8 +1061,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const add = raw => {
         const problems = [];
         raw.split(/[,\n]/).map(part => part.trim()).filter(Boolean).forEach(part => {
-          const value = allowed ? allowed.find(option => option.toLowerCase() === part.toLowerCase()) : part.slice(0, 40);
-          if (!value) return problems.push(`"${part}" is not available. Use ${allowed.join(' or ')}.`);
+          const value = part.slice(0, 40);
           if (values.some(existing => existing.toLowerCase() === value.toLowerCase())) return problems.push(`"${value}" is already added.`);
           values.push(value);
         });
@@ -956,34 +1119,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         </div>`;
       }).join('') || '<span class="config-muted">No currencies in Firebase</span>';
     }
-    function renderConfigSections() {
-      const year = configState.year;
-      const draft = configDraft(year);
-      const list = document.querySelector('#config-sections');
-      list.replaceChildren();
-      draft.sections.forEach((section, index) => {
-        const box = document.createElement('fieldset');
-        box.className = `config-section ${section.type}`;
-        const entries = usageCount(year, item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category))));
-        box.innerHTML = `<div class="config-section-head">
-            <input class="config-section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40" data-section-index="${index}">
-            <div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>
-            <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
-            <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
-          </div>
-          <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
-        box.querySelector('.kv-row').append(chipInput({
-          values: section.subsections,
-          label: `Subsections of ${section.name || 'section'}`,
-          placeholder: 'Type a name, press Enter or comma',
-          countFor: name => usageCount(year, item => item.type === section.type && item.category.toLowerCase() === name.toLowerCase()),
-          onChange: markConfigDirty
-        }));
-        box.dataset.sectionIndex = index;
-        list.append(box);
-      });
-      if (!draft.sections.length) list.innerHTML = '<p class="config-muted">No sections yet. Add one to start categorising entries.</p>';
-    }
     function renderConfig() {
       const year = configState.year;
       const years = store.yearIds().map(Number).reverse();
@@ -991,56 +1126,39 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       document.querySelector('#config-years').innerHTML = years.map(value => {
         const summary = configState.drafts[value] || draftFromYear(value);
         const currencies = draftCurrencies(summary).map(key => `${regions[key].code}${summary.from[key] === 'January' ? '' : ` from ${summary.from[key].slice(0, 3)}`}`);
-        return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${currencies.join(' · ') || 'No currency'}</span><span>${summary.sections.length} section${summary.sections.length === 1 ? '' : 's'}</span></button>`;
+        return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${currencies.join(' · ') || 'No currency'}</span></button>`;
       }).join('') + `<button type="button" class="config-year" id="config-add-year" title="Add the next year to Firebase"><strong><i class="ti ti-plus" aria-hidden="true"></i> ${years.length ? years[0] + 1 : new Date().getFullYear()}</strong><span>Add year</span></button>`;
-      const others = years.filter(value => value !== year);
-      document.querySelector('#config-copy').innerHTML = `<option value="">Copy from…</option>${others.map(value => `<option value="${value}">${value} setup</option>`).join('')}`;
-      document.querySelector('#config-copy').hidden = !others.length || !year;
       document.querySelector('.config-body').hidden = !year;
       if (!year) return;
       renderConfigCurrencies();
-      renderConfigSections();
       document.querySelector('#year-settings-error').hidden = true;
     }
-    // Entry counts and section renames need the whole year's entries, so a year is loaded before it is shown here.
     function showConfigYear(year) {
-      const ready = store.year(year) ? store.ensureYear(year) : Promise.resolve();
-      return ready.then(() => {
-        configState.year = store.year(year) ? year : null;
-        renderConfig();
-      }, error => {
-        console.error('Could not load the year from Firebase.', error);
-        showToast(`Could not load ${year} from Firebase.`);
-      });
+      configState.year = store.year(year) ? year : null;
+      renderConfig();
     }
     function openYearSettings(year) {
       const dialog = document.querySelector('#year-settings-dialog');
       if (!dialog) return;
       configState.drafts = {};
-      showConfigYear(year).then(() => dialog.showModal());
+      showConfigYear(year);
+      dialog.showModal();
     }
-    // A new year copies the latest year's sections and currencies, and brings in that year's closing balances.
+    // A new year copies the latest year's currencies and brings in its closing balances. Its months start with no sections.
     function addConfigYear() {
       const years = store.yearIds().map(Number);
       const year = years.length ? Math.max(...years) + 1 : new Date().getFullYear();
       const previous = store.year(year - 1);
       const currencies = Object.fromEntries((previous?.metadata.currencies || []).map(key => [key, { from: 'January', opening: 0, carryIn: true }]));
-      const sections = (previous?.sections || []).map(section => ({ ...section, subsections: [...section.subsections] }));
-      saveYearConfig(year, { currencies, sections });
+      saveYearConfig(year, { currencies });
       showConfigYear(year);
       renderLedger();
-      showToast(`Added ${year}. Review its currencies and sections.`);
+      showToast(`Added ${year}. Review its currencies.`);
     }
     function validateDraft(draft) {
-      const names = draft.sections.map(section => section.name.trim().toLowerCase());
       if (!draftCurrencies(draft).length) return 'Choose a start month for at least one currency.';
       const amounts = draftCurrencies(draft).filter(key => !draft.carryIn[key]).map(key => draft.openings[key]);
       if (amounts.some(value => String(value).trim() !== '' && !Number.isFinite(Number(value)))) return 'Opening balance must be a number.';
-      if (!draft.sections.length) return 'Add at least one section.';
-      if (names.some(name => !name)) return 'Every section needs a name.';
-      if (new Set(names).size !== names.length) return 'Section names must be unique.';
-      const bare = draft.sections.find(section => !section.subsections.length);
-      if (bare) return `Add at least one subsection to "${bare.name}".`;
       return '';
     }
     function setupYearConfig() {
@@ -1052,53 +1170,20 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const button = event.target.closest('[data-config-year]');
         if (button) showConfigYear(Number(button.dataset.configYear));
       });
-      document.querySelector('#config-copy').addEventListener('change', event => {
-        const from = Number(event.target.value);
-        if (!from) return;
-        const copy = draftFromYear(from);
-        const draft = configDraft(configState.year);
-        Object.assign(draft, { from: copy.from, sections: copy.sections.map(section => ({ ...section, originalName: null })) });
-        markConfigDirty();
-        renderConfig();
-        showToast(`Copied the ${from} setup. Review and save.`);
-      });
       form.addEventListener('input', event => {
         const draft = configDraft(configState.year);
         const money = event.target.closest('[data-config-money]');
         if (money) draft[money.dataset.configMoney][money.dataset.property] = money.value;
-        const name = event.target.closest('.config-section-name');
-        if (name) draft.sections[Number(name.dataset.sectionIndex)].name = name.value;
         const from = event.target.closest('[data-config-from]');
         if (from) draft.from[from.dataset.configFrom] = from.value;
         const carryIn = event.target.closest('[data-config-carry-in]');
         if (carryIn) draft.carryIn[carryIn.dataset.configCarryIn] = carryIn.checked;
         if (from || carryIn) renderConfigCurrencies();
-        if (money || name || from || carryIn) markConfigDirty();
-      });
-      form.addEventListener('click', event => {
-        const draft = configDraft(configState.year);
-        const box = event.target.closest('.config-section');
-        const typeButton = event.target.closest('[data-section-type]');
-        if (typeButton && box) {
-          draft.sections[Number(box.dataset.sectionIndex)].type = typeButton.dataset.sectionType;
-          markConfigDirty();
-          renderConfigSections();
-        }
-        if (event.target.closest('[data-remove-section]') && box) {
-          draft.sections.splice(Number(box.dataset.sectionIndex), 1);
-          markConfigDirty();
-          renderConfigSections();
-        }
-        if (event.target.closest('#config-add-section')) {
-          draft.sections.push({ name: '', originalName: null, type: 'expense', subsections: [] });
-          markConfigDirty();
-          renderConfigSections();
-          document.querySelector('#config-sections .config-section:last-child .config-section-name')?.focus();
-        }
+        if (money || from || carryIn) markConfigDirty();
       });
       // Enter inside a plain field should not save the whole dialog by accident.
       form.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && event.target.matches('input:not(.chip-input input)')) event.preventDefault();
+        if (event.key === 'Enter' && event.target.matches('input')) event.preventDefault();
       });
       form.addEventListener('submit', event => {
         event.preventDefault();
@@ -1115,16 +1200,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           }
         }
         touched.forEach(([year, draft]) => {
-          const sections = draft.sections.map(section => ({ name: section.name.trim(), type: section.type, subsections: [...section.subsections] }));
-          // Keep existing entries attached to a renamed section.
-          draft.sections.forEach((section, index) => {
-            if (!section.originalName || section.originalName === sections[index].name) return;
-            transactions.forEach(item => { if (item.date.startsWith(`${year}-`) && item.section === section.originalName) item.section = sections[index].name; });
-          });
           const currencies = Object.fromEntries(draftCurrencies(draft).map(key => [key, { from: draft.from[key], opening: Math.round(Number(draft.openings[key] || 0) * 100), carryIn: draft.carryIn[key] }]));
-          saveYearConfig(Number(year), { currencies, sections });
+          saveYearConfig(Number(year), { currencies });
         });
-        if (touched.length) saveTransactions();
         dialog.close();
         renderLedger();
         showToast(touched.length ? `Saved ${touched.map(([year]) => year).join(' & ')} configuration.` : 'No changes to save.');

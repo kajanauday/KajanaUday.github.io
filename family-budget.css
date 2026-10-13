@@ -48,7 +48,6 @@
     .save-dot { width: 7px; height: 7px; border-radius: 50%; background: #2da66c; }
     .icon-button { width: 33px; height: 33px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 15px; }
     h1, h2, h3, p { margin-top: 0; }
-    .filter-select { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12.5px; }
     .primary-button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 0; border-radius: 7px; background: var(--forest); color: white; cursor: pointer; font-size: 12.5px; font-weight: 700; transition: background .15s, transform .15s; }
     .primary-button:hover { transform: translateY(-1px); background: var(--forest-dark); }
     .modal { width: min(470px, calc(100% - 26px)); max-height: 90vh; padding: 23px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px #202a2040; }
@@ -81,7 +80,9 @@
     .check-field em { display: block; color: var(--muted); font-size: 11.5px; font-style: normal; }
     .check-field.is-strong > span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
     .check-field.is-strong em { flex-basis: 100%; font-weight: 500; }
-    .month-dialog { width: min(440px, calc(100% - 26px)); }
+    .month-dialog { width: min(600px, calc(100% - 26px)); max-height: min(90vh, 860px); overflow-y: auto; }
+    .month-sections { display: grid; gap: 10px; margin-top: 12px; }
+    .month-sections:empty { display: none; }
     .month-currency-rows, .config-currency-rows { display: grid; gap: 8px; }
     .month-currency { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcf9; }
     .month-currency .check-field:not(.is-strong) { padding-left: 23px; }
@@ -107,7 +108,7 @@
     .config-block { display: grid; gap: 8px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
     .config-block-head { display: flex; align-items: center; gap: 8px; }
     .config-block-head h3 { margin: 0 auto 0 0; font: 700 13px var(--display); }
-    .config-block-head .filter-select, .config-block-head .quiet-button { height: 30px; min-height: 30px; font-size: 11px; }
+    .config-block-head .quiet-button { height: 30px; min-height: 30px; font-size: 11px; }
     .kv-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: start; gap: 10px; }
     .kv-key { padding-top: 8px; color: var(--muted); font: 500 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
     .kv-value { min-width: 0; }
@@ -146,12 +147,9 @@
     .config-section .kv-row { grid-template-columns: 90px minmax(0, 1fr); }
     .config-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 11px 18px; border-top: 1px solid var(--line); background: var(--surface); }
     .config-foot .settings-error { flex-basis: 100%; }
-    .config-tip { margin-right: auto; color: var(--muted); font-size: 10px; }
-    .config-tip kbd { padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface-soft); font: 500 9px var(--mono); }
     @media (max-width: 560px) {
       .kv-row, .config-section .kv-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
       .kv-key { padding-top: 0; }
-      .config-tip { display: none; }
       .config-head, .config-body { padding-inline: 12px; }
       .money-field input { width: 110px; }
     }
@@ -314,10 +312,17 @@
     .ledger-entry-form input[name="day"], .ledger-entry-form input[name="amount"] { font-family: var(--mono); text-align: right; }
     .ledger-entry-form input[name="amount"] { min-width: 0; }
     .ledger-entry-actions { display: none; }
+    .ledger-entry-form.is-edit .ledger-entry-actions, .cat-rename-form .ledger-entry-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; padding: 4px 0 2px; }
+    @media not (pointer: coarse) {
+      .ledger-entry-form.is-edit .ledger-entry-actions .mini-btn:not(.is-delete) { display: none; }
+    }
+    .mini-btn.is-delete { width: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; color: var(--expense); font-size: 12px; font-weight: 600; margin-right: auto; }
+    .mini-btn.is-delete:hover { background: var(--expense-soft); color: var(--expense); }
     @media (pointer: coarse) {
       .ledger-entry-form .ledger-entry-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; padding: 6px 0 2px; }
       .ledger-entry-actions .mini-btn { width: auto; height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 700; }
       .ledger-entry-actions .mini-btn.is-save { border-color: var(--forest); background: var(--forest); color: #fff; }
+      .ledger-entry-actions .mini-btn.is-delete { color: var(--expense); }
     }
     /* Hold feedback: a fill sweeps across the row and completes exactly when the 0.8s hold fires.
        It starts after a short pause so ordinary clicks never flash. */

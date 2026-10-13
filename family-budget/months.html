@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f8f4">
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261012f1">
+  <link rel="stylesheet" href="../family-budget.css?v=20261013b">
   <script src="../firebase-config.js?v=20261012a" defer></script>
-  <script src="../data-layer.js?v=20261012f1" defer></script>
-  <script src="../component-blueprints.js?v=20261012f1" defer></script>
+  <script src="../data-layer.js?v=20261013a" defer></script>
+  <script src="../component-blueprints.js?v=20261013b" defer></script>
   <script src="../renderer-engine.js?v=20261012c3" defer></script>
-  <script src="../family-budget.js?v=20261012f1" defer></script>
+  <script src="../family-budget.js?v=20261013b" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -48,14 +48,9 @@
           <div class="config-block-head"><h3 id="config-general-title">Currencies</h3></div>
           <div class="config-currency-rows" id="config-currencies"></div>
         </section>
-        <section class="config-block" aria-labelledby="config-sections-title">
-          <div class="config-block-head"><h3 id="config-sections-title">Sections</h3><select id="config-copy" class="filter-select" aria-label="Copy setup from another year"></select><button type="button" class="quiet-button" id="config-add-section"><i class="ti ti-plus" aria-hidden="true"></i> Add section</button></div>
-          <div class="config-sections" id="config-sections"></div>
-        </section>
       </div>
       <footer class="config-foot">
         <p class="settings-error" id="year-settings-error" role="alert" hidden></p>
-        <span class="config-tip">Type and press <kbd>Enter</kbd> or <kbd>,</kbd> to add · paste a comma list · <kbd>⌫</kbd> removes the last</span>
         <button type="button" class="quiet-button" data-close-dialog>Cancel</button>
         <button type="submit" class="primary-button">Save</button>
       </footer>
@@ -66,6 +61,7 @@
     <form id="month-settings-form" novalidate>
       <div class="modal-header"><div><p>Month settings</p><h2 id="month-settings-title">Month</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="month-currency-rows" id="month-currency-rows"></div>
+      <div class="month-sections" id="month-sections"></div>
       <p class="settings-error" id="month-settings-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
     </form>
