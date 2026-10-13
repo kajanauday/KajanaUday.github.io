@@ -141,17 +141,18 @@
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
-    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? ctx.compact(amount, property) : '–'}</span>`;
+    // The short-form suffix (K, L, Cr, M, B) is set apart so it reads as a unit, not a digit.
+    const unitTag = text => text.replace(/([A-Za-z]+)$/, '<span class="ms-unit">$1</span>');
+    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '–'}</span>`;
     return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
       `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
-  const MonthBlock = ({ mKey, month, label, open, isNow, isFuture, isEmpty, summaryHtml, panelsHtml, single }) =>
+  const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, summaryHtml, panelsHtml, single }) =>
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
-          <span class="month-index" aria-hidden="true">${String(month + 1).padStart(2, '0')}</span>
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for month settings">${label}</button></h2>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for month settings">${name}</button></h2>
           ${open ? '<button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>' : summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}

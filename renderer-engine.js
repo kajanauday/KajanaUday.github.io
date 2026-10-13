@@ -66,8 +66,8 @@
       }
       return B().MonthBlock({
         mKey,
-        month: monthIndex,
         label: this.ctx.monthLabel(new Date(year, monthIndex, 1)),
+        name: ExpenseStore.MONTH_NAMES[monthIndex],
         open,
         isNow: year === today.getFullYear() && monthIndex === today.getMonth(),
         isFuture,
