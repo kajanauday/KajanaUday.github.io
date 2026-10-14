@@ -305,6 +305,98 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderLedger();
       showToast(kind === 'note' ? 'Note deleted.' : `Deleted ${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''}.`);
     }
+    // ---- Moving rows (press, hold, drag) ----
+    // A move stays inside one month and currency, and never changes the month's totals: an entry that gains its first note
+    // keeps its own amount as a note, and one that loses its last note drops to 0.
+    const childrenOf = id => transactions.filter(item => item.parentId === id);
+    function keepOwnAmountAsNote(entry) {
+      if (childrenOf(entry.id).length || !Number(entry.amount)) return false;
+      const { id, parentId, ...fields } = entry;
+      transactions.push({ ...fields, id: `${entry.id}-own-${Date.now()}`, parentId: entry.id });
+      return true;
+    }
+    function zeroIfEmptied(entry) {
+      if (!entry || childrenOf(entry.id).length) return false;
+      entry.amount = 0;
+      delete entry.formula;
+      return true;
+    }
+    const fileUnder = (item, { category, section, type }) => Object.assign(item, { category, section, type });
+    // source: { kind: 'note'|'entry'|'category', id?, name?, type?, section? }; target: { kind: 'entry'|'category'|'type', ... }
+    function moveVerdict(source, target) {
+      if (!target) return { ok: false };
+      if (source.kind === 'note') {
+        const note = transactions.find(item => item.id === source.id);
+        if (target.kind === 'entry') return target.id === note?.parentId ? { ok: false, label: 'Already in this entry' } : { ok: true, label: `Make a note of “${target.label}”` };
+        if (target.kind === 'category') return { ok: true, label: `Make an entry in “${target.name}”` };
+      }
+      if (source.kind === 'entry') {
+        const entry = transactions.find(item => item.id === source.id);
+        if (target.kind === 'entry') {
+          if (target.id === source.id) return { ok: false };
+          return childrenOf(source.id).length ? { ok: false, label: 'An entry with notes can’t become a note' } : { ok: true, label: `Make a note of “${target.label}”` };
+        }
+        if (target.kind === 'category') return target.name === entry?.category && target.type === entry?.type ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.name}”` };
+      }
+      if (source.kind === 'category') {
+        if (target.kind === 'category') return target.name === source.name && target.type === source.type ? { ok: false } : { ok: true, label: `Merge into “${target.name}”` };
+        if (target.kind === 'type') return target.type === source.type ? { ok: false, label: `Already under ${source.type === 'income' ? 'Income' : 'Expenses'}` } : { ok: true, label: `Move to ${target.type === 'income' ? 'Income' : 'Expenses'}` };
+      }
+      return { ok: false };
+    }
+    function applyMove(source, target, { month, property }) {
+      const [year, monthIndex] = yearMonthOf(month);
+      const inPanel = item => item.date.startsWith(month) && item.property === property;
+      let message = '';
+      let listsChanged = false;
+      if (source.kind === 'note' || source.kind === 'entry') {
+        const item = transactions.find(row => row.id === source.id);
+        if (!item) return showToast('Could not find that row. Refresh and try again.');
+        const oldParent = transactions.find(row => row.id === item.parentId);
+        if (target.kind === 'entry') {
+          const parent = transactions.find(row => row.id === target.id);
+          const kept = keepOwnAmountAsNote(parent);
+          item.parentId = parent.id;
+          fileUnder(item, parent);
+          expandedEntries.add(parent.id);
+          revealKey = catKey(month, property, parent.type, parent.category);
+          message = `Moved “${item.description}” under “${parent.description}”${kept ? ', keeping its own amount as a note' : ''}.`;
+        } else {
+          delete item.parentId;
+          const moved = [item, ...childrenOf(item.id)];
+          moved.forEach(row => fileUnder(row, { category: target.name, section: target.section, type: target.type }));
+          revealKey = catKey(month, property, target.type, target.name);
+          message = `Moved “${item.description}” to “${target.name}”.`;
+        }
+        if (oldParent && oldParent.id !== item.parentId && zeroIfEmptied(oldParent)) message += ` “${oldParent.description}” has no notes left, so it is now 0.`;
+      } else {
+        const rows = transactions.filter(item => inPanel(item) && item.type === source.type && item.category === source.name);
+        const lists = store.ownSections(year, monthIndex, property);
+        let destination;
+        if (target.kind === 'category') {
+          const count = rows.filter(item => !item.parentId).length;
+          if (!window.confirm(`Merge “${source.name}” (${count} ${count === 1 ? 'entry' : 'entries'}) into “${target.name}”?`)) return;
+          destination = { category: target.name, section: target.section, type: target.type };
+        } else {
+          const home = lists.find(section => section.type === target.type);
+          if (!home) return showToast(`Add an ${target.type === 'income' ? 'income' : 'expense'} section to this month first.`);
+          if (!window.confirm(`Move “${source.name}” and its entries to ${target.type === 'income' ? 'Income' : 'Expenses'}?`)) return;
+          if (!home.subsections.includes(source.name)) home.subsections.push(source.name);
+          destination = { category: source.name, section: home.name, type: target.type };
+        }
+        lists.filter(section => section.type === source.type).forEach(section => {
+          section.subsections = section.subsections.filter(name => name !== source.name);
+        });
+        listsChanged = true;
+        rows.forEach(item => fileUnder(item, destination));
+        revealKey = catKey(month, property, destination.type, destination.category);
+        message = target.kind === 'category' ? `Merged “${source.name}” into “${target.name}”.` : `Moved “${source.name}” to ${target.type === 'income' ? 'Income' : 'Expenses'}.`;
+      }
+      if (listsChanged) saveMonthSections(month, property);
+      saveTransactions();
+      renderLedger();
+      showToast(message);
+    }
     // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
     function saveCategoryRename(form) {
       const { month, property, type, category } = form.dataset;
@@ -664,16 +756,42 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         renderLedger();
       };
 
-      // The row a hold would add to: an entry (also when pressing one of its notes), a subsection, or Income/Expenses.
+      // The row a hold acts on: a note, an entry, a subsection, or Income/Expenses.
       const pressRowFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form')) return null;
+        const note = el.closest('.ledger-sub-entry[data-note-id]');
+        if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         if (cell) return cell.querySelector(':scope > .ledger-entry-line');
         return el.closest('.ledger-cat > summary, .ledger-type-section > summary');
       };
+      // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
+      const moveSourceFor = row => {
+        const note = row.closest('.ledger-sub-entry[data-note-id]');
+        if (note) return { kind: 'note', id: note.dataset.noteId, label: note.querySelector('.ledger-entry-desc')?.textContent || '' };
+        const toggle = row.querySelector('[data-toggle-entry]');
+        if (toggle) return { kind: 'entry', id: toggle.dataset.entryId, label: toggle.querySelector('.ledger-entry-desc')?.textContent || '' };
+        const cat = row.closest('.ledger-cat');
+        if (cat && row.matches('.ledger-cat > summary')) return { kind: 'category', name: cat.querySelector('.ledger-cat-name').textContent.trim(), type: cat.closest('.ledger-type-section').dataset.type, section: cat.dataset.section, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
+        return null;
+      };
+      // The drop target under a point, limited to the panel the drag started in. A note stands for its entry.
+      const dropTargetAt = (x, y, panel) => {
+        const el = document.elementFromPoint(x, y);
+        if (!el || el.closest('.ledger-panel') !== panel) return null;
+        const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)') || el.closest('.ledger-sub-entry')?.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
+        const toggle = cell?.querySelector(':scope > .ledger-entry-line [data-toggle-entry]');
+        if (toggle) return { kind: 'entry', id: toggle.dataset.entryId, label: toggle.querySelector('.ledger-entry-desc')?.textContent || '', el: toggle.closest('.ledger-entry-line') };
+        const cat = el.closest('details.ledger-cat');
+        if (cat) return { kind: 'category', name: cat.querySelector('.ledger-cat-name').textContent.trim(), type: cat.closest('.ledger-type-section').dataset.type, section: cat.dataset.section, el: cat.querySelector(':scope > summary') };
+        const typeHead = el.closest('.ledger-type-section > summary');
+        if (typeHead) return { kind: 'type', type: typeHead.parentElement.dataset.type, el: typeHead };
+        return null;
+      };
       let pressedRow = null;
-      const pointOf = e => e.touches?.[0] ?? e;
+      let lift = null; // { row, source, panel, month, property, dragging, ghost, target, x, y }
+      const pointOf = e => e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
       const startLongPress = (target, e) => {
         suppressClickUntil = 0; // a new press means the previous press's click has happened or never will
         longPressFired = false;
@@ -686,6 +804,15 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
           pressedRow?.classList.remove('is-pressing');
+          const source = moveSourceFor(row);
+          if (source && !hasDraft()) {
+            // Lift: the release decides. Let go in place to add as before, or drag to move.
+            lift = { row, source, panel: row.closest('.ledger-panel'), month: row.closest('.month-block').dataset.monthKey, property: row.closest('.ledger-panel').dataset.property, dragging: false };
+            row.classList.add('is-lifted');
+            longPressFired = true;
+            navigator.vibrate?.(12);
+            return;
+          }
           longPressFired = triggerLongPress(longPressTarget);
           if (longPressFired) {
             // The hold re-rendered the row; swallow the click that the release will produce, whenever it comes.
@@ -695,7 +822,69 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }, LONG_PRESS_DURATION);
       };
 
+      const setDropTarget = target => {
+        if (lift.target?.el !== target?.el) lift.target?.el?.classList.remove('is-drop-target', 'is-drop-invalid');
+        lift.target = target;
+        const verdict = moveVerdict(lift.source, target);
+        lift.verdict = verdict;
+        target?.el?.classList.toggle('is-drop-target', verdict.ok);
+        target?.el?.classList.toggle('is-drop-invalid', !verdict.ok && Boolean(verdict.label));
+        lift.ghost.querySelector('.drag-ghost-action').textContent = verdict.label || (lift.source.kind === 'category' ? 'Drop on a subsection or on Income / Expenses' : 'Drop on an entry or a subsection');
+        lift.ghost.classList.toggle('is-ok', verdict.ok);
+      };
+      const beginDrag = () => {
+        lift.dragging = true;
+        lift.row.classList.add('is-drag-source');
+        document.body.classList.add('is-dragging-row');
+        const ghost = document.createElement('div');
+        ghost.className = 'drag-ghost';
+        ghost.innerHTML = `<span class="drag-ghost-label"></span><span class="drag-ghost-action"></span>`;
+        ghost.querySelector('.drag-ghost-label').textContent = lift.source.label;
+        document.body.append(ghost);
+        lift.ghost = ghost;
+        const step = () => {
+          if (!lift?.dragging) return;
+          // Near the top or bottom edge the page scrolls, so a row can travel the whole month.
+          const edge = 70;
+          const speed = lift.y < edge ? -(edge - lift.y) / 4 : lift.y > innerHeight - edge ? (lift.y - (innerHeight - edge)) / 4 : 0;
+          if (speed) {
+            window.scrollBy(0, speed);
+            setDropTarget(dropTargetAt(lift.x, lift.y, lift.panel));
+          }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+      const moveDrag = e => {
+        if (!lift) return;
+        const point = pointOf(e);
+        if (!lift.dragging) {
+          const dx = Math.abs(point.pageX - longPressStart.x);
+          const dy = Math.abs(point.pageY - longPressStart.y);
+          if (dx <= LONG_PRESS_MOVE_THRESHOLD && dy <= LONG_PRESS_MOVE_THRESHOLD) return;
+          beginDrag();
+        }
+        if (e.cancelable) e.preventDefault();
+        lift.x = point.clientX;
+        lift.y = point.clientY;
+        lift.ghost.style.transform = `translate(${point.clientX}px, ${point.clientY}px)`;
+        setDropTarget(dropTargetAt(point.clientX, point.clientY, lift.panel));
+      };
+      const endLift = drop => {
+        const done = lift;
+        lift = null;
+        done.row.classList.remove('is-lifted', 'is-drag-source');
+        done.target?.el?.classList.remove('is-drop-target', 'is-drop-invalid');
+        done.ghost?.remove();
+        document.body.classList.remove('is-dragging-row');
+        suppressClickUntil = Date.now() + 600;
+        if (!drop) return;
+        if (!done.dragging) return triggerLongPress(longPressTarget);
+        if (done.verdict?.ok) applyMove(done.source, done.target, done);
+      };
+
       const endLongPress = () => {
+        if (lift) endLift(true);
         pressedRow?.classList.remove('is-pressing');
         pressedRow = null;
         if (longPressTimer) {
@@ -709,6 +898,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       };
 
       const checkLongPressMove = (e) => {
+        if (lift) return moveDrag(e);
         if (!longPressTimer || !longPressStart) return;
         const dx = Math.abs(pointOf(e).pageX - longPressStart.x);
         const dy = Math.abs(pointOf(e).pageY - longPressStart.y);
@@ -730,9 +920,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         endLongPress();
       };
       window.addEventListener('pointerup', endPointer);
-      window.addEventListener('pointercancel', endPointer);
-      ledger.addEventListener('touchmove', (e) => {
-        checkLongPressMove(e);
+      window.addEventListener('pointercancel', () => { if (lift) endLift(false); endLongPress(); });
+      // Moves are watched on the window so a drag can leave the row; touchmove must not be passive, so a drag
+      // can stop the page from scrolling under the finger.
+      window.addEventListener('touchmove', checkLongPressMove, { passive: false });
+      window.addEventListener('mousemove', checkLongPressMove);
+      window.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && lift) {
+          endLift(false);
+          endLongPress();
+          showToast('Move cancelled.');
+        }
       });
 
       ledger.addEventListener('mousedown', (e) => {
@@ -740,12 +938,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
 
       ledger.addEventListener('mouseup', endLongPress);
-      ledger.addEventListener('mousemove', (e) => {
-        checkLongPressMove(e);
-      });
       // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
       ledger.addEventListener('contextmenu', (e) => {
-        if (longPressTimer || longPressFired || Date.now() < suppressClickUntil) e.preventDefault();
+        if (longPressTimer || longPressFired || lift || Date.now() < suppressClickUntil) e.preventDefault();
       });
 
     }
