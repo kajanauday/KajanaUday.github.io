@@ -32,7 +32,8 @@
       return this.store.yearCurrencies(year).map(currency => {
         const totals = this.store.yearTotals(year, currency);
         const region = this.ctx.regions[currency];
-        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing }, year, this.ctx);
+        const breakdown = this.store.isYearLoaded(year) ? this.store.yearBreakdown(year, currency) : null;
+        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, breakdown }, year, this.ctx);
       }).join('');
     }
 

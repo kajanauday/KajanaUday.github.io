@@ -117,8 +117,29 @@
   };
 
   // Level 1: year-to-date KPI card, one per active currency ------------------------------------
+  // Category totals for the year: each section, then its subsections by size, with a share bar and how many months used it.
+  const YearBreakdown = (breakdown, property, ctx) => {
+    if (!breakdown) return '<p class="kb-loading">Adding up the year by category…</p>';
+    const block = (type, sections) => {
+      if (!sections.length) return '';
+      const all = sections.reduce((sum, section) => sum + section.total, 0);
+      const title = type === 'income' ? 'Income by category' : 'Expenses by category';
+      const rows = sections.map(section => {
+        const subs = section.subsections.map(sub => {
+          const share = section.total ? Math.round(sub.total / section.total * 100) : 0;
+          return `<li class="kb-sub"><span class="kb-name" title="${ctx.esc(sub.name)}">${ctx.esc(sub.name)}</span><span class="kb-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${sub.months} ${sub.months === 1 ? 'month' : 'months'}</small></li>`;
+        }).join('');
+        const share = all ? Math.round(section.total / all * 100) : 0;
+        return `<details class="kb-section" open><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name">${ctx.esc(section.name)}</span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(section.total, property)}</strong></summary><ul class="kb-subs">${subs}</ul></details>`;
+      }).join('');
+      return `<section class="kb-type ${type}"><h4><span>${title}</span><strong class="${type}">${ctx.fmt(all, property)}</strong></h4>${rows}</section>`;
+    };
+    const html = block('expense', breakdown.expense) + block('income', breakdown.income);
+    return html ? `${html}<p class="kb-note">Entries only; balances brought forward are not included.</p>` : '<p class="kb-loading">No entries yet this year.</p>';
+  };
+
   const YearKpiCard = (country, year, ctx) => {
-    const { id: property, name, code, color, income, expense, net, opening, closing } = country;
+    const { id: property, name, code, color, income, expense, net, opening, closing, breakdown } = country;
     const rate = income ? Math.round(net / income * 100) : null;
     return `<article class="kpi-card ${color}">
           <header class="kpi-head"><strong>${name}</strong><span>${code} · ${year} to date</span></header>
@@ -129,6 +150,7 @@
             <div><dt>Saved</dt><dd>${rate === null ? '—' : `${rate}%`}</dd></div>
             <div title="Opening ${ctx.fmt(opening, property)} + net"><dt>Balance</dt><dd>${ctx.fmt(closing, property)}</dd></div>
           </dl>
+          <div class="kpi-breakdown">${YearBreakdown(breakdown, property, ctx)}</div>
         </article>`;
   };
 
@@ -161,5 +183,5 @@
   const MonthGroup = (title, count, blocksHtml) =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} months</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { YearBreakdown, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

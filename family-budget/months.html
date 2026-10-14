@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090a0f">
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261014a">
+  <link rel="stylesheet" href="../family-budget.css?v=20261014e">
   <script src="../firebase-config.js?v=20261012a" defer></script>
-  <script src="../data-layer.js?v=20261013a" defer></script>
-  <script src="../component-blueprints.js?v=20261014a" defer></script>
-  <script src="../renderer-engine.js?v=20261013d" defer></script>
-  <script src="../family-budget.js?v=20261014a" defer></script>
+  <script src="../data-layer.js?v=20261014b" defer></script>
+  <script src="../component-blueprints.js?v=20261014b" defer></script>
+  <script src="../renderer-engine.js?v=20261014b" defer></script>
+  <script src="../family-budget.js?v=20261014d" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -69,15 +69,19 @@
 
   <dialog class="modal entry-dialog" id="entry-dialog" aria-labelledby="entry-dialog-title">
     <form id="entry-form" novalidate>
-      <div class="modal-header"><div><p>New entry</p><h2 id="entry-dialog-title">Add an expense</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <div class="form-grid">
-        <div class="field wide"><span>Type</span><div class="choice-row" id="entry-type" role="group" aria-label="Type"><button type="button" data-value="expense" aria-pressed="true">Expense</button><button type="button" data-value="income" aria-pressed="false">Income</button></div></div>
-        <label class="field">Date<input name="date" id="entry-date" type="date" required></label>
-        <div class="field"><span>Currency</span><div class="choice-row" id="entry-currency" role="group" aria-label="Currency"></div></div>
-        <label class="field wide">Subsection<select name="category" id="entry-category" required></select></label>
-        <label class="field wide">Description<input name="description" maxlength="80" autocomplete="off" required></label>
-        <label class="field"><span>Place <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
-        <label class="field">Amount<input name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="e.g. 450 or =(210+178)+62" required><small class="amount-preview" id="entry-amount-preview" aria-live="polite"></small></label>
+      <div class="modal-header"><h2 id="entry-dialog-title">Add an expense</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="entry-grid">
+        <div class="entry-top">
+          <div class="choice-row is-compact" id="entry-type" role="group" aria-label="Type"><button type="button" data-value="income" aria-pressed="false" aria-label="Income" title="Income">I</button><button type="button" data-value="expense" aria-pressed="true" aria-label="Expense" title="Expense">E</button></div>
+          <input name="date" id="entry-date" type="date" required aria-label="Date">
+          <div class="choice-row is-compact" id="entry-currency" role="group" aria-label="Currency"></div>
+        </div>
+        <label class="field">Subsection<select name="category" id="entry-category" required></select></label>
+        <label class="field">Description<input name="description" maxlength="80" autocomplete="off" required></label>
+        <div class="entry-pair">
+          <label class="field"><span>Place <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
+          <label class="field"><span>Amount</span><input name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="450 or =210+178" required><small class="amount-preview" id="entry-amount-preview" aria-live="polite"></small></label>
+        </div>
       </div>
       <p class="settings-error" id="entry-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save entry</button></div>

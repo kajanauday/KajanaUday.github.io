@@ -29,7 +29,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return latest ? new Date(latest, latest < today.getFullYear() ? 11 : 0, 1) : new Date(today.getFullYear(), today.getMonth(), 1);
     })();
     let toastTimer;
-    let universeOpen = sessionStorage.getItem(`${STORAGE_KEY}-universe`) === 'true';
+    // The year summary always starts collapsed; it opens only from its button.
+    let universeOpen = false;
+    try { sessionStorage.removeItem(`${STORAGE_KEY}-universe`); } catch (error) { /* Nothing stored. */ }
 
     function saveTransactions() { trackSave(store.saveTransactions()); }
     function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
@@ -132,11 +134,51 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const rename = host.querySelector('[data-ledger-form="rename-category"]')?.elements.name;
       focusQuietly(rename);
       rename?.select();
+      attachLedgerSuggestions(host);
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
       universe.setAttribute('aria-hidden', String(!universeOpen));
       loadOpenMonths(year);
+      if (universeOpen) loadYearForSummary(year);
+    }
+    // Inline name fields get suggestions: a new subsection offers names this month and currency do not have yet, and a
+    // rename offers every other name of the same type.
+    function attachLedgerSuggestions(host) {
+      suggest.close();
+      const subForm = host.querySelector('[data-ledger-form="subsection"]');
+      if (subForm && ledgerDraft) {
+        const [year, monthIndex] = yearMonthOf(ledgerDraft.month);
+        const sections = store.sections(year, monthIndex, ledgerDraft.property);
+        const type = sections.find(section => section.name === ledgerDraft.section)?.type || 'expense';
+        suggest.attach(subForm.elements.name, {
+          items: () => subsectionChoices(type, sections.filter(section => section.type === type).flatMap(section => section.subsections)),
+          onPick: item => {
+            subForm.elements.name.value = item.name;
+            subForm.requestSubmit();
+          }
+        });
+      }
+      const renameForm = host.querySelector('[data-ledger-form="rename-category"]');
+      if (renameForm) {
+        suggest.attach(renameForm.elements.name, {
+          items: () => subsectionChoices(renameForm.dataset.type, [renameForm.dataset.category]),
+          onPick: item => {
+            renameForm.elements.name.value = item.name;
+            renameForm.elements.name.focus();
+          }
+        });
+      }
+    }
+    // The category breakdown needs every month's entries; they load once per year, then the summary repaints.
+    const yearLoads = new Set();
+    function loadYearForSummary(year) {
+      if (!store.year(year) || store.isYearLoaded(year) || yearLoads.has(year)) return;
+      yearLoads.add(year);
+      store.ensureYear(year).then(renderLedger, error => {
+        console.error('Could not load the year from Firebase.', error);
+        showToast(`Could not load ${year} for the summary.`);
+      }).finally(() => yearLoads.delete(year));
     }
     // Open months show "Loading entries…" until their entries arrive from Firebase, then the ledger repaints.
     function loadOpenMonths(year) {
@@ -152,7 +194,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     function setUniverse(open) {
       universeOpen = open;
-      sessionStorage.setItem(`${STORAGE_KEY}-universe`, String(open));
       renderLedger();
     }
     function selectLedgerYear(year) {
@@ -947,6 +988,169 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
     }
+    // ---- Name suggestions ----
+    // Typing a section or subsection name lists names already used anywhere, best match first: exact, then names that
+    // start with the text, then a word inside that starts with it, then anywhere inside, then the letters in order.
+    // Ties go to the most used. Nothing is chosen unless picked (↑/↓ then Enter or Tab, or a click), so a new name can
+    // always be typed and saved as is.
+    const nameKey = ExpenseStore.nameKey;
+    const WORD_BREAK = /[\s\-_/&,.()>·|]/;
+    function rankNames(query, items, limit = 8) {
+      const q = nameKey(query);
+      if (!q) return [];
+      const letters = Array.from(q);
+      const results = [];
+      items.forEach(item => {
+        const key = nameKey(item.name);
+        let score = -1;
+        let at = key.indexOf(q);
+        if (key === q) score = 0;
+        else if (at === 0) score = 1;
+        else if (at > 0) {
+          score = 3;
+          for (let i = at; i >= 0; i = key.indexOf(q, i + 1)) {
+            if (WORD_BREAK.test(key[i - 1])) { score = 2; at = i; break; }
+          }
+        } else if (letters.length >= 2) {
+          // Letters in order with gaps, e.g. "emi hm" → "EMI - Home Loan"; tighter spans rank higher.
+          let from = 0;
+          let first = -1;
+          const ok = letters.every(letter => {
+            if (letter === ' ') return true;
+            const found = key.indexOf(letter, from);
+            if (found < 0) return false;
+            if (first < 0) first = found;
+            from = found + letter.length;
+            return true;
+          });
+          if (ok) { score = 4; at = from - first; }
+        }
+        if (score >= 0) results.push({ item, score, at });
+      });
+      return results
+        .sort((a, b) => a.score - b.score || b.item.uses - a.item.uses || a.at - b.at || a.item.name.length - b.item.name.length || a.item.name.localeCompare(b.item.name))
+        .slice(0, limit)
+        .map(result => result.item);
+    }
+    const suggest = (() => {
+      const box = document.createElement('div');
+      box.className = 'suggest-box';
+      box.id = 'name-suggestions';
+      box.setAttribute('role', 'listbox');
+      box.hidden = true;
+      const settings = new WeakMap();
+      let active = null; // { input, results, index }
+      const marked = (name, query) => {
+        const lower = name.normalize('NFC').toLocaleLowerCase();
+        const q = query.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+        const at = q ? lower.indexOf(q) : -1;
+        if (at < 0) return escapeHtml(name);
+        return `${escapeHtml(name.slice(0, at))}<mark>${escapeHtml(name.slice(at, at + q.length))}</mark>${escapeHtml(name.slice(at + q.length))}`;
+      };
+      const place = () => {
+        if (!active) return;
+        if (!active.input.isConnected) return close();
+        const r = active.input.getBoundingClientRect();
+        box.style.minWidth = `${Math.max(r.width, 220)}px`;
+        const height = box.offsetHeight;
+        const above = innerHeight - r.bottom < height + 12 && r.top > height + 12;
+        box.style.top = `${above ? r.top - height - 4 : r.bottom + 4}px`;
+        box.style.left = `${Math.max(8, Math.min(r.left, innerWidth - box.offsetWidth - 8))}px`;
+      };
+      function close() {
+        if (!active) return;
+        active.input.setAttribute('aria-expanded', 'false');
+        active.input.removeAttribute('aria-activedescendant');
+        active = null;
+        box.hidden = true;
+      }
+      const render = () => {
+        const { input, results, index } = active;
+        if (!results.length) {
+          box.hidden = true;
+          input.setAttribute('aria-expanded', 'false');
+          return;
+        }
+        box.innerHTML = results.map((item, i) => `<div class="suggest-item${i === index ? ' is-active' : ''}" role="option" id="name-suggestion-${i}" aria-selected="${i === index}" data-index="${i}"><span class="suggest-name">${marked(item.name, input.value)}</span>${item.note ? `<small>${escapeHtml(item.note)}</small>` : ''}</div>`).join('')
+          + '<p class="suggest-hint">↑ ↓ to choose · Enter to use · Esc to close</p>';
+        // A modal dialog sits in the top layer, so the list must live inside it to be seen.
+        const host = input.closest('dialog') || document.body;
+        if (box.parentElement !== host) host.append(box);
+        box.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+        if (index >= 0) input.setAttribute('aria-activedescendant', `name-suggestion-${index}`);
+        else input.removeAttribute('aria-activedescendant');
+        place();
+      };
+      const refresh = input => {
+        const options = settings.get(input);
+        if (!options) return;
+        active = { input, results: rankNames(input.value, options.items()), index: -1 };
+        render();
+      };
+      const pick = index => {
+        const { input, results } = active;
+        const item = results[index];
+        close();
+        settings.get(input)?.onPick(item, input);
+      };
+      box.addEventListener('pointerdown', event => event.preventDefault());
+      box.addEventListener('click', event => {
+        const option = event.target.closest('[data-index]');
+        if (option && active) pick(Number(option.dataset.index));
+      });
+      // Capture phase, so a highlighted pick wins over the field's own Enter, Tab and Esc handling.
+      document.addEventListener('keydown', event => {
+        if (!active || event.target !== active.input || box.hidden) return;
+        const count = active.results.length;
+        const stop = () => { event.preventDefault(); event.stopImmediatePropagation(); };
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          stop();
+          const step = event.key === 'ArrowDown' ? 1 : -1;
+          active.index = active.index + step >= count ? -1 : active.index + step < -1 ? count - 1 : active.index + step;
+          render();
+        } else if ((event.key === 'Enter' || event.key === 'Tab') && active.index >= 0) {
+          stop();
+          pick(active.index);
+        } else if (event.key === 'Escape') {
+          stop();
+          close();
+        }
+      }, true);
+      window.addEventListener('scroll', place, true);
+      window.addEventListener('resize', place);
+      return {
+        close,
+        // items(): [{ name, uses, note? }] to choose from; onPick(item, input) applies the choice.
+        attach(input, options) {
+          settings.set(input, options);
+          if (input.dataset.suggest) return;
+          input.dataset.suggest = 'on';
+          input.setAttribute('role', 'combobox');
+          input.setAttribute('aria-autocomplete', 'list');
+          input.setAttribute('aria-controls', 'name-suggestions');
+          input.setAttribute('aria-expanded', 'false');
+          input.setAttribute('autocomplete', 'off');
+          input.addEventListener('input', () => refresh(input));
+          input.addEventListener('focus', () => { if (input.value.trim()) refresh(input); });
+          input.addEventListener('blur', () => { if (active?.input === input) close(); });
+        }
+      };
+    })();
+    const usesNote = uses => `used ${uses}×`;
+    // Subsection names of one type, minus those the caller already has.
+    function subsectionChoices(type, taken = []) {
+      const takenKeys = new Set(taken.map(nameKey));
+      return store.nameCatalog().subsections
+        .filter(item => item.type === type && !takenKeys.has(nameKey(item.name)))
+        .map(item => ({ ...item, note: usesNote(item.uses) }));
+    }
+    function sectionChoices(taken = []) {
+      const takenKeys = new Set(taken.map(nameKey));
+      return store.nameCatalog().sections
+        .filter(item => !takenKeys.has(nameKey(item.name)))
+        .map(item => ({ ...item, note: `${item.type === 'income' ? 'Income' : 'Expense'} · ${usesNote(item.uses)}` }));
+    }
     function showToast(message) {
       const toast = document.querySelector('#toast');
       toast.textContent = message;
@@ -1011,8 +1215,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             label: `Subsections of ${section.name || 'section'}`,
             placeholder: 'Type a name, press Enter or comma',
             countFor: name => items(key).filter(item => item.type === section.type && item.category.toLowerCase() === name.toLowerCase()).length,
-            onChange: () => monthState.dirty.add(key)
+            onChange: () => monthState.dirty.add(key),
+            suggestions: values => subsectionChoices(section.type, values)
           }));
+          suggest.attach(box.querySelector('.config-section-name'), {
+            items: () => sectionChoices(list.filter(other => other !== section).map(other => other.name)),
+            onPick: item => {
+              Object.assign(section, { name: item.name, type: item.type });
+              monthState.dirty.add(key);
+              renderMonthSections();
+            }
+          });
           holder.append(box);
         });
         if (!list.length) holder.innerHTML = '<p class="config-muted">No sections this month yet. Add one to start categorising entries.</p>';
@@ -1118,8 +1331,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const currencies = date ? store.monthCurrencies(date.getFullYear(), date.getMonth()) : [];
       if (!currencies.includes(entryState.currency)) entryState.currency = currencies[0] || null;
       document.querySelectorAll('#entry-type [data-value]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.value === entryState.type)));
-      document.querySelector('#entry-currency').innerHTML = currencies.map(key => `<button type="button" data-value="${key}" aria-pressed="${key === entryState.currency}"><span class="cur-dot ${regions[key].color}"></span>${escapeHtml(regions[key].code)}</button>`).join('')
-        || `<span class="config-muted">${date && store.year(date.getFullYear()) ? 'No currency in this month' : 'This year is not set up'}</span>`;
+      // One letter per currency (I for India, J for Japan); the code is used instead if two names share a letter.
+      const initials = currencies.map(key => regions[key].name.trim().charAt(0).toLocaleUpperCase());
+      const short = (key, index) => (initials.indexOf(initials[index]) === initials.lastIndexOf(initials[index]) ? initials[index] : regions[key].code);
+      document.querySelector('#entry-currency').innerHTML = currencies.map((key, index) => `<button type="button" data-value="${key}" aria-pressed="${key === entryState.currency}" aria-label="${escapeHtml(regions[key].name)}" title="${escapeHtml(`${regions[key].name} · ${regions[key].code}`)}"><span class="cur-dot ${regions[key].color}"></span>${escapeHtml(short(key, index))}</button>`).join('')
+        || `<span class="config-muted">${date && store.year(date.getFullYear()) ? 'No currency' : 'Year not set up'}</span>`;
       const select = document.querySelector('#entry-category');
       const previous = select.value;
       const sections = date ? store.sections(date.getFullYear(), date.getMonth(), entryState.currency).filter(section => section.type === entryState.type) : [];
@@ -1127,10 +1343,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       if ([...select.options].some(option => option.value === previous)) select.value = previous;
       document.querySelector('#entry-dialog-title').textContent = entryState.type === 'income' ? 'Add income' : 'Add an expense';
     }
+    // Opens on today's date; only if today's month is not set up does it fall back to the newest open month.
     function openEntryDialog() {
       const today = new Date();
       const openKey = [...expandedMonths].filter(key => key.startsWith(`${currentMonth.getFullYear()}-`)).sort().pop();
-      const base = openKey ? new Date(Number(openKey.slice(0, 4)), Number(openKey.slice(5, 7)) - 1, 1) : new Date(currentMonth.getFullYear(), today.getFullYear() === currentMonth.getFullYear() ? today.getMonth() : 0, 1);
+      const fallback = openKey ? new Date(Number(openKey.slice(0, 4)), Number(openKey.slice(5, 7)) - 1, 1) : new Date(currentMonth.getFullYear(), today.getFullYear() === currentMonth.getFullYear() ? today.getMonth() : 0, 1);
+      const base = store.monthNode(today.getFullYear(), today.getMonth()) ? today : fallback;
       const day = base.getFullYear() === today.getFullYear() && base.getMonth() === today.getMonth() ? today.getDate() : 1;
       const form = document.querySelector('#entry-form');
       form.reset();
@@ -1234,7 +1452,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       document.querySelector(`[data-config-year="${configState.year}"]`)?.classList.add('is-dirty');
     }
     // LinkedIn-style tag field: type and press Enter or comma, paste a comma list, Backspace removes the last chip, × removes any chip.
-    function chipInput({ values, label, placeholder, countFor = () => 0, onChange = () => {} }) {
+    // suggestions(values) → names to offer while typing (see suggest); a picked name is added as one chip.
+    function chipInput({ values, label, placeholder, countFor = () => 0, onChange = () => {}, suggestions = null }) {
       const root = document.createElement('div');
       root.className = 'chip-field';
       root.innerHTML = `<div class="chip-input"><input type="text" aria-label="${escapeHtml(label)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div><p class="chip-hint" aria-live="polite"></p>`;
@@ -1253,11 +1472,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         input.placeholder = values.length ? '' : placeholder;
       };
       const say = message => { hint.textContent = message; root.classList.toggle('has-hint', Boolean(message)); };
-      const add = raw => {
+      const add = (raw, { whole = false } = {}) => {
         const problems = [];
-        raw.split(/[,\n]/).map(part => part.trim()).filter(Boolean).forEach(part => {
+        (whole ? [raw] : raw.split(/[,\n]/)).map(part => part.trim().replace(/\s+/g, ' ')).filter(Boolean).forEach(part => {
           const value = part.slice(0, 40);
-          if (values.some(existing => existing.toLowerCase() === value.toLowerCase())) return problems.push(`"${value}" is already added.`);
+          if (values.some(existing => nameKey(existing) === nameKey(value))) return problems.push(`"${value}" is already added.`);
           values.push(value);
         });
         input.value = '';
@@ -1293,6 +1512,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         }
         input.focus();
       });
+      if (suggestions) suggest.attach(input, { items: () => suggestions(values), onPick: item => { add(item.name, { whole: true }); input.focus(); } });
       draw();
       return root;
     }

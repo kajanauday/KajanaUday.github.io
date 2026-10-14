@@ -87,6 +87,10 @@
     return 'ti-receipt';
   }
 
+  // One key per name for de-duplication: same letters regardless of case, repeated spaces, Unicode composition or the
+  // invisible joiners Telugu text often carries.
+  const nameKey = name => String(name ?? '').normalize('NFC').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+
   class FirebaseDb {
     constructor(databaseURL, root) {
       this.base = `${databaseURL.replace(/\/$/, '')}/${root}`;
@@ -390,6 +394,63 @@
       return node;
     }
 
+    // ---- name catalogue ----
+    // Every section and subsection name used anywhere (all years, months and currencies), de-duplicated by nameKey within
+    // its type. `uses` counts the month lists and loaded entries that use a name, so suggestions can rank common ones
+    // first; the spelling shown is the one used most. Worked out from the data each time, so it never goes stale.
+    nameCatalog() {
+      const tally = () => new Map();
+      const sections = tally();
+      const subsections = tally();
+      const add = (map, type, name, weight) => {
+        const key = `${type}:${nameKey(name)}`;
+        if (!nameKey(name)) return;
+        const entry = map.get(key) || { key, type, uses: 0, spellings: new Map() };
+        entry.uses += weight;
+        entry.spellings.set(name, (entry.spellings.get(name) || 0) + weight);
+        map.set(key, entry);
+      };
+      Object.values(this.years).forEach(node => Object.values(node.monthSections || {}).forEach(month => Object.values(month).forEach(own => {
+        own.sections.forEach(section => {
+          add(sections, section.type, section.name, 1);
+          section.subsections.forEach(name => add(subsections, section.type, name, 1));
+        });
+      })));
+      this.transactions.filter(item => !item.parentId).forEach(item => {
+        add(subsections, item.type, item.category, 1);
+        if (item.section) add(sections, item.type, item.section, 1);
+      });
+      const finish = map => [...map.values()].map(({ spellings, ...entry }) => ({ ...entry, name: [...spellings].sort((a, b) => b[1] - a[1])[0][0] }));
+      return { sections: finish(sections), subsections: finish(subsections) };
+    }
+
+    // ---- year breakdown ----
+    isYearLoaded(year) { return MONTH_NAMES.every((_, monthIndex) => this.isLoaded(year, monthIndex)); }
+    // Entries-only totals for one currency across the whole year (every month loaded): section → subsection, with names
+    // de-duplicated by nameKey. An entry without a stored section is placed by its month's list, else under "Other".
+    yearBreakdown(year, currency) {
+      const byType = { income: new Map(), expense: new Map() };
+      MONTH_NAMES.forEach((_, monthIndex) => {
+        const lists = this.sections(year, monthIndex, currency);
+        this.items(year, currency, monthIndex).filter(item => !item.parentId).forEach(item => {
+          const sectionName = item.section || lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name || (item.type === 'income' ? 'Other income' : 'Other expenses');
+          const total = this.entryTotal(item.id);
+          const sections = byType[item.type === 'income' ? 'income' : 'expense'];
+          const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map() };
+          section.total += total;
+          sections.set(nameKey(sectionName), section);
+          const sub = section.subsections.get(nameKey(item.category)) || { name: item.category, total: 0, entries: 0, months: new Set() };
+          sub.total += total;
+          sub.entries += 1;
+          sub.months.add(monthIndex);
+          section.subsections.set(nameKey(item.category), sub);
+        });
+      });
+      const sorted = map => [...map.values()].sort((a, b) => b.total - a.total);
+      const finish = sections => sorted(sections).map(section => ({ ...section, subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size })) }));
+      return { expense: finish(byType.expense), income: finish(byType.income) };
+    }
+
     // ---- entry queries (loaded months only) ----
     items(year, currency, monthIndex) {
       const prefix = dateKeyOf(year, monthIndex);
@@ -452,6 +513,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount });
+  Object.assign(ExpenseStore, { MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
