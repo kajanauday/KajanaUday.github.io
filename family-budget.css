@@ -335,12 +335,17 @@
     .ledger-cat > summary > i { color: var(--faint); font-size: 12px; transition: transform .15s; }
     .ledger-cat > summary > strong { justify-self: end; }
     .ledger-cat[open] > summary > i { transform: rotate(90deg); }
+    /* Child markers: a subsection shows its arrow only when it has entries, and an entry with notes gets a small gold
+       arrow before its description that turns when the notes are open. */
+    .ledger-cat.is-empty > summary > i { visibility: hidden; }
+    .ledger-entry-caret { display: inline-block; margin-right: 4px; color: var(--brand); font-size: 10px; vertical-align: 1px; transition: transform .15s; }
+    .ledger-entry-toggle[aria-expanded="true"] .ledger-entry-caret { transform: rotate(90deg); }
     .ledger-cat-name { overflow: hidden; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-cat > summary strong { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .ledger-entries { container-type: inline-size; display: grid; gap: 0; margin-bottom: 4px; padding: 0 0 0 16px; border-left: 2px solid var(--line-soft); margin-left: 5px; }
     /* Entries, their notes and both add forms share one column set, so every field lines up under the entry above it. */
-    .ledger-entries { --entry-cols: 34px minmax(0, 1.7fr) minmax(0, 0.73fr) 108px; }
-    .ledger-entry-cell { display: grid; grid-template-columns: var(--entry-cols); align-items: center; gap: 8px; min-height: 30px; padding: 3px 0; border-top: 1px dotted var(--line); color: var(--ink); font-size: 14px; }
+    .ledger-entries { --entry-cols: 26px minmax(0, 1.7fr) minmax(0, 0.73fr) 108px; }
+    .ledger-entry-cell { display: grid; grid-template-columns: var(--entry-cols); align-items: center; gap: 6px; min-height: 30px; padding: 3px 0; border-top: 1px dotted var(--line); color: var(--ink); font-size: 14px; }
     .ledger-entry-cell:first-child { border-top: none; }
     .ledger-entry-line { grid-column: 1 / -1; min-width: 0; min-height: 26px; display: grid; grid-template-columns: subgrid; align-items: center; border-radius: 5px; transition: background-color .12s; }
     .ledger-entry-line.has-notes { cursor: pointer; }
@@ -356,7 +361,7 @@
     /* Notes sit inside their entry's row and reuse its columns (subgrid); a soft tint marks them as one level down. */
     .ledger-notes > .ledger-sub-entry, .ledger-notes > .ledger-entry-form, .ledger-entry-cell > .ledger-entry-form { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; width: auto; min-width: 0; margin: 0; }
     .ledger-sub-entry { min-height: 24px; padding: 2px 0; border-top: 1px dotted var(--line-soft); color: var(--muted); }
-    .ledger-sub-entry time { position: relative; padding-left: 12px; }
+    .ledger-sub-entry time { position: relative; padding-left: 10px; }
     .ledger-sub-entry time::before { content: ""; position: absolute; top: 50%; left: 1px; width: 7px; height: 6px; margin-top: -6px; border-bottom: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); border-bottom-left-radius: 3px; }
     .ledger-sub-entry .ledger-entry-desc, .ledger-sub-entry .ledger-entry-place, .ledger-sub-entry strong { font-size: 13.5px; }
     /* Rows are added by double-click or a 2s hold: stop the double-click selecting text and the hold raising the touch callout. */
@@ -364,7 +369,7 @@
     .ledger-type-section > summary, .ledger-cat > summary, .ledger-entry-cell { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .ledger-entry-form, .ledger-entry-form input, .ledger-form input { user-select: text; -webkit-user-select: text; }
     .ledger-entry strong { font: 400 13.5px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; justify-self: end; }
-    .ledger-entry-form { display: grid; grid-template-columns: var(--entry-cols); gap: 8px; align-items: center; margin: 2px 0; padding: 4px 0; border-top: 1px dotted var(--line); border-radius: 4px; background: var(--brand-soft); }
+    .ledger-entry-form { display: grid; grid-template-columns: var(--entry-cols); gap: 6px; align-items: center; margin: 2px 0; padding: 4px 0; border-top: 1px dotted var(--line); border-radius: 4px; background: var(--brand-soft); }
     .ledger-entry-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); font: 13.5px var(--sans); }
     .ledger-entry-form input[type="number"] { -webkit-appearance: none; -moz-appearance: textfield; }
     .ledger-entry-form input[type="number"]::-webkit-outer-spin-button, .ledger-entry-form input[type="number"]::-webkit-inner-spin-button { display: none; }
@@ -410,7 +415,7 @@
     .cat-rename-form strong { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
     .ledger-entries:has(.ledger-entry-form) { overflow-x: auto; }
     @container (max-width: 380px) {
-      .ledger-entries { --entry-cols: 30px minmax(0, 1.35fr) minmax(0, 1fr) 88px; }
+      .ledger-entries { --entry-cols: 26px minmax(0, 1.35fr) minmax(0, 1fr) 88px; }
       .ledger-entry-cell, .ledger-entry-form { gap: 6px; }
     }
     @container (max-width: 420px) {
