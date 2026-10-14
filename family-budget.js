@@ -112,7 +112,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const yearCount = ledgerRenderer.yearEntryCount(year);
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year);
       document.querySelector('#year-meta').textContent = `${yearCount} ${yearCount === 1 ? 'entry' : 'entries'} in ${year}`;
-      document.querySelector('#year-kpis').innerHTML = renderYearKpis(year);
+      // Rows opened in the year summary stay open when it is redrawn.
+      const kpis = document.querySelector('#year-kpis');
+      const openRows = new Set([...kpis.querySelectorAll('details[open][data-key]')].map(row => row.dataset.key));
+      kpis.innerHTML = renderYearKpis(year);
+      kpis.querySelectorAll('details[data-key]').forEach(row => { if (openRows.has(row.dataset.key)) row.open = true; });
       const toggle = document.querySelector('[data-toggle-universe]');
       toggle.setAttribute('aria-pressed', String(universeOpen));
       toggle.querySelector('span').textContent = universeOpen ? 'Hide summary' : 'Year summary';

@@ -426,8 +426,10 @@
 
     // ---- year breakdown ----
     isYearLoaded(year) { return MONTH_NAMES.every((_, monthIndex) => this.isLoaded(year, monthIndex)); }
-    // Entries-only totals for one currency across the whole year (every month loaded): section → subsection, with names
-    // de-duplicated by nameKey. An entry without a stored section is placed by its month's list, else under "Other".
+    // Entries-only totals for one currency across the whole year (every month loaded): section → subsection → item, with
+    // names de-duplicated by nameKey. Items are what a subsection was spent on: each note of an entry with notes (e.g.
+    // "EMI - Home Loan" under EMIలు), or the entry itself when it has none. An entry without a stored section is placed
+    // by its month's list, else under "Other".
     yearBreakdown(year, currency) {
       const byType = { income: new Map(), expense: new Map() };
       MONTH_NAMES.forEach((_, monthIndex) => {
@@ -439,15 +441,27 @@
           const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map() };
           section.total += total;
           sections.set(nameKey(sectionName), section);
-          const sub = section.subsections.get(nameKey(item.category)) || { name: item.category, total: 0, entries: 0, months: new Set() };
+          const sub = section.subsections.get(nameKey(item.category)) || { name: item.category, total: 0, entries: 0, months: new Set(), items: new Map() };
           sub.total += total;
           sub.entries += 1;
           sub.months.add(monthIndex);
           section.subsections.set(nameKey(item.category), sub);
+          const notes = this.transactions.filter(note => note.parentId === item.id);
+          (notes.length ? notes.map(note => [note.description, Number(note.amount)]) : [[item.description, total]]).forEach(([name, amount]) => {
+            const key = nameKey(name) || '—';
+            const part = sub.items.get(key) || { name: name || '—', total: 0, count: 0, months: new Set() };
+            part.total += amount;
+            part.count += 1;
+            part.months.add(monthIndex);
+            sub.items.set(key, part);
+          });
         });
       });
-      const sorted = map => [...map.values()].sort((a, b) => b.total - a.total);
-      const finish = sections => sorted(sections).map(section => ({ ...section, subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size })) }));
+      const sorted = map => [...map].map(([key, value]) => ({ ...value, key })).sort((a, b) => b.total - a.total);
+      const finish = sections => sorted(sections).map(section => ({
+        ...section,
+        subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size, items: sorted(sub.items).map(part => ({ ...part, months: part.months.size })) }))
+      }));
       return { expense: finish(byType.expense), income: finish(byType.income) };
     }
 

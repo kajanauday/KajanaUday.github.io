@@ -212,21 +212,30 @@
     .kb-type h4 strong { font: 500 14.5px var(--mono); letter-spacing: 0; }
     .kb-type h4 strong.expense, .kb-amount.expense { color: var(--expense); }
     .kb-type h4 strong.income, .kb-amount.income { color: var(--income); }
-    .kb-section > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) 44px minmax(90px, auto); align-items: center; gap: 8px; cursor: pointer; list-style: none; color: var(--ink); font-size: 14px; }
-    .kb-section > summary::-webkit-details-marker { display: none; }
-    .kb-section > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
-    .kb-section[open] > summary > i { transform: rotate(90deg); }
+    .kb-section > summary, .kb-sub > summary { min-height: 30px; display: grid; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+    .kb-section > summary::-webkit-details-marker, .kb-sub > summary::-webkit-details-marker { display: none; }
+    .kb-section > summary { grid-template-columns: 14px minmax(0, 1fr) 44px minmax(90px, auto); color: var(--ink); font-size: 14px; }
+    .kb-section > summary > i, .kb-sub > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+    .kb-section[open] > summary > i, .kb-sub[open] > summary > i { transform: rotate(90deg); }
+    .kb-section > summary:hover, .kb-sub > summary:hover { background: rgba(255, 255, 255, .04); border-radius: 6px; }
     .kb-section-name, .kb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .kb-share { color: var(--muted); font: 400 12px var(--mono); text-align: right; }
     .kb-amount { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-    .kb-subs { display: grid; gap: 0; margin: 0 0 6px 5px; padding: 0 0 0 16px; border-left: 2px solid var(--line-soft); list-style: none; }
-    .kb-sub { min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(40px, 90px) 44px minmax(90px, auto) 64px; align-items: center; gap: 8px; border-top: 1px dotted var(--line); color: var(--text, var(--ink)); font-size: 13.5px; }
-    .kb-sub:first-child { border-top: 0; }
+    /* Level 2: subsections, then level 3: what each was spent on. Both share one column set so figures line up. */
+    .kb-subs, .kb-items { display: grid; gap: 0; margin: 0 0 6px 5px; padding: 0 0 0 16px; border-left: 2px solid var(--line-soft); list-style: none; }
+    .kb-sub > summary, .kb-item { grid-template-columns: 14px minmax(0, 1fr) minmax(40px, 90px) 44px minmax(90px, auto) 64px; color: var(--text, var(--ink)); font-size: 13.5px; }
+    .kb-sub + .kb-sub { border-top: 1px dotted var(--line); }
+    .kb-items { margin-left: 6px; }
+    .kb-item { min-height: 28px; display: grid; align-items: center; gap: 8px; border-top: 1px dotted var(--line-soft); color: var(--note, var(--muted)); font-size: 13px; }
+    .kb-item:first-child { border-top: 0; }
+    .kb-item::before { content: ""; }
+    .kb-item .kb-amount { font-size: 13px; }
     .kb-bar { height: 5px; overflow: hidden; border-radius: 99px; background: var(--line-soft); }
     .kb-bar i { display: block; height: 100%; border-radius: inherit; background: var(--brand); opacity: .75; }
+    .kb-item .kb-bar i { opacity: .45; }
     .kb-months { color: var(--muted); font: 400 11px var(--mono); text-align: right; white-space: nowrap; }
     @container (max-width: 460px) {
-      .kb-sub { grid-template-columns: minmax(0, 1fr) 40px minmax(80px, auto); }
+      .kb-sub > summary, .kb-item { grid-template-columns: 14px minmax(0, 1fr) 40px minmax(80px, auto); }
       .kb-sub .kb-bar, .kb-sub .kb-months { display: none; }
     }
     dd.income { color: var(--income); }

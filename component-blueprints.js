@@ -117,20 +117,30 @@
   };
 
   // Level 1: year-to-date KPI card, one per active currency ------------------------------------
-  // Category totals for the year: each section, then its subsections by size, with a share bar and how many months used it.
+  // Category totals for the year, three levels deep and collapsed until opened: each section, its subsections by size,
+  // and what each subsection was spent on (its entries' notes, or the entries themselves). Each row shows its share of the
+  // level above and how many months it appeared in. data-key lets an open row stay open across re-renders.
   const YearBreakdown = (breakdown, property, ctx) => {
     if (!breakdown) return '<p class="kb-loading">Adding up the year by category…</p>';
+    const months = n => `${n} ${n === 1 ? 'month' : 'months'}`;
+    const shareOf = (part, whole) => (whole ? Math.round(part / whole * 100) : 0);
+    const bar = share => `<span class="kb-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span>`;
     const block = (type, sections) => {
       if (!sections.length) return '';
       const all = sections.reduce((sum, section) => sum + section.total, 0);
       const title = type === 'income' ? 'Income by category' : 'Expenses by category';
       const rows = sections.map(section => {
+        const sectionKey = `${property}|${type}|${section.key}`;
         const subs = section.subsections.map(sub => {
-          const share = section.total ? Math.round(sub.total / section.total * 100) : 0;
-          return `<li class="kb-sub"><span class="kb-name" title="${ctx.esc(sub.name)}">${ctx.esc(sub.name)}</span><span class="kb-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${sub.months} ${sub.months === 1 ? 'month' : 'months'}</small></li>`;
+          const items = sub.items.map(part => {
+            const share = shareOf(part.total, sub.total);
+            return `<li class="kb-item"><span class="kb-name" title="${ctx.esc(part.name)}">${ctx.esc(part.name)}</span>${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(part.total, property)}</strong><small class="kb-months" title="${part.count} ${part.count === 1 ? 'payment' : 'payments'}">${months(part.months)}</small></li>`;
+          }).join('');
+          const share = shareOf(sub.total, section.total);
+          return `<details class="kb-sub" data-key="${ctx.esc(`${sectionKey}|${sub.key}`)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-name" title="${ctx.esc(sub.name)}">${ctx.esc(sub.name)}</span>${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${months(sub.months)}</small></summary><ul class="kb-items">${items}</ul></details>`;
         }).join('');
-        const share = all ? Math.round(section.total / all * 100) : 0;
-        return `<details class="kb-section" open><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name">${ctx.esc(section.name)}</span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(section.total, property)}</strong></summary><ul class="kb-subs">${subs}</ul></details>`;
+        const share = shareOf(section.total, all);
+        return `<details class="kb-section" data-key="${ctx.esc(sectionKey)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name">${ctx.esc(section.name)}</span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(section.total, property)}</strong></summary><div class="kb-subs">${subs}</div></details>`;
       }).join('');
       return `<section class="kb-type ${type}"><h4><span>${title}</span><strong class="${type}">${ctx.fmt(all, property)}</strong></h4>${rows}</section>`;
     };
