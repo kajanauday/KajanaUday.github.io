@@ -18,6 +18,12 @@
 // first month) as income when positive or as an expense when negative; one that does not starts from zero. Month income and
 // expenses include that carried amount; `carried` records it so the entries-only figures can always be recovered.
 //   months/<year>_<Month>            that month's entries: <cur> → income/expenses → [{ category, total, count, entries[] }] → notes[]
+//   events/<id>                      a special event (marriage, registration…): a standalone ledger like a month, whose entries
+//                                    carry full dates and may fall in any month or year:
+//                                    { name, year, created, include, currencies[], sections/<cur>[], entries: <cur> → income/expenses →
+//                                    [{ category, total, count, entries[{ date, …, notes[{ date, … }] }] }] }
+//                                    With `include` on, each entry also counts in the month of its date (totals, balances, the
+//                                    year summary); a month's metadata keeps that share as `fromEvents` so it can be taken out.
 //
 // The shell (year tabs, month rows, year summary) is drawn from `years` alone. A month's entries are fetched only when it is
 // opened (ensureMonth). Amounts are minor units (paise / sen). An entry with notes counts as the sum of its notes.
@@ -143,8 +149,9 @@
     return list;
   }
 
-  // Flat entries of one month → the stored month document (null when the month has no entries).
-  function monthDoc(items) {
+  // Flat entries of one month → the stored month document (null when the month has no entries). An event's document is
+  // the same shape, but entries and notes keep their full date instead of the day.
+  function monthDoc(items, dated = false) {
     const doc = {};
     const childrenOf = new Map();
     items.filter(item => item.parentId).forEach(item => {
@@ -156,8 +163,9 @@
       const groups = (doc[item.property] ||= { income: [], expenses: [] })[bucket];
       let group = groups.find(g => g.category === item.category);
       if (!group) groups.push(group = { category: item.category, total: 0, count: 0, entries: [] });
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ day: Number(note.date.slice(8, 10)), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }) }));
-      const entry = { day: Number(item.date.slice(8, 10)), description: item.description, place: item.place || '', amount: Number(item.amount) };
+      const when = row => (dated ? { date: row.date } : { day: Number(row.date.slice(8, 10)) });
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -168,11 +176,43 @@
     return Object.keys(doc).length ? doc : null;
   }
 
-  // Entries-only totals from a stored month's metadata (which includes any carried balance).
+  // Entries-only totals from a stored month's metadata (which includes any carried balance and any events' share).
   function rawFromStored(stored) {
     if (!stored) return zeroTotals();
     const carried = Number(stored.carried) || 0;
-    return { income: stored.income - Math.max(carried, 0), expenses: stored.expenses - Math.max(-carried, 0), entries: stored.entries || 0 };
+    const events = stored.fromEvents || zeroTotals();
+    return { income: stored.income - Math.max(carried, 0) - (events.income || 0), expenses: stored.expenses - Math.max(-carried, 0) - (events.expenses || 0), entries: (stored.entries || 0) - (events.entries || 0) };
+  }
+
+  // One event's stored entries → flat items, marked with eventId so they never land in a month's document.
+  function flattenEvent(eventId, currencies, currencyKeys) {
+    const list = [];
+    currencyKeys.forEach(currency => {
+      const buckets = currencies?.[currency];
+      if (!buckets) return;
+      let index = 0;
+      BUCKETS.forEach(([bucket, type]) => {
+        (buckets[bucket] || []).forEach(({ category, entries = [] }) => entries.forEach(({ date, notes = [], ...entry }) => {
+          const id = `ev:${eventId}:${currency}-${++index}`;
+          list.push({ ...entry, id, eventId, date, property: currency, type, category });
+          notes.forEach(({ date: noteDate, ...note }, n) => list.push({ ...note, id: `${id}-note-${n + 1}`, parentId: id, eventId, date: noteDate || date, property: currency, type, category }));
+        }));
+      });
+    });
+    return list;
+  }
+  function normalizeEvent(event = {}, currencyKeys = []) {
+    const sections = event.sections || {};
+    const currencies = (event.currencies || []).filter(key => currencyKeys.includes(key));
+    return {
+      name: event.name || 'Event',
+      created: event.created || '',
+      // The year whose list the event sits at the top of; older events take the year they were created in.
+      year: Number(event.year) || Number(String(event.created || '').slice(0, 4)) || new Date().getFullYear(),
+      include: Boolean(event.include),
+      currencies: currencies.length ? currencies : currencyKeys.slice(0, 1),
+      sections: Object.fromEntries(Object.entries(sections).map(([key, list]) => [key, normalizeSections(list)]))
+    };
   }
 
   function docTotals(buckets) {
@@ -186,7 +226,7 @@
 
   class ExpenseStore {
     // Build with ExpenseStore.open(), which reads currencies and years (not entries) from Firebase.
-    constructor({ db, currencies, years }) {
+    constructor({ db, currencies, years, events = {} }) {
       this.db = db;
       this.currencies = currencies;
       this.years = years;
@@ -194,13 +234,16 @@
       this.synced = new Map();   // monthId → JSON of the month document as Firebase holds it
       this.loading = new Map();  // monthId → in-flight fetch
       this.writes = Promise.resolve();
+      this.events = {};
+      this.eventSynced = new Map(); // eventId → JSON of its entries document as Firebase holds it
+      Object.entries(events || {}).forEach(([id, event]) => this.addEvent(id, event));
     }
     static async open({ databaseURL, root }) {
       const db = new FirebaseDb(databaseURL, root);
-      const [currencies, years] = await Promise.all([db.get('currencies'), db.get('years')]);
+      const [currencies, years, events] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events')]);
       const ordered = Object.fromEntries(Object.entries(currencies || {}).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
       Object.values(years || {}).forEach(normalizeYear);
-      const store = new ExpenseStore({ db, currencies: ordered, years: years || {} });
+      const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {} });
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
       await store.moveYearSectionsToMonths();
@@ -306,6 +349,12 @@
       }
       return this.loading.get(id);
     }
+    addEvent(id, stored = {}) {
+      this.events[id] = normalizeEvent(stored, this.currencyKeys());
+      const items = flattenEvent(id, stored.entries, this.currencyKeys());
+      this.transactions.push(...items);
+      this.eventSynced.set(id, JSON.stringify(monthDoc(items, true)));
+    }
     ensureYear(year) {
       return Promise.all(MONTH_NAMES.map((_, monthIndex) => this.ensureMonth(year, monthIndex)));
     }
@@ -315,14 +364,24 @@
     saveTransactions() {
       const update = {};
       const years = new Set();
+      const monthItems = this.transactions.filter(item => !item.eventId);
       this.synced.forEach((json, id) => {
         const year = id.slice(0, 4);
-        const doc = monthDoc(this.transactions.filter(item => item.date.startsWith(dateKeyOf(year, MONTH_NAMES.indexOf(id.slice(5))))));
+        const doc = monthDoc(monthItems.filter(item => item.date.startsWith(dateKeyOf(year, MONTH_NAMES.indexOf(id.slice(5))))));
         const next = JSON.stringify(doc);
         if (next === json) return;
         update[`months/${id}`] = doc;
         this.synced.set(id, next);
         years.add(year);
+      });
+      // An event's entries are saved with the event; when it shows in months, every year's totals are rebuilt.
+      this.eventSynced.forEach((json, id) => {
+        const doc = monthDoc(this.transactions.filter(item => item.eventId === id), true);
+        const next = JSON.stringify(doc);
+        if (next === json) return;
+        update[`events/${id}/entries`] = doc;
+        this.eventSynced.set(id, next);
+        if (this.events[id]?.include && this.yearIds().length) years.add(this.yearIds()[0]);
       });
       if (years.size) Object.assign(update, this.recomputeFrom([...years].sort()[0]));
       return this.queue(() => (Object.keys(update).length ? this.db.patch(update) : null));
@@ -366,14 +425,16 @@
         const doc = this.synced.has(id) ? JSON.parse(this.synced.get(id)) : null;
         const metadata = { entries: 0 };
         active.forEach(key => {
-          const raw = this.synced.has(id) ? docTotals(doc?.[key]) : rawFromStored(node.months[id]?.metadata?.[key]);
+          const own = this.synced.has(id) ? docTotals(doc?.[key]) : rawFromStored(node.months[id]?.metadata?.[key]);
+          const fromEvents = this.eventMonthTotals(year, monthIndex, key);
+          const raw = { income: own.income + fromEvents.income, expenses: own.expenses + fromEvents.expenses, entries: own.entries + fromEvents.entries };
           const first = !(key in running);
           const previous = first ? this.yearOpening(year, key) : running[key];
           const carried = setup[key].carry ? previous : 0;
           const income = raw.income + Math.max(carried, 0);
           const expenses = raw.expenses + Math.max(-carried, 0);
           running[key] = income - expenses;
-          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: running[key], carried, previous };
+          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: running[key], carried, previous, ...(fromEvents.entries && { fromEvents }) };
           metadata.entries += raw.entries;
           const sum = sums[key] ||= { ...zeroTotals(), opening: previous, carriedIn: first ? carried : 0 };
           sum.income += raw.income;
@@ -392,6 +453,74 @@
       });
       Object.assign(node, { months, metadata });
       return node;
+    }
+
+    // ---- special events ----
+    // An event is a standalone ledger: its own sections, entries and notes, each entry dated in any month. With `include`
+    // on, its entries also count in their months; edits always happen in the event.
+    eventList() {
+      return Object.entries(this.events).map(([id, event]) => ({ id, ...event })).sort((a, b) => a.name.localeCompare(b.name));
+    }
+    eventName(id) { return this.events[id]?.name || ''; }
+    eventItems(id, currency) { return this.transactions.filter(item => item.eventId === id && (!currency || item.property === currency)); }
+    eventSections(id, currency) { return this.events[id]?.sections[currency] || []; }
+    // The event's editable list for a currency; a new one starts with one expense and one income section.
+    ownEventSections(id, currency) {
+      const event = this.events[id];
+      event.sections[currency] ||= [{ name: 'Expenses', type: 'expense', subsections: [] }, { name: 'Income', type: 'income', subsections: [] }];
+      return event.sections[currency];
+    }
+    // Entries-only totals that included events add to one month and currency.
+    eventMonthTotals(year, monthIndex, currency) {
+      const totals = zeroTotals();
+      const prefix = dateKeyOf(year, monthIndex);
+      this.transactions.forEach(item => {
+        if (!item.eventId || item.parentId || item.property !== currency || !item.date.startsWith(prefix) || !this.events[item.eventId]?.include) return;
+        totals[item.type === 'income' ? 'income' : 'expenses'] += this.entryTotal(item.id);
+        totals.entries += 1;
+      });
+      return totals;
+    }
+    // A year shows an event only if the event was created for that year, or one of its entries is dated in it.
+    eventsOfYear(year) {
+      const prefix = `${Number(year)}-`;
+      return this.eventList().filter(event => event.year === Number(year) || this.eventItems(event.id).some(item => item.date.startsWith(prefix)));
+    }
+    createEvent(id, name, year) {
+      this.events[id] = normalizeEvent({ name, year, created: new Date().toISOString().slice(0, 10) }, this.currencyKeys());
+      this.eventSynced.set(id, 'null');
+      const { sections, ...meta } = this.events[id];
+      return this.queue(() => this.db.patch({ [`events/${id}`]: meta }));
+    }
+    // Saves an event's own settings (name, currencies, sections, include) without touching its entries. Turning `include`
+    // on or off rebuilds every year's totals.
+    saveEventMeta(id, fields) {
+      const event = this.events[id];
+      const rebuild = 'include' in fields && Boolean(fields.include) !== event.include;
+      Object.assign(event, fields, 'include' in fields ? { include: Boolean(fields.include) } : {});
+      const update = Object.fromEntries(Object.keys(fields).map(key => [`events/${id}/${key}`, event[key]]));
+      if (rebuild && this.yearIds().length) Object.assign(update, this.recomputeFrom(this.yearIds()[0]));
+      return this.queue(() => this.db.patch(update));
+    }
+    deleteEvent(id) {
+      const included = this.events[id]?.include;
+      delete this.events[id];
+      this.eventSynced.delete(id);
+      for (let index = this.transactions.length - 1; index >= 0; index--) if (this.transactions[index].eventId === id) this.transactions.splice(index, 1);
+      const update = { [`events/${id}`]: null };
+      if (included && this.yearIds().length) Object.assign(update, this.recomputeFrom(this.yearIds()[0]));
+      return this.queue(() => this.db.patch(update));
+    }
+    // One currency's tree for an event, in the same shape as country() so the month panel can draw it.
+    eventCountry(id, currency) {
+      const region = this.currencies[currency];
+      const items = this.eventItems(id, currency);
+      const totals = { income: 0, expense: 0 };
+      items.filter(item => !item.parentId).forEach(item => { totals[item.type === 'income' ? 'income' : 'expense'] += this.entryTotal(item.id); });
+      return {
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expense, closing: totals.income - totals.expense, carried: 0, carriedFrom: '' },
+        sections: this.groupIntoSections(items, this.eventSections(id, currency))
+      };
     }
 
     // ---- name catalogue ----
@@ -416,12 +545,35 @@
           section.subsections.forEach(name => add(subsections, section.type, name, 1));
         });
       })));
+      Object.values(this.events).forEach(event => Object.values(event.sections).forEach(list => list.forEach(section => {
+        add(sections, section.type, section.name, 1);
+        section.subsections.forEach(name => add(subsections, section.type, name, 1));
+      })));
       this.transactions.filter(item => !item.parentId).forEach(item => {
         add(subsections, item.type, item.category, 1);
         if (item.section) add(sections, item.type, item.section, 1);
       });
       const finish = map => [...map.values()].map(({ spellings, ...entry }) => ({ ...entry, name: [...spellings].sort((a, b) => b[1] - a[1])[0][0] }));
       return { sections: finish(sections), subsections: finish(subsections) };
+    }
+
+    // Entry and note descriptions from the loaded months, de-duplicated by nameKey: { entries, notes }, each item
+    // { name, uses, last (latest date), categories (subsection keys it was filed under) }. Feeds description suggestions.
+    descriptionCatalog() {
+      const lists = { entries: new Map(), notes: new Map() };
+      this.transactions.forEach(item => {
+        const key = nameKey(item.description);
+        if (!key) return;
+        const map = item.parentId ? lists.notes : lists.entries;
+        const entry = map.get(key) || { uses: 0, last: '', spellings: new Map(), categories: new Set() };
+        entry.uses += 1;
+        if (item.date > entry.last) entry.last = item.date;
+        entry.spellings.set(item.description, (entry.spellings.get(item.description) || 0) + 1);
+        entry.categories.add(`${item.type}:${nameKey(item.category)}`);
+        map.set(key, entry);
+      });
+      const finish = map => [...map.values()].map(({ spellings, ...entry }) => ({ ...entry, name: [...spellings].sort((a, b) => b[1] - a[1])[0][0] }));
+      return { entries: finish(lists.entries), notes: finish(lists.notes) };
     }
 
     // ---- year breakdown ----
@@ -434,8 +586,8 @@
       const byType = { income: new Map(), expense: new Map() };
       MONTH_NAMES.forEach((_, monthIndex) => {
         const lists = this.sections(year, monthIndex, currency);
-        this.items(year, currency, monthIndex).filter(item => !item.parentId).forEach(item => {
-          const sectionName = item.section || lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name || (item.type === 'income' ? 'Other income' : 'Other expenses');
+        this.items(year, currency, monthIndex, { withEvents: true }).filter(item => !item.parentId).forEach(item => {
+          const sectionName = item.eventId ? `★ ${this.eventName(item.eventId)}` : item.section || lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name || (item.type === 'income' ? 'Other income' : 'Other expenses');
           const total = this.entryTotal(item.id);
           const sections = byType[item.type === 'income' ? 'income' : 'expense'];
           const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map() };
@@ -466,9 +618,10 @@
     }
 
     // ---- entry queries (loaded months only) ----
-    items(year, currency, monthIndex) {
+    // A month's own entries; withEvents adds the entries of events shown in months.
+    items(year, currency, monthIndex, { withEvents = false } = {}) {
       const prefix = dateKeyOf(year, monthIndex);
-      return this.transactions.filter(item => item.property === currency && item.date.startsWith(prefix));
+      return this.transactions.filter(item => item.property === currency && item.date.startsWith(prefix) && (!item.eventId || (withEvents && this.events[item.eventId]?.include)));
     }
     // A split entry's displayed amount is the sum of its sub-entries; an unsplit one shows its own.
     entryTotal(entryId) {
@@ -481,11 +634,27 @@
     // One currency's tree for an opened month: section → category → entry → sub-entries. Header totals are the stored metadata.
     country(year, monthIndex, currency) {
       const region = this.currencies[currency];
-      const items = this.items(year, currency, monthIndex);
       const totals = this.monthTotals(year, monthIndex, currency);
+      const sections = this.groupIntoSections(this.items(year, currency, monthIndex), this.sections(year, monthIndex, currency));
+      // Events shown in months appear as their own ★ section, read-only here; they are edited in the event.
+      const shown = this.items(year, currency, monthIndex, { withEvents: true }).filter(item => item.eventId);
+      [...new Set(shown.map(item => item.eventId))].forEach(id => ['expense', 'income'].forEach(type => {
+        const own = shown.filter(item => item.eventId === id && item.type === type);
+        if (!own.length) return;
+        const section = this.buildSection(`★ ${this.eventName(id)}`, type, [], own);
+        section._meta.event = id;
+        sections[`event:${id}:${type}`] = section;
+      }));
+      return {
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency) },
+        sections
+      };
+    }
+    // Files items under a section list: by their stored section, else by subsection name, else under "Other".
+    groupIntoSections(items, list) {
       const sections = {};
       const claimed = new Set();
-      [...this.sections(year, monthIndex, currency)]
+      [...list]
         .sort((a, b) => (a.type === 'income' ? 0 : 1) - (b.type === 'income' ? 0 : 1))
         .forEach(section => {
           const own = items.filter(item => item.type === section.type && !claimed.has(item) && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));
@@ -499,10 +668,7 @@
           sections[name] = this.buildSection(name, type, [], leftover);
         }
       });
-      return {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency) },
-        sections
-      };
+      return sections;
     }
     buildSection(name, type, subsections, items) {
       const parents = items.filter(item => !item.parentId);
@@ -520,7 +686,7 @@
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
         id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null,
-        section: item.section, category: item.category, type: item.type, property: item.property,
+        section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
         subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null }))
       };

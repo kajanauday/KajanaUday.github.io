@@ -3,53 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f8f4">
+  <meta name="theme-color" content="#090a0f">
   <title>Family Budget | Sign in</title>
+  <script>
+    // Same theme as the app (dark by default), applied before anything paints.
+    try { if (localStorage.getItem('family-budget-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (error) { /* Dark by default. */ }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
   <style>
+    /* The app's obsidian-and-gold palette, with its ivory-and-gold light theme. Text is at least 4.5:1 in both. */
     :root {
-      color-scheme: light;
-      --canvas: #f6f7f3;
-      --surface: #fff;
-      --surface-soft: #f3f5ef;
-      --ink: #20271f;
-      --muted: #777e75;
-      --line: #e4e7df;
-      --forest: #286347;
-      --forest-dark: #204e39;
-      --expense: #d75549;
+      color-scheme: dark;
+      --canvas: #090a0f;
+      --surface: #12141c;
+      --surface-soft: #1a1d28;
+      --ink: #f3efe6;
+      --muted: #9ca1b3;
+      --line: #262a38;
+      --brand: #d4af37;
+      --brand-text: #e3c25a;
+      --on-brand: #1a1405;
+      --expense: #ff8f80;
+      --gold-gradient: linear-gradient(100deg, #b8862e 0%, #d4af37 35%, #e3c25a 52%, #c9993d 72%, #a8781f 100%);
+      --gold-text: var(--gold-gradient);
+      --focus: rgba(212, 175, 55, .6);
+      --page-bg: radial-gradient(900px 560px at 15% -10%, rgba(59, 130, 246, .12), transparent 62%), radial-gradient(800px 520px at 105% 10%, rgba(249, 115, 22, .09), transparent 60%), radial-gradient(800px 500px at 50% 115%, rgba(212, 175, 55, .08), transparent 62%), var(--canvas);
+      --card-sheen: rgba(255, 255, 255, .05);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 24px 60px -20px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .07);
       --mono: "DM Mono", monospace;
       --sans: "DM Sans", sans-serif;
       --display: "Manrope", sans-serif;
-      --shadow: 0 1px 2px rgba(23, 36, 22, .04), 0 6px 18px rgba(23, 36, 22, .045);
+    }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --canvas: #f6f3ec;
+      --surface: #ffffff;
+      --surface-soft: #efeadf;
+      --ink: #1c1b18;
+      --muted: #5c574d;
+      --line: #e1dacb;
+      --brand: #a67c16;
+      --brand-text: #7e5d0c;
+      --expense: #b3261e;
+      --gold-text: linear-gradient(100deg, #5e430a 0%, #7a580d 35%, #86620f 52%, #7c5a0c 72%, #5e430a 100%);
+      --focus: rgba(166, 124, 22, .55);
+      --page-bg: radial-gradient(900px 560px at 15% -10%, rgba(59, 130, 246, .07), transparent 62%), radial-gradient(800px 520px at 105% 10%, rgba(249, 115, 22, .06), transparent 60%), radial-gradient(800px 500px at 50% 115%, rgba(212, 175, 55, .09), transparent 62%), var(--canvas);
+      --card-sheen: rgba(255, 255, 255, .8);
+      --shadow: 0 1px 2px rgba(60, 45, 20, .06), 0 24px 60px -24px rgba(60, 45, 20, .22), inset 0 1px 0 #fff;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; min-width: 320px; background: var(--canvas); color: var(--ink); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+    body { margin: 0; min-width: 320px; background: var(--page-bg); background-attachment: fixed; color: var(--ink); font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
     button, input { font: inherit; }
-    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #85b99b; outline-offset: 2px; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     [hidden] { display: none !important; }
     h1, p { margin-top: 0; }
-    .login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at 80% 15%, #eaf1e6 0, transparent 33%), var(--canvas); }
-    .login-box { width: min(400px, 100%); padding: 32px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+    .login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login-box { width: min(400px, 100%); padding: 32px; border: 1px solid var(--line); border-top: 2px solid var(--brand); border-radius: 14px; background: linear-gradient(180deg, var(--card-sheen), transparent 120px), var(--surface); box-shadow: var(--shadow); }
     .brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 26px; color: var(--ink); text-decoration: none; font: 800 17px var(--display); }
-    .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--forest); color: white; font-size: 15px; }
-    .brand-word span { color: var(--forest); }
-    .eyebrow { margin: 0 0 8px; color: var(--forest); font: 500 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
-    .login-box h1 { margin: 0 0 8px; font: 700 25px var(--display); }
-    .login-copy { margin-bottom: 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--gold-gradient); color: var(--on-brand); font-size: 15px; box-shadow: 0 4px 14px rgba(212, 175, 55, .25); }
+    .brand-word span { color: var(--brand-text); }
+    .eyebrow { margin: 0 0 8px; color: var(--brand-text); font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .login-box h1 { margin: 0 0 8px; background: var(--gold-text); -webkit-background-clip: text; background-clip: text; color: transparent; font: 800 26px var(--display); }
+    .login-copy { margin-bottom: 22px; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
     .login-form { display: grid; gap: 12px; }
-    .field { display: grid; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
-    .field input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 14px; }
-    .login-error { min-height: 14px; margin: -4px 0 0; color: var(--expense); font-size: 11.5px; }
-    .primary-button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--forest); color: white; cursor: pointer; font-size: 13px; font-weight: 700; }
-    .primary-button:hover { background: var(--forest-dark); }
+    .field { display: grid; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
+    .field input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); color: var(--ink); font-size: 14px; }
+    .field input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 3px var(--focus); }
+    .login-error { min-height: 14px; margin: -4px 0 0; color: var(--expense); font-size: 11.5px; font-weight: 600; }
+    .primary-button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--gold-gradient); color: var(--on-brand); cursor: pointer; font-size: 13.5px; font-weight: 700; box-shadow: 0 4px 16px rgba(212, 175, 55, .22); transition: filter .15s, transform .15s; }
+    .primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
     .demo-hint { margin: 16px 0 0; padding: 10px; border-radius: 8px; background: var(--surface-soft); color: var(--muted); font-size: 11.5px; text-align: center; }
+    .theme-button { position: fixed; top: 16px; right: 16px; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 16px; }
+    .theme-button:hover { color: var(--ink); }
   </style>
 </head>
 <body>
+  <button type="button" class="theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
   <div id="login-screen" class="login-screen" hidden>
     <section class="login-box" aria-labelledby="login-title">
       <span class="brand"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">family<span>budget</span></span></span>
@@ -81,6 +113,22 @@
       sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
       window.location.href = LEDGER;
     });
+    const themeButton = document.querySelector('#theme-button');
+    const showTheme = () => {
+      const light = document.documentElement.dataset.theme === 'light';
+      themeButton.innerHTML = `<i class="ti ti-${light ? 'moon' : 'sun'}" aria-hidden="true"></i>`;
+      themeButton.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} theme`);
+      themeButton.title = `Switch to ${light ? 'dark' : 'light'} theme`;
+      document.querySelector('meta[name="theme-color"]').content = light ? '#f6f3ec' : '#090a0f';
+    };
+    themeButton.addEventListener('click', () => {
+      const light = document.documentElement.dataset.theme !== 'light';
+      if (light) document.documentElement.dataset.theme = 'light';
+      else delete document.documentElement.dataset.theme;
+      try { localStorage.setItem('family-budget-theme', light ? 'light' : 'dark'); } catch (error) { /* Not remembered this time. */ }
+      showTheme();
+    });
+    showTheme();
     const isSignedIn = sessionStorage.getItem(`${STORAGE_KEY}-signed-in`) === 'true';
     if (isSignedIn) window.location.replace(LEDGER);
     document.querySelector('#login-screen').hidden = isSignedIn;

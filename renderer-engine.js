@@ -79,14 +79,39 @@
       });
     }
 
-    // Months grouped by priority: this month, earlier months (newest first), then the ones still to come.
+    // A special event drawn like a month: its name in place of the month's, the year's currencies as panels, and its
+    // entries (dated anywhere) inside. Its key "ev:<id>" makes every gesture act on the event instead of a month.
+    eventBlock(event, year, state) {
+      const mKey = `ev:${event.id}`;
+      const currencies = this.store.yearCurrencies(year).length ? this.store.yearCurrencies(year) : this.store.currencyKeys().slice(0, 1);
+      currencies.forEach(currency => this.store.ownEventSections(event.id, currency));
+      const open = state.expandedMonths.has(mKey);
+      const countries = currencies.map(currency => this.store.eventCountry(event.id, currency));
+      const name = this.ctx.esc(event.name);
+      return B().MonthBlock({
+        mKey,
+        label: `${name} (special event)`,
+        name,
+        open,
+        isEvent: true,
+        isEmpty: !this.store.eventItems(event.id).length,
+        summaryHtml: open ? '' : B().MonthSummary(countries.map(country => ({ property: country._meta.id, income: country._meta.income, expense: country._meta.expense, balance: country._meta.closing })), { isFuture: false }, this.ctx),
+        panelsHtml: open ? countries.map(country => B().CurrencyPanel(country, { mKey }, state, this.ctx)).join('') : '',
+        single: currencies.length <= 1
+      });
+    }
+
+    // The year's special events first, then months grouped by priority: this month, earlier months (newest first),
+    // then the ones still to come.
     monthGroups(year, state) {
       const today = new Date();
       const order = this.monthOrder(year);
       const groups = year === today.getFullYear()
         ? [['This month', order.filter(month => month === today.getMonth())], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
         : [[`${year}, newest first`, order]];
-      return groups.filter(([, months]) => months.length)
+      const events = this.store.eventsOfYear(year);
+      const eventGroup = events.length ? B().MonthGroup('Special events', events.length, events.map(event => this.eventBlock(event, year, state)).join(''), 'events') : '';
+      return eventGroup + groups.filter(([, months]) => months.length)
         .map(([title, months]) => B().MonthGroup(title, months.length, months.map(month => this.monthBlock(year, month, state)).join('')))
         .join('');
     }
@@ -95,9 +120,6 @@
       return B().YearTabs(this.store.yearIds().map(Number).reverse(), activeYear);
     }
 
-    yearEntryCount(year) {
-      return this.store.year(year)?.metadata.entries || 0;
-    }
   }
 
   global.LedgerRenderer = LedgerRenderer;

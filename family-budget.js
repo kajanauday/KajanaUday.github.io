@@ -99,19 +99,20 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // The ledger is painted from the ExpenseStore tree by LedgerRenderer using LedgerBlueprints.
     // Inline-edit state lives here and is handed to each render, so blueprints stay pure.
     const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft, editDraft });
-    const ledgerRenderer = new LedgerRenderer(store, {
+    const B = () => window.LedgerBlueprints;
+    const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
+      today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; },
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
-    });
+    };
+    const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
     function renderYearKpis(year) { return ledgerRenderer.yearKpis(year); }
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     function renderLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
-      const yearCount = ledgerRenderer.yearEntryCount(year);
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year);
-      document.querySelector('#year-meta').textContent = `${yearCount} ${yearCount === 1 ? 'entry' : 'entries'} in ${year}`;
       // Rows opened in the year summary stay open when it is redrawn.
       const kpis = document.querySelector('#year-kpis');
       const openRows = new Set([...kpis.querySelectorAll('details[open][data-key]')].map(row => row.dataset.key));
@@ -126,19 +127,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       host.innerHTML = store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
-      // Focus an inline form without jumping the page; scroll only as far as needed to show it.
-      const focusQuietly = input => {
-        if (!input) return;
-        input.focus({ preventScroll: true });
-        input.closest('form').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      };
-      focusQuietly(host.querySelector('[data-ledger-form="subsection"]')?.elements.name);
-      focusQuietly(host.querySelector('[data-ledger-form="entry"], [data-ledger-form="sub-entry"]')?.elements.day);
-      focusQuietly(host.querySelector('[data-ledger-form="edit-entry"], [data-ledger-form="edit-note"]')?.elements.description);
-      const rename = host.querySelector('[data-ledger-form="rename-category"]')?.elements.name;
-      focusQuietly(rename);
-      rename?.select();
-      attachLedgerSuggestions(host);
+      focusDrafts(host);
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
@@ -146,14 +135,29 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       loadOpenMonths(year);
       if (universeOpen) loadYearForSummary(year);
     }
+    // Focus an open inline form without jumping the page, and give its name fields suggestions.
+    function focusDrafts(host) {
+      const focusQuietly = input => {
+        if (!input) return;
+        input.focus({ preventScroll: true });
+        input.closest('form').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
+      focusQuietly(host.querySelector('[data-ledger-form="subsection"]')?.elements.name);
+      const adding = host.querySelector('[data-ledger-form="entry"], [data-ledger-form="sub-entry"]');
+      focusQuietly(adding?.elements.day || adding?.elements.description);
+      focusQuietly(host.querySelector('[data-ledger-form="edit-entry"], [data-ledger-form="edit-note"]')?.elements.description);
+      const rename = host.querySelector('[data-ledger-form="rename-category"]')?.elements.name;
+      focusQuietly(rename);
+      rename?.select();
+      attachLedgerSuggestions(host);
+    }
     // Inline name fields get suggestions: a new subsection offers names this month and currency do not have yet, and a
     // rename offers every other name of the same type.
     function attachLedgerSuggestions(host) {
       suggest.close();
       const subForm = host.querySelector('[data-ledger-form="subsection"]');
       if (subForm && ledgerDraft) {
-        const [year, monthIndex] = yearMonthOf(ledgerDraft.month);
-        const sections = store.sections(year, monthIndex, ledgerDraft.property);
+        const sections = panelScope(ledgerDraft.month, ledgerDraft.property).sections();
         const type = sections.find(section => section.name === ledgerDraft.section)?.type || 'expense';
         suggest.attach(subForm.elements.name, {
           items: () => subsectionChoices(type, sections.filter(section => section.type === type).flatMap(section => section.subsections)),
@@ -163,6 +167,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           }
         });
       }
+      // Entry fields suggest past entries, note fields past notes; the subsection they belong to ranks its own first.
+      host.querySelectorAll('[data-ledger-form="entry"], [data-ledger-form="edit-entry"], [data-ledger-form="sub-entry"], [data-ledger-form="edit-note"]').forEach(form => {
+        const kind = form.dataset.ledgerForm === 'entry' || form.dataset.ledgerForm === 'edit-entry' ? 'entries' : 'notes';
+        const owner = form.dataset.ledgerForm === 'entry' ? form.dataset
+          : transactions.find(item => item.id === (form.dataset.entryId || form.dataset.parentId));
+        const input = form.elements.description;
+        suggest.attach(input, { items: () => descriptionChoices(kind, owner || {}, form.dataset.ledgerForm.startsWith('edit') ? input.defaultValue : ''), onPick: pickDescription(form) });
+      });
       const renameForm = host.querySelector('[data-ledger-form="rename-category"]');
       if (renameForm) {
         suggest.attach(renameForm.elements.name, {
@@ -214,49 +226,81 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       ledgerDraft = null;
       renderLedger();
     }
-    // Adds a subsection to this month's own list for this currency; other months keep theirs.
+    // A panel is a month ("2026-10") or a special event ("ev:<id>"). Each has its own entries and section list per
+    // currency; everything that adds, edits, moves or deletes rows goes through this so both behave alike.
+    function panelScope(mKey, property) {
+      if (String(mKey).startsWith('ev:')) {
+        const id = mKey.slice(3);
+        return {
+          isEvent: true,
+          id,
+          label: `the event “${store.eventName(id)}”`,
+          match: item => item.eventId === id && item.property === property,
+          sections: () => store.eventSections(id, property),
+          own: () => store.ownEventSections(id, property),
+          save: () => trackSave(store.saveEventMeta(id, { sections: store.events[id].sections })),
+          fields: { eventId: id }
+        };
+      }
+      const [year, monthIndex] = yearMonthOf(mKey);
+      return {
+        isEvent: false,
+        label: monthLabel(new Date(year, monthIndex, 1)),
+        match: item => !item.eventId && item.property === property && item.date.startsWith(mKey),
+        sections: () => store.sections(year, monthIndex, property),
+        own: () => store.ownSections(year, monthIndex, property),
+        save: () => saveMonthSections(mKey, property),
+        fields: {}
+      };
+    }
+    // An entry or note's date from its form: a full date in an event, else the day within the panel's month.
+    function dateFromForm(fields, month) {
+      if (fields.date) return /^\d{4}-\d{2}-\d{2}$/.test(fields.date.value) ? fields.date.value : null;
+      const day = Number(fields.day.value);
+      return Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max) ? `${month}-${String(day).padStart(2, '0')}` : null;
+    }
+    // Adds a subsection to this panel's own list for this currency; other months and events keep theirs.
     function saveDraftSubsection(form) {
       const input = form.elements.name;
       const name = input.value.trim().replace(/\s+/g, ' ');
       const hint = form.querySelector('.ledger-form-hint');
       const { month, property } = ledgerDraft;
-      const [year, monthIndex] = yearMonthOf(month);
-      const problem = !name ? 'Type a name first.' : !store.sections(year, monthIndex, property).some(item => item.name === ledgerDraft.section) ? 'This section is no longer set up for this month.' : '';
+      const scope = panelScope(month, property);
+      const problem = !name ? 'Type a name first.' : !scope.sections().some(item => item.name === ledgerDraft.section) ? 'This section is no longer set up here.' : '';
       if (problem) {
         hint.textContent = problem;
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      const sections = store.ownSections(year, monthIndex, property);
+      const sections = scope.own();
       const section = sections.find(item => item.name === ledgerDraft.section);
       const existing = sections.filter(item => item.type === section.type).flatMap(item => item.subsections).find(item => item.toLowerCase() === name.toLowerCase());
       const category = existing || name;
       const holder = existing ? sections.find(item => item.type === section.type && item.subsections.includes(existing)) : section;
       if (!existing) section.subsections.push(name);
-      saveMonthSections(month, property);
+      scope.save();
       // Go straight to the first entry for the subsection.
       ledgerDraft = null;
       entryDraft = { month, property, section: holder.name, type: section.type, category };
       revealKey = catKey(month, property, section.type, category);
       renderLedger();
-      showToast(existing ? `Add an entry to "${category}".` : `Added "${name}" to ${section.name} for this month.`);
+      showToast(existing ? `Add an entry to "${category}".` : `Added "${name}" to ${section.name}${scope.isEvent ? '' : ' for this month'}.`);
     }
     function saveEntryDraft(form) {
       const fields = form.elements;
       const { month, property, section, type, category } = form.dataset;
-      const day = Number(fields.day.value);
+      const date = dateFromForm(fields, month);
       const parsed = ExpenseStore.readAmount(fields.amount.value);
       const amount = parsed.value;
       const checks = [
-        [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+        [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
         [fields.amount, !parsed.error && !parsed.empty && amount > 0]
       ];
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
       if (invalid) return invalid[0].focus();
-      const date = `${month}-${String(day).padStart(2, '0')}`;
-      transactions.push({ id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), ...(parsed.formula && { formula: parsed.formula }), type });
+      transactions.push({ id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), ...(parsed.formula && { formula: parsed.formula }), type, ...panelScope(month, property).fields });
       saveTransactions();
       entryDraft = null;
       revealKey = catKey(month, property, type, category);
@@ -273,11 +317,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       }
       const fields = form.elements;
       const isNote = form.dataset.ledgerForm === 'edit-note';
-      const day = Number(fields.day.value);
+      const date = dateFromForm(fields, item.date.slice(0, 7));
       const parsed = ExpenseStore.readAmount(fields.amount.value);
       const amount = parsed.value;
       const checks = [
-        [fields.day, Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max)],
+        [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
         [fields.amount, !parsed.error && !parsed.empty && (isNote ? amount >= 0 : amount > 0)]
       ];
@@ -285,7 +329,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const invalid = checks.find(([, ok]) => !ok);
       if (invalid) return invalid[0].focus();
       Object.assign(item, {
-        date: `${item.date.slice(0, 7)}-${String(day).padStart(2, '0')}`,
+        date,
         description: fields.description.value.trim(),
         place: fields.place.value.trim(),
         amount: Math.round(amount * 100),
@@ -302,17 +346,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const inRow = {
         note: item => item.id === entryId,
         entry: item => item.id === entryId,
-        category: item => !item.parentId && item.date.startsWith(month) && item.property === property && item.type === type && item.category === category
+        category: item => !item.parentId && panelScope(month, property).match(item) && item.type === type && item.category === category
       }[kind];
       const rows = transactions.filter(inRow);
-      const [rowYear, rowMonth] = month ? yearMonthOf(month) : [];
-      const emptyListed = kind === 'category' && !rows.length && store.sections(rowYear, rowMonth, property).some(section => section.type === type && section.subsections.includes(category));
+      const rowScope = month ? panelScope(month, property) : null;
+      const emptyListed = kind === 'category' && !rows.length && rowScope.sections().some(section => section.type === type && section.subsections.includes(category));
       if (emptyListed) {
-        if (!window.confirm(`Remove the empty subsection "${category}" from ${monthLabel(new Date(rowYear, rowMonth, 1))}?`)) return;
-        store.ownSections(rowYear, rowMonth, property).filter(section => section.type === type).forEach(section => {
+        if (!window.confirm(`Remove the empty subsection "${category}" from ${rowScope.label}?`)) return;
+        rowScope.own().filter(section => section.type === type).forEach(section => {
           section.subsections = section.subsections.filter(name => name !== category);
         });
-        saveMonthSections(month, property);
+        rowScope.save();
         editDraft = null;
         renderLedger();
         return showToast(`Removed "${category}".`);
@@ -333,14 +377,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         category: `"${category}"`
       }[kind];
       const scope = kind === 'note' ? '' : ` (${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''})`;
-      const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${monthLabel(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1))}` : '';
+      const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${rowScope.label}` : '';
       if (!window.confirm(`Delete ${label}${scope}${where}? This cannot be undone.`)) return;
       if (kind === 'category') {
-        const [year, monthIndex] = yearMonthOf(month);
-        store.ownSections(year, monthIndex, property).filter(section => section.type === type).forEach(section => {
+        rowScope.own().filter(section => section.type === type).forEach(section => {
           section.subsections = section.subsections.filter(name => name !== category);
         });
-        saveMonthSections(month, property);
+        rowScope.save();
       }
       for (let index = transactions.length - 1; index >= 0; index--) {
         if (doomed.has(transactions[index])) transactions.splice(index, 1);
@@ -390,8 +433,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return { ok: false };
     }
     function applyMove(source, target, { month, property }) {
-      const [year, monthIndex] = yearMonthOf(month);
-      const inPanel = item => item.date.startsWith(month) && item.property === property;
+      const scope = panelScope(month, property);
+      const inPanel = scope.match;
       let message = '';
       let listsChanged = false;
       if (source.kind === 'note' || source.kind === 'entry') {
@@ -416,7 +459,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (oldParent && oldParent.id !== item.parentId && zeroIfEmptied(oldParent)) message += ` “${oldParent.description}” has no notes left, so it is now 0.`;
       } else {
         const rows = transactions.filter(item => inPanel(item) && item.type === source.type && item.category === source.name);
-        const lists = store.ownSections(year, monthIndex, property);
+        const lists = scope.own();
         let destination;
         if (target.kind === 'category') {
           const count = rows.filter(item => !item.parentId).length;
@@ -424,7 +467,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           destination = { category: target.name, section: target.section, type: target.type };
         } else {
           const home = lists.find(section => section.type === target.type);
-          if (!home) return showToast(`Add an ${target.type === 'income' ? 'income' : 'expense'} section to this month first.`);
+          if (!home) return showToast(`Add an ${target.type === 'income' ? 'income' : 'expense'} section here first.`);
           if (!window.confirm(`Move “${source.name}” and its entries to ${target.type === 'income' ? 'Income' : 'Expenses'}?`)) return;
           if (!home.subsections.includes(source.name)) home.subsections.push(source.name);
           destination = { category: source.name, section: home.name, type: target.type };
@@ -437,7 +480,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         revealKey = catKey(month, property, destination.type, destination.category);
         message = target.kind === 'category' ? `Merged “${source.name}” into “${target.name}”.` : `Moved “${source.name}” to ${target.type === 'income' ? 'Income' : 'Expenses'}.`;
       }
-      if (listsChanged) saveMonthSections(month, property);
+      if (listsChanged) scope.save();
       saveTransactions();
       renderLedger();
       showToast(message);
@@ -448,22 +491,22 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
       const name = input.value.trim().replace(/\s+/g, ' ');
-      const [year, monthIndex] = yearMonthOf(month);
+      const scope = panelScope(month, property);
       if (name === category) {
         editDraft = null;
         return renderLedger();
       }
-      const inPanel = item => item.date.startsWith(month) && item.property === property && item.type === type;
+      const inPanel = item => scope.match(item) && item.type === type;
       const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
       const taken = transactions.some(item => inPanel(item) && sameName(item.category));
-      const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used this month.` : '';
+      const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used here.` : '';
       if (problem) {
         hint.textContent = problem;
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
       // Copy the month's list before moving entries, so the copy still holds the old name.
-      const sections = store.ownSections(year, monthIndex, property).filter(section => section.type === type);
+      const sections = scope.own().filter(section => section.type === type);
       // Renaming onto an empty subsection already listed merges into it, keeping its spelling and section.
       const target = sections.find(section => section.subsections.some(sameName));
       const finalName = target ? target.subsections.find(sameName) : name;
@@ -481,12 +524,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       if (!sections.some(section => section.subsections.includes(finalName))) {
         sections.find(section => section.name === moved[0]?.section)?.subsections.push(finalName);
       }
-      saveMonthSections(month, property);
+      scope.save();
       saveTransactions();
       editDraft = null;
       revealKey = catKey(month, property, type, finalName);
       renderLedger();
-      showToast(`Renamed "${category}" to "${finalName}" for this month.`);
+      showToast(`Renamed "${category}" to "${finalName}"${scope.isEvent ? '' : ' for this month'}.`);
     }
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
@@ -561,6 +604,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           if (isDouble) {
             saveExpandedMonths();
             renderLedger();
+            // An event's settings live with its year's events.
+            if (key.startsWith('ev:')) return openYearSettings(currentMonth.getFullYear());
             return openMonthSettings(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1);
           }
           saveExpandedMonths();
@@ -636,8 +681,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           const parentYear = Number(parentItem.date.slice(0, 4));
           const parentMonth = Number(parentItem.date.slice(5, 7));
           const daysInMonth = new Date(parentYear, parentMonth, 0).getDate();
-          const day = form.elements.day.value ? Math.min(Number(form.elements.day.value), daysInMonth) : undefined;
-          const date = day ? `${parentYear}-${String(parentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}` : undefined;
+          // In an event a note may carry its own full date; in a month it takes a day within the entry's month.
+          const day = form.elements.day?.value ? Math.min(Number(form.elements.day.value), daysInMonth) : undefined;
+          const date = form.elements.date ? (form.elements.date.value || undefined) : day ? `${parentYear}-${String(parentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}` : undefined;
           const parsed = ExpenseStore.readAmount(form.elements.amount.value);
           if (parsed.error || parsed.value < 0) {
             form.elements.amount.setAttribute('aria-invalid', 'true');
@@ -657,7 +703,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             place,
             date: date || parentItem.date,
             amount,
-            ...(parsed.formula && { formula: parsed.formula })
+            ...(parsed.formula && { formula: parsed.formula }),
+            ...(parentItem.eventId && { eventId: parentItem.eventId })
           };
           transactions.push(newSubEntry);
           saveTransactions();
@@ -715,6 +762,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return target;
       };
 
+      // An event's rows inside a month are read-only there; they are changed in the event itself.
+      const blockEventRow = element => {
+        const row = element.closest('.ledger-cat[data-event-id]');
+        if (!row) return false;
+        showToast(`This comes from the event “${store.eventName(row.dataset.eventId)}”. Edit it under Events.`);
+        return true;
+      };
       // Opens the inline add form for whatever was pressed: an entry → sub-entry, a category → entry,
       // an Income/Expenses header → subsection. Month and currency come from the pressed panel, not the page state.
       const triggerLongPress = (element) => {
@@ -723,9 +777,10 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const panel = element.closest('.ledger-panel');
         const monthBlock = element.closest('.month-block');
         if (!panel || !monthBlock) return false;
+        if (blockEventRow(element)) return true;
         const property = panel.dataset.property;
         const mKey = monthBlock.dataset.monthKey;
-        const sections = store.sections(...yearMonthOf(mKey), property);
+        const sections = panelScope(mKey, property).sections();
         if (hasDraft()) {
           showToast('Save or cancel the current inline edit first.');
           return true;
@@ -779,6 +834,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const panel = element?.closest('.ledger-panel');
         const monthBlock = element?.closest('.month-block');
         if (!panel || !monthBlock) return;
+        if (blockEventRow(element)) return;
         if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
         const [kind, ...rest] = rowKey.split(':');
         const id = rest.join(':');
@@ -796,6 +852,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
+          if (monthBlock.dataset.monthKey.startsWith('ev:')) return showToast('Press and hold Expenses or Income to add a subsection.');
           return openMonthSettings(...yearMonthOf(monthBlock.dataset.monthKey));
         }
         renderLedger();
@@ -813,6 +870,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       };
       // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
       const moveSourceFor = row => {
+        if (row.closest('[data-event-id]')) return null;
         const note = row.closest('.ledger-sub-entry[data-note-id]');
         if (note) return { kind: 'note', id: note.dataset.noteId, label: note.querySelector('.ledger-entry-desc')?.textContent || '' };
         const toggle = row.querySelector('[data-toggle-entry]');
@@ -824,7 +882,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // The drop target under a point, limited to the panel the drag started in. A note stands for its entry.
       const dropTargetAt = (x, y, panel) => {
         const el = document.elementFromPoint(x, y);
-        if (!el || el.closest('.ledger-panel') !== panel) return null;
+        if (!el || el.closest('.ledger-panel') !== panel || el.closest('[data-event-id]')) return null;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)') || el.closest('.ledger-sub-entry')?.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         const toggle = cell?.querySelector(':scope > .ledger-entry-line [data-toggle-entry]');
         if (toggle) return { kind: 'entry', id: toggle.dataset.entryId, label: toggle.querySelector('.ledger-entry-desc')?.textContent || '', el: toggle.closest('.ledger-entry-line') };
@@ -995,7 +1053,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // ---- Name suggestions ----
     // Typing a section or subsection name lists names already used anywhere, best match first: exact, then names that
     // start with the text, then a word inside that starts with it, then anywhere inside, then the letters in order.
-    // Ties go to the most used. Nothing is chosen unless picked (↑/↓ then Enter or Tab, or a click), so a new name can
+    // Ties go to names from the same subsection (near), then the most used, then the most recent. Nothing is chosen unless picked (↑/↓ then Enter or Tab, or a click), so a new name can
     // always be typed and saved as is.
     const nameKey = ExpenseStore.nameKey;
     const WORD_BREAK = /[\s\-_/&,.()>·|]/;
@@ -1027,12 +1085,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             from = found + letter.length;
             return true;
           });
-          if (ok) { score = 4; at = from - first; }
+          // Only when the letters sit close together; scattered hits across a long name are noise.
+          if (ok && from - first <= letters.length * 3) { score = 4; at = from - first; }
         }
         if (score >= 0) results.push({ item, score, at });
       });
       return results
-        .sort((a, b) => a.score - b.score || b.item.uses - a.item.uses || a.at - b.at || a.item.name.length - b.item.name.length || a.item.name.localeCompare(b.item.name))
+        .sort((a, b) => a.score - b.score || Number(Boolean(b.item.near)) - Number(Boolean(a.item.near)) || b.item.uses - a.item.uses || String(b.item.last || '').localeCompare(String(a.item.last || '')) || a.at - b.at || a.item.name.length - b.item.name.length || a.item.name.localeCompare(b.item.name))
         .slice(0, limit)
         .map(result => result.item);
     }
@@ -1149,6 +1208,35 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         .filter(item => item.type === type && !takenKeys.has(nameKey(item.name)))
         .map(item => ({ ...item, note: usesNote(item.uses) }));
     }
+    // Entry or note descriptions used before; those filed under the same subsection rank first. The field's own current
+    // text is left out. Past months load in the background the first time, so suggestions cover the whole year.
+    function descriptionChoices(kind, { type, category } = {}, current = '') {
+      warmDescriptions();
+      const here = type && category ? `${type}:${nameKey(category)}` : null;
+      const skip = nameKey(current);
+      return store.descriptionCatalog()[kind]
+        .filter(item => nameKey(item.name) !== skip)
+        .map(item => ({ ...item, near: Boolean(here && item.categories.has(here)), note: here && item.categories.has(here) ? `here · ${usesNote(item.uses)}` : usesNote(item.uses) }));
+    }
+    // Each year loads once; a failed load is retried the next time a description field asks.
+    const warmYears = new Set();
+    function warmDescriptions() {
+      const year = new Date().getFullYear();
+      [year, year - 1].filter(value => store.year(value) && !warmYears.has(value)).forEach(value => {
+        warmYears.add(value);
+        store.ensureYear(value).catch(error => {
+          warmYears.delete(value);
+          console.warn('Could not load past entries for suggestions; will retry.', error);
+        });
+      });
+    }
+    // Picking a description fills it in and moves on to the next field.
+    const pickDescription = (form, next = 'place') => (item, input) => {
+      input.value = item.name;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      suggest.close();
+      form.elements[next]?.focus();
+    };
     function sectionChoices(taken = []) {
       const takenKeys = new Set(taken.map(nameKey));
       return store.nameCatalog().sections
@@ -1194,7 +1282,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const { year, month, setup } = monthState;
       const root = document.querySelector('#month-sections');
       root.replaceChildren();
-      const items = key => transactions.filter(item => !item.parentId && item.property === key && item.date.startsWith(keyOf(year, month)));
+      const items = key => transactions.filter(item => !item.parentId && !item.eventId && item.property === key && item.date.startsWith(keyOf(year, month)));
       store.currencyKeys().filter(key => setup[key].active).forEach(key => {
         const list = monthSectionsFor(key);
         const block = document.createElement('section');
@@ -1370,6 +1458,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const form = document.querySelector('#entry-form');
       document.querySelector('#add-entry-button').addEventListener('click', openEntryDialog);
       document.querySelector('#entry-date').addEventListener('change', renderEntryChoices);
+      suggest.attach(form.elements.description, {
+        items: () => {
+          const option = form.elements.category.selectedOptions[0];
+          return descriptionChoices('entries', option ? { type: entryState.type, category: option.value } : {});
+        },
+        onPick: pickDescription(form)
+      });
       form.elements.amount.addEventListener('input', () => {
         const preview = document.querySelector('#entry-amount-preview');
         const parsed = ExpenseStore.readAmount(form.elements.amount.value);
@@ -1435,7 +1530,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // Edits are held as per-year drafts so the user can hop between year boxes; Save validates and writes every touched year.
     // A year's currencies are { <cur>: { from: <month name>, opening, carryIn } }: active from `from` (months can override),
     // opening either on the previous year's closing (carryIn) or on the amount set here.
-    const configState = { year: null, drafts: {} };
+    const configState = { year: null, drafts: {}, events: {} };
     const toMajor = minor => String(Math.round(Number(minor || 0) / 100));
     function draftFromYear(year) {
       const node = store.year(year);
@@ -1546,11 +1641,81 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const summary = configState.drafts[value] || draftFromYear(value);
         const currencies = draftCurrencies(summary).map(key => `${regions[key].code}${summary.from[key] === 'January' ? '' : ` from ${summary.from[key].slice(0, 3)}`}`);
         return `<button type="button" class="config-year${value === year ? ' is-active' : ''}${summary.dirty ? ' is-dirty' : ''}" data-config-year="${value}" aria-pressed="${value === year}"><strong>${value}</strong><span>${currencies.join(' · ') || 'No currency'}</span></button>`;
-      }).join('') + `<button type="button" class="config-year" id="config-add-year" title="Add the next year to Firebase"><strong><i class="ti ti-plus" aria-hidden="true"></i> ${years.length ? years[0] + 1 : new Date().getFullYear()}</strong><span>Add year</span></button>`;
+      }).join('');
       document.querySelector('.config-body').hidden = !year;
       if (!year) return;
       renderConfigCurrencies();
+      renderConfigEvents();
       document.querySelector('#year-settings-error').hidden = true;
+    }
+    // ---- Special events of the year: listed here, added with +, saved with the dialog ----
+    // Each event shows at the top of its year's months, like a month with its own name.
+    function eventDraft(year) {
+      configState.events[year] ||= store.eventsOfYear(year).map(event => ({ id: event.id, name: event.name, include: event.include, removed: false }));
+      return configState.events[year];
+    }
+    function renderConfigEvents() {
+      const year = configState.year;
+      const rows = eventDraft(year);
+      const visible = rows.map((row, index) => ({ row, index })).filter(({ row }) => !row.removed);
+      document.querySelector('#config-events').innerHTML = visible.map(({ row, index }) => {
+        const entries = row.id ? store.eventItems(row.id).filter(item => !item.parentId).length : 0;
+        return `<div class="config-event" data-event-index="${index}">
+          <i class="ti ti-star-filled" aria-hidden="true"></i>
+          <input class="config-event-name" value="${escapeHtml(row.name)}" placeholder="Event name, e.g. Marriage" aria-label="Event name" maxlength="60" autocomplete="off">
+          <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
+          <label class="event-switch" title="Also count this event's entries in the months they happened"><input type="checkbox" data-event-include${row.include ? ' checked' : ''}><span class="event-switch-track" aria-hidden="true"></span><span>Show in months</span></label>
+          <button type="button" class="icon-button config-remove" data-remove-event aria-label="Delete ${escapeHtml(row.name || 'event')}" title="Delete event"><i class="ti ti-trash" aria-hidden="true"></i></button>
+        </div>`;
+      }).join('');
+    }
+    // Saves the year's event changes: new events, renames, Show in months, and deletions (after confirming any with entries).
+    function saveConfigEvents() {
+      const changed = [];
+      for (const [year, rows] of Object.entries(configState.events)) {
+        const kept = rows.filter(row => !row.removed);
+        const names = kept.map(row => nameKey(row.name));
+        if (names.some(name => !name)) return { problem: `${year}: every event needs a name.`, year };
+        if (new Set(names).size !== names.length) return { problem: `${year}: event names must be unique.`, year };
+      }
+      // A name may also not repeat an event of another year, so the same event is never created twice.
+      const removed = new Set(Object.values(configState.events).flat().filter(row => row.removed && row.id).map(row => row.id));
+      for (const [year, rows] of Object.entries(configState.events)) {
+        for (const row of rows.filter(item => !item.removed)) {
+          const clash = store.eventList().find(other => other.id !== row.id && !removed.has(other.id) && nameKey(other.name) === nameKey(row.name)
+            && !(configState.events[other.year] || []).some(item => item.id === other.id && nameKey(item.name) !== nameKey(row.name)));
+          if (clash && clash.year !== Number(year)) return { problem: `“${row.name.trim()}” already exists in ${clash.year}. Open ${clash.year} to use it, or choose another name.`, year };
+        }
+      }
+      const doomed = Object.values(configState.events).flat().filter(row => row.removed && row.id);
+      const withEntries = doomed.filter(row => store.eventItems(row.id).length);
+      if (withEntries.length && !window.confirm(`Delete ${withEntries.map(row => `“${store.eventName(row.id)}”`).join(', ')} and all ${withEntries.length === 1 ? 'its' : 'their'} entries? This cannot be undone.`)) return { problem: 'Nothing was deleted.', cancelled: true };
+      doomed.forEach(row => {
+        trackSave(store.deleteEvent(row.id));
+        expandedMonths.delete(`ev:${row.id}`);
+        changed.push(`deleted ${row.name}`);
+      });
+      Object.entries(configState.events).forEach(([year, rows]) => rows.filter(row => !row.removed).forEach(row => {
+        const name = row.name.trim().replace(/\s+/g, ' ');
+        if (!row.id) {
+          const id = `ev-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+          trackSave(store.createEvent(id, name, Number(year)));
+          store.yearCurrencies(Number(year)).forEach(key => store.ownEventSections(id, key));
+          trackSave(store.saveEventMeta(id, { sections: store.events[id].sections, ...(row.include && { include: true }) }));
+          expandedMonths.add(`ev:${id}`);
+          changed.push(`added ${name}`);
+          return;
+        }
+        const fields = {};
+        if (name !== store.eventName(row.id)) fields.name = name;
+        if (row.include !== store.events[row.id].include) fields.include = row.include;
+        if (Object.keys(fields).length) {
+          trackSave(store.saveEventMeta(row.id, fields));
+          changed.push(`updated ${name}`);
+        }
+      }));
+      saveExpandedMonths();
+      return { changed };
     }
     function showConfigYear(year) {
       configState.year = store.year(year) ? year : null;
@@ -1560,19 +1725,19 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const dialog = document.querySelector('#year-settings-dialog');
       if (!dialog) return;
       configState.drafts = {};
+      configState.events = {};
       showConfigYear(year);
       dialog.showModal();
     }
-    // A new year copies the latest year's currencies and brings in its closing balances. Its months start with no sections.
-    function addConfigYear() {
-      const years = store.yearIds().map(Number);
-      const year = years.length ? Math.max(...years) + 1 : new Date().getFullYear();
-      const previous = store.year(year - 1);
-      const currencies = Object.fromEntries((previous?.metadata.currencies || []).map(key => [key, { from: 'January', opening: 0, carryIn: true }]));
-      saveYearConfig(year, { currencies });
-      showConfigYear(year);
-      renderLedger();
-      showToast(`Added ${year}. Review its currencies.`);
+    // Next year sets itself up once it is four months away (from September): it takes this year's currencies and brings
+    // in their closing balances. Its months start with no sections.
+    function ensureNextYear() {
+      const today = new Date();
+      const next = today.getFullYear() + 1;
+      const current = store.year(next - 1);
+      if (today.getMonth() < 8 || store.year(next) || !current) return;
+      const currencies = Object.fromEntries((current.metadata.currencies || []).map(key => [key, { from: 'January', opening: 0, carryIn: true }]));
+      if (Object.keys(currencies).length) saveYearConfig(next, { currencies });
     }
     function validateDraft(draft) {
       if (!draftCurrencies(draft).length) return 'Choose a start month for at least one currency.';
@@ -1585,7 +1750,6 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const form = document.querySelector('#year-settings-form');
       if (!dialog || !form) return;
       document.querySelector('#config-years').addEventListener('click', event => {
-        if (event.target.closest('#config-add-year')) return addConfigYear();
         const button = event.target.closest('[data-config-year]');
         if (button) showConfigYear(Number(button.dataset.configYear));
       });
@@ -1599,6 +1763,30 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (carryIn) draft.carryIn[carryIn.dataset.configCarryIn] = carryIn.checked;
         if (from || carryIn) renderConfigCurrencies();
         if (money || from || carryIn) markConfigDirty();
+      });
+      const eventRow = target => {
+        const row = target.closest('.config-event');
+        return row ? eventDraft(configState.year)[Number(row.dataset.eventIndex)] : null;
+      };
+      form.addEventListener('input', event => {
+        const row = eventRow(event.target);
+        if (row && event.target.matches('.config-event-name')) row.name = event.target.value;
+      });
+      form.addEventListener('change', event => {
+        const row = eventRow(event.target);
+        if (row && event.target.matches('[data-event-include]')) row.include = event.target.checked;
+      });
+      form.addEventListener('click', event => {
+        if (event.target.closest('#config-add-event')) {
+          eventDraft(configState.year).push({ id: null, name: '', include: false, removed: false });
+          renderConfigEvents();
+          return document.querySelector('#config-events .config-event:last-child .config-event-name')?.focus();
+        }
+        const remove = event.target.closest('[data-remove-event]');
+        if (remove) {
+          eventRow(remove).removed = true;
+          renderConfigEvents();
+        }
       });
       // Enter inside a plain field should not save the whole dialog by accident.
       form.addEventListener('keydown', event => {
@@ -1618,20 +1806,49 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
             return;
           }
         }
+        const events = saveConfigEvents();
+        if (events.problem) {
+          if (events.year) {
+            configState.year = Number(events.year);
+            renderConfig();
+          }
+          error.textContent = events.problem;
+          error.hidden = false;
+          return;
+        }
         touched.forEach(([year, draft]) => {
           const currencies = Object.fromEntries(draftCurrencies(draft).map(key => [key, { from: draft.from[key], opening: Math.round(Number(draft.openings[key] || 0) * 100), carryIn: draft.carryIn[key] }]));
           saveYearConfig(Number(year), { currencies });
         });
         dialog.close();
         renderLedger();
-        showToast(touched.length ? `Saved ${touched.map(([year]) => year).join(' & ')} configuration.` : 'No changes to save.');
+        const parts = [...(touched.length ? [`saved ${touched.map(([year]) => year).join(' & ')} settings`] : []), ...events.changed];
+        showToast(parts.length ? `${parts.join(', ').replace(/^./, char => char.toUpperCase())}.` : 'No changes to save.');
       });
     }
+    ensureNextYear();
     setupYearConfig();
     setupMonthSettings();
     setupEntryDialog();
     setupLedger();
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+    // Light or dark: remembered per browser; dark is the default.
+    const themeButton = document.querySelector('#theme-button');
+    const showTheme = () => {
+      const light = document.documentElement.dataset.theme === 'light';
+      themeButton.innerHTML = `<i class="ti ti-${light ? 'moon' : 'sun'}" aria-hidden="true"></i>`;
+      themeButton.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} theme`);
+      themeButton.title = `Switch to ${light ? 'dark' : 'light'} theme`;
+      document.querySelector('meta[name="theme-color"]').content = light ? '#f6f3ec' : '#090a0f';
+    };
+    themeButton.addEventListener('click', () => {
+      const light = document.documentElement.dataset.theme !== 'light';
+      if (light) document.documentElement.dataset.theme = 'light';
+      else delete document.documentElement.dataset.theme;
+      try { localStorage.setItem('family-budget-theme', light ? 'light' : 'dark'); } catch (error) { /* Not remembered this time. */ }
+      showTheme();
+    });
+    showTheme();
     document.querySelector('#logout-button').addEventListener('click', () => {
       sessionStorage.removeItem(`${STORAGE_KEY}-passkey-signed-in`);
       sessionStorage.removeItem(`${STORAGE_KEY}-signed-in`);

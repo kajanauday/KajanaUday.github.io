@@ -4,13 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090a0f">
+  <script>
+    // Apply the saved theme before anything paints, so the page never flashes the other one.
+    try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
+  </script>
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261014g">
+  <link rel="stylesheet" href="../family-budget.css?v=20261015p">
   <script src="../firebase-config.js?v=20261012a" defer></script>
-  <script src="../data-layer.js?v=20261014f" defer></script>
-  <script src="../component-blueprints.js?v=20261014g" defer></script>
-  <script src="../renderer-engine.js?v=20261014b" defer></script>
-  <script src="../family-budget.js?v=20261014f" defer></script>
+  <script src="../data-layer.js?v=20261015m" defer></script>
+  <script src="../component-blueprints.js?v=20261015q" defer></script>
+  <script src="../renderer-engine.js?v=20261015l" defer></script>
+  <script src="../family-budget.js?v=20261015n" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -18,6 +22,7 @@
     <div></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
+      <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="primary-button add-entry-button" id="add-entry-button" title="Add an expense or income"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
@@ -26,7 +31,6 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
-      <span class="year-meta" id="year-meta"></span>
       <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
     </div>
     <div class="universe" id="universe">
@@ -47,6 +51,10 @@
         <section class="config-block" aria-labelledby="config-general-title">
           <div class="config-block-head"><h3 id="config-general-title">Currencies</h3></div>
           <div class="config-currency-rows" id="config-currencies"></div>
+        </section>
+        <section class="config-block" aria-labelledby="config-events-title">
+          <div class="config-block-head"><h3 id="config-events-title">Special events</h3><button type="button" class="quiet-button config-add-event" id="config-add-event" aria-label="Add a special event" title="Add a special event"><i class="ti ti-plus" aria-hidden="true"></i></button></div>
+          <div class="config-events" id="config-events"></div>
         </section>
       </div>
       <footer class="config-foot">
