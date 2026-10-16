@@ -466,6 +466,11 @@
     eventName(id) { return this.events[id]?.name || ''; }
     eventItems(id, currency) { return this.transactions.filter(item => item.eventId === id && (!currency || item.property === currency)); }
     eventSections(id, currency) { return this.events[id]?.sections[currency] || []; }
+    // The currencies an event is tagged with, plus any it still holds entries in, in display order.
+    eventCurrencies(id) {
+      const tagged = this.events[id]?.currencies || [];
+      return this.ordered([...new Set([...tagged, ...this.eventItems(id).map(item => item.property)])]);
+    }
     // The event's editable list for a currency. An event only spends, so a new list is one expense section named after
     // the event itself; its subsections and entries go under that.
     ownEventSections(id, currency) {
@@ -518,8 +523,8 @@
       const prefix = `${Number(year)}-`;
       return this.eventList().filter(event => event.year === Number(year) || this.eventItems(event.id).some(item => item.date.startsWith(prefix)));
     }
-    createEvent(id, name, year) {
-      this.events[id] = normalizeEvent({ name, year, created: new Date().toISOString().slice(0, 10) }, this.currencyKeys());
+    createEvent(id, name, year, currencies = []) {
+      this.events[id] = normalizeEvent({ name, year, currencies, created: new Date().toISOString().slice(0, 10) }, this.currencyKeys());
       this.eventSynced.set(id, 'null');
       const { sections, ...meta } = this.events[id];
       return this.queue(() => this.db.patch({ [`events/${id}`]: meta }));

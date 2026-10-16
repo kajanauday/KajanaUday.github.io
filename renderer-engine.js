@@ -80,11 +80,11 @@
       });
     }
 
-    // A special event drawn like a month: its name in place of the month's, the year's currencies as panels, and its
-    // entries (dated anywhere) inside. Its key "ev:<id>" makes every gesture act on the event instead of a month.
+    // A special event drawn like a month: its name in place of the month's, a panel for each currency it is tagged with,
+    // and its entries (dated anywhere) inside. Its key "ev:<id>" makes every gesture act on the event instead of a month.
     eventBlock(event, year, state) {
       const mKey = `ev:${event.id}`;
-      const currencies = this.store.yearCurrencies(year).length ? this.store.yearCurrencies(year) : this.store.currencyKeys().slice(0, 1);
+      const currencies = this.store.eventCurrencies(event.id);
       currencies.forEach(currency => this.store.ownEventSections(event.id, currency));
       const open = state.expandedMonths.has(mKey);
       const countries = currencies.map(currency => this.store.eventCountry(event.id, currency));

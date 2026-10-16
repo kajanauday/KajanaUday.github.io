@@ -891,7 +891,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const entryCell = element.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         const toggle = entryCell?.querySelector('[data-toggle-entry]');
         const cat = element.closest('.ledger-cat');
-        const typeSection = element.closest('.ledger-type-section');
+        // An event panel's currency header stands for the event's own section, which has no title row of its own.
+        const typeSection = element.closest('.ledger-type-section') || (element.closest('.ledger-panel-head') && panel.querySelector('.ledger-type-section.is-bare'));
         // The block's own type, not its title: an event's blocks are titled with their section's name.
         const type = typeSection?.dataset.type === 'income' ? 'income' : 'expense';
         const namedSection = typeSection?.dataset.section;
@@ -982,7 +983,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         renderLedger();
       };
 
-      // The row a hold acts on: a note, an entry, a subsection, or Income/Expenses.
+      // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or an event panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form')) return null;
@@ -990,7 +991,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         if (cell) return cell.querySelector(':scope > .ledger-entry-line');
-        return el.closest('.ledger-cat > summary, .ledger-type-section > summary');
+        return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .month-block.is-event .ledger-panel-head');
       };
       // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
       const moveSourceFor = row => {
@@ -1773,10 +1774,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       document.querySelector('#year-settings-error').hidden = true;
     }
     // ---- Special events of the year: listed here, added with +, saved with the dialog ----
-    // Each event shows at the top of its year's months, like a month with its own name.
+    // Each event shows at the top of its year's months, like a month with its own name, with a panel for each currency it
+    // is tagged with.
     function eventDraft(year) {
-      configState.events[year] ||= store.eventsOfYear(year).map(event => ({ id: event.id, name: event.name, include: event.include, removed: false }));
+      configState.events[year] ||= store.eventsOfYear(year).map(event => ({ id: event.id, name: event.name, include: event.include, currencies: [...event.currencies], removed: false }));
       return configState.events[year];
+    }
+    // A currency an event already has entries in stays tagged; it can be turned off once those entries are gone.
+    const eventCurrencyLocked = (row, key) => Boolean(row.id && store.eventItems(row.id, key).length);
+    // Currency tags offered for an event: the year's currencies, plus any the event already uses.
+    function eventCurrencyChips(row, year) {
+      const used = row.id ? store.eventCurrencies(row.id) : [];
+      const keys = store.ordered([...store.yearCurrencies(year), ...row.currencies, ...used]);
+      return `<div class="event-currencies" role="group" aria-label="Currencies for ${escapeHtml(row.name || 'this event')}">${keys.map(key => {
+        const on = row.currencies.includes(key) || eventCurrencyLocked(row, key);
+        const locked = eventCurrencyLocked(row, key);
+        const title = locked ? `Has ${regions[key].code} entries` : `${on ? 'Remove' : 'Add'} ${regions[key].code}`;
+        return `<button type="button" class="event-currency" data-event-currency="${key}" aria-pressed="${on}" title="${escapeHtml(title)}"${locked ? ' aria-disabled="true"' : ''}><span class="cur-dot ${regions[key].color}"></span>${escapeHtml(regions[key].code)}</button>`;
+      }).join('')}</div>`;
     }
     function renderConfigEvents() {
       const year = configState.year;
@@ -1788,6 +1803,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           <i class="ti ti-star-filled" aria-hidden="true"></i>
           <input class="config-event-name" value="${escapeHtml(row.name)}" placeholder="Event name, e.g. Marriage" aria-label="Event name" maxlength="60" autocomplete="off">
           <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
+          ${eventCurrencyChips(row, year)}
           <label class="event-switch" title="Also count this event's entries in the months they happened"><input type="checkbox" data-event-include${row.include ? ' checked' : ''}><span class="event-switch-track" aria-hidden="true"></span><span>Show in months</span></label>
           <button type="button" class="icon-button config-remove" data-remove-event aria-label="Delete ${escapeHtml(row.name || 'event')}" title="Delete event"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>`;
@@ -1801,6 +1817,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const names = kept.map(row => nameKey(row.name));
         if (names.some(name => !name)) return { problem: `${year}: every event needs a name.`, year };
         if (new Set(names).size !== names.length) return { problem: `${year}: event names must be unique.`, year };
+        if (kept.some(row => !row.currencies.length)) return { problem: `${year}: every event needs a currency.`, year };
       }
       // A name may also not repeat an event of another year, so the same event is never created twice.
       const removed = new Set(Object.values(configState.events).flat().filter(row => row.removed && row.id).map(row => row.id));
@@ -1823,8 +1840,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const name = row.name.trim().replace(/\s+/g, ' ');
         if (!row.id) {
           const id = `ev-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-          trackSave(store.createEvent(id, name, Number(year)));
-          store.yearCurrencies(Number(year)).forEach(key => store.ownEventSections(id, key));
+          trackSave(store.createEvent(id, name, Number(year), row.currencies));
+          store.events[id].currencies.forEach(key => store.ownEventSections(id, key));
           trackSave(store.saveEventMeta(id, { sections: store.events[id].sections, ...(row.include && { include: true }) }));
           expandedMonths.add(`ev:${id}`);
           changed.push(`added ${name}`);
@@ -1845,6 +1862,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           fields.name = name;
         }
         if (row.include !== store.events[row.id].include) fields.include = row.include;
+        const currencies = store.ordered(row.currencies);
+        if (currencies.join() !== store.ordered(store.events[row.id].currencies).join()) fields.currencies = currencies;
         if (Object.keys(fields).length) {
           trackSave(store.saveEventMeta(row.id, fields));
           changed.push(`updated ${name}`);
@@ -1914,9 +1933,25 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
       form.addEventListener('click', event => {
         if (event.target.closest('#config-add-event')) {
-          eventDraft(configState.year).push({ id: null, name: '', include: false, removed: false });
+          const first = store.yearCurrencies(configState.year)[0] || store.currencyKeys()[0];
+          eventDraft(configState.year).push({ id: null, name: '', include: false, currencies: first ? [first] : [], removed: false });
           renderConfigEvents();
           return document.querySelector('#config-events .config-event:last-child .config-event-name')?.focus();
+        }
+        const chip = event.target.closest('[data-event-currency]');
+        if (chip) {
+          const row = eventRow(chip);
+          const key = chip.dataset.eventCurrency;
+          const error = document.querySelector('#year-settings-error');
+          const on = row.currencies.includes(key);
+          const problem = eventCurrencyLocked(row, key) ? `“${row.name.trim() || 'This event'}” has ${regions[key].code} entries, so ${regions[key].code} stays on.`
+            : on && row.currencies.length === 1 ? 'An event needs at least one currency.' : '';
+          error.textContent = problem;
+          error.hidden = !problem;
+          if (problem) return;
+          row.currencies = on ? row.currencies.filter(item => item !== key) : [...row.currencies, key];
+          renderConfigEvents();
+          return document.querySelector(`#config-events [data-event-index="${chip.closest('.config-event').dataset.eventIndex}"] [data-event-currency="${key}"]`)?.focus();
         }
         const remove = event.target.closest('[data-remove-event]');
         if (remove) {

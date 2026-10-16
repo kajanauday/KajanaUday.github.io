@@ -428,7 +428,7 @@
     .ledger-sub-entry .ledger-entry-desc, .ledger-sub-entry .ledger-entry-place, .ledger-sub-entry strong { font-size: 13.5px; }
     /* Rows are added by double-click or a 2s hold: stop the double-click selecting text and the hold raising the touch callout. */
     .ledger { touch-action: manipulation; }
-    .ledger-type-section > summary, .ledger-cat > summary, .ledger-entry-cell { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .ledger-type-section > summary, .ledger-cat > summary, .ledger-entry-cell, .month-block.is-event .ledger-panel-head { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .ledger-entry-form, .ledger-entry-form input, .ledger-form input { user-select: text; -webkit-user-select: text; }
     .ledger-entry strong { font: 400 13.5px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; justify-self: end; }
     .ledger-entry-form { display: grid; grid-template-columns: var(--entry-cols); gap: 6px; align-items: center; margin: 2px 0; padding: 4px 0; border-top: 1px dotted var(--line); border-radius: 4px; background: var(--brand-soft); }
@@ -566,6 +566,14 @@
     .config-event-name { min-width: 160px; height: 32px; flex: 1; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: 700 13px var(--display); }
     .config-event-name:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
     .config-event .config-remove { width: 30px; height: 30px; }
+    .event-currencies { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+    .event-currency { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 99px; background: transparent; color: var(--muted); cursor: pointer; font: 700 11.5px var(--mono); }
+    .event-currency:hover { color: var(--ink); }
+    .event-currency .cur-dot { opacity: .35; }
+    .event-currency[aria-pressed="true"] { border-color: var(--line-strong); background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow-sm); }
+    .event-currency[aria-pressed="true"] .cur-dot { opacity: 1; }
+    .event-currency[aria-disabled="true"] { cursor: default; }
+    .event-currency:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     /* An event's row in the months list carries a small gold star before its name. */
     .month-name-star { margin-right: 6px; color: var(--brand); font-size: 12px; -webkit-text-fill-color: var(--brand); vertical-align: 1px; }
     .event-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; font-size: 12.5px; font-weight: 600; }

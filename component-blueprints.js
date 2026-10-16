@@ -80,7 +80,8 @@
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
   // have entries (plus one being added to). A block holding an open form is forced open so the form is visible.
   // `heading` ({ title, section }), when given, titles the block with one section's own name instead of Income/Expenses;
-  // an event's panel draws each of its sections this way.
+  // an event's panel draws each of its sections this way. With `heading.bare` the block has no title row at all: an
+  // event's own section is the panel itself, so its subsections sit straight under the currency header.
   const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null, heading = null) => {
     if (!sections.length && !carry) return '';
     const categories = [];
@@ -105,6 +106,9 @@
       : '';
     const title = heading ? ctx.esc(heading.title) : type === 'income' ? 'Income' : 'Expenses';
     const open = isOpen || Boolean(carry) || Boolean(subForm) || categoriesHtml.includes('data-ledger-form=');
+    if (heading?.bare) {
+      return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
+    }
     return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${carryHtml}${subForm}${categoriesHtml || (subForm || carryHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
   };
 
@@ -117,12 +121,12 @@
     const m = country._meta;
     const carried = Number(m.carried) || 0;
     const carryFor = type => (type === 'income' ? carried > 0 : carried < 0) ? { amount: Math.abs(carried), from: m.carriedFrom } : null;
-    // An event only spends: each of its sections is its own open block under its own name, with no Income block (unless
-    // it already holds income entries, which then still show) and no balance.
+    // An event only spends: its own section (the first) fills the panel untitled, any others are open blocks under their
+    // own names, and there is no Income block (unless it already holds income entries, which then still show) and no balance.
     const isEvent = isEventKey(mKey);
     const hasEntries = section => Object.values(section.categories).some(category => category.entries.length);
     const sections = isEvent
-      ? byType.expense.map(section => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id })).join('')
+      ? byType.expense.map((section, index) => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id, bare: index === 0, panel: m.name })).join('')
         + (byType.income.some(hasEntries) ? TypeSection('income', byType.income, { mKey, property }, state, ctx, false) : '')
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'));
