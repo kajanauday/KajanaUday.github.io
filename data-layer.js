@@ -361,9 +361,10 @@
 
     // ---- persistence ----
     // Metadata is rebuilt immediately so the UI shows new totals at once; the write is queued so writes land in order.
-    saveTransactions() {
+    // `year`, when given, is rebuilt and written even if no month's entries changed (e.g. only its section lists did).
+    saveTransactions(year) {
       const update = {};
-      const years = new Set();
+      const years = new Set(year ? [String(year)] : []);
       const monthItems = this.transactions.filter(item => !item.eventId);
       this.synced.forEach((json, id) => {
         const year = id.slice(0, 4);
@@ -581,17 +582,20 @@
     // Entries-only totals for one currency across the whole year (every month loaded): section → subsection → item, with
     // names de-duplicated by nameKey. Items are what a subsection was spent on: each note of an entry with notes (e.g.
     // "EMI - Home Loan" under EMIలు), or the entry itself when it has none. An entry without a stored section is placed
-    // by its month's list, else under "Other".
+    // by its month's list, else under "Other". A section is `renamable` when it is a real section (stored on entries or
+    // in a month's list), not an event's ★ section or the "Other" fallback.
     yearBreakdown(year, currency) {
       const byType = { income: new Map(), expense: new Map() };
       MONTH_NAMES.forEach((_, monthIndex) => {
         const lists = this.sections(year, monthIndex, currency);
         this.items(year, currency, monthIndex, { withEvents: true }).filter(item => !item.parentId).forEach(item => {
-          const sectionName = item.eventId ? `★ ${this.eventName(item.eventId)}` : item.section || lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name || (item.type === 'income' ? 'Other income' : 'Other expenses');
+          const { name: sectionName, source } = this.summarySection(item, lists);
           const total = this.entryTotal(item.id);
           const sections = byType[item.type === 'income' ? 'income' : 'expense'];
-          const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map() };
+          const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map(), renamable: false, event: false };
           section.total += total;
+          if (source === 'stored' || source === 'list') section.renamable = true;
+          if (source === 'event') section.event = true;
           sections.set(nameKey(sectionName), section);
           const sub = section.subsections.get(nameKey(item.category)) || { name: item.category, total: 0, entries: 0, months: new Set(), items: new Map() };
           sub.total += total;
@@ -615,6 +619,96 @@
         subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size, items: sorted(sub.items).map(part => ({ ...part, months: part.months.size })) }))
       }));
       return { expense: finish(byType.expense), income: finish(byType.income) };
+    }
+
+    // The section the year summary files an entry under, and where that came from: 'event' (★ event name), 'stored' (the
+    // entry's own section), 'list' (the month's list section holding its subsection) or 'other' (neither).
+    summarySection(item, lists) {
+      if (item.eventId) return { name: `★ ${this.eventName(item.eventId)}`, source: 'event' };
+      if (item.section) return { name: item.section, source: 'stored' };
+      const listed = lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name;
+      if (listed) return { name: listed, source: 'list' };
+      return { name: item.type === 'income' ? 'Other income' : 'Other expenses', source: 'other' };
+    }
+
+    // ---- year-wide rename (from the year summary) ----
+    // Renames one year-summary row for one currency across the whole year: a section, a subsection or an item.
+    // target: { level: 'section' | 'sub' | 'item', type, section, sub?, item? }, keys as yearBreakdown gives them (nameKey).
+    //   section  every month's list section of that name and type, and every entry (and note) that stores it
+    //   sub      in that section, every month's list name and every entry (and its notes) filed under it
+    //   item     in that subsection, every note (or note-less entry) of that description
+    // Names that already exist where the new name lands are merged: two sections become one list section, a subsection
+    // already listed by another section of the month moves there (category names are unique per type within a month).
+    // Returns { entries, months, merged, apply() }; nothing changes until apply(), then save with saveTransactions(year).
+    planRename(year, currency, target, name) {
+      const oldKey = target[target.level];
+      const newKey = nameKey(name);
+      const changes = [];
+      const months = new Set();
+      let entries = 0;
+      let merged = false;
+      const childrenOf = id => this.transactions.filter(item => item.parentId === id);
+      MONTH_NAMES.forEach((_, monthIndex) => {
+        const lists = this.sections(year, monthIndex, currency);
+        const ofType = lists.filter(section => section.type === target.type);
+        // Resolve every entry against the month's lists as they are now, before any of them change.
+        const matched = this.items(year, currency, monthIndex).filter(item => !item.parentId && item.type === target.type
+          && nameKey(this.summarySection(item, lists).name) === target.section
+          && (target.level === 'section' || nameKey(item.category) === target.sub));
+        const before = changes.length;
+        if (target.level === 'section') {
+          // Sections already called the new name (other than this one) take this one's subsections.
+          const named = ofType.filter(section => [oldKey, newKey].includes(nameKey(section.name)));
+          if (named.some(section => nameKey(section.name) === oldKey) && named.length > 1) merged = true;
+          if (named.some(section => nameKey(section.name) === oldKey) || matched.length) {
+            changes.push(() => {
+              const [keep, ...rest] = named;
+              if (keep) {
+                keep.name = name;
+                rest.forEach(section => {
+                  section.subsections.forEach(sub => { if (!keep.subsections.some(own => nameKey(own) === nameKey(sub))) keep.subsections.push(sub); });
+                  lists.splice(lists.indexOf(section), 1);
+                });
+              }
+              this.items(year, currency, monthIndex).filter(item => item.type === target.type && item.section && [oldKey, newKey].includes(nameKey(item.section)))
+                .forEach(item => { item.section = name; });
+            });
+          }
+        } else if (target.level === 'sub') {
+          const home = ofType.filter(section => nameKey(section.name) === target.section);
+          // Another section of the month already listing the new name holds the renamed entries from now on.
+          const holder = ofType.find(section => nameKey(section.name) !== target.section && section.subsections.some(sub => nameKey(sub) === newKey));
+          const listed = home.some(section => section.subsections.some(sub => nameKey(sub) === oldKey));
+          if (holder && (listed || matched.length)) merged = true;
+          if (listed || matched.length) {
+            changes.push(() => {
+              const finalName = holder ? holder.subsections.find(sub => nameKey(sub) === newKey) : name;
+              // Merging drops the old name from this section's list; otherwise it is renamed in place, once.
+              home.forEach(section => {
+                section.subsections = holder
+                  ? section.subsections.filter(sub => nameKey(sub) !== oldKey)
+                  : section.subsections.map(sub => (nameKey(sub) === oldKey ? name : sub))
+                    .filter((sub, index, all) => all.findIndex(other => nameKey(other) === nameKey(sub)) === index);
+              });
+              matched.forEach(entry => [entry, ...childrenOf(entry.id)].forEach(item => {
+                item.category = finalName;
+                if (holder) item.section = holder.name;
+              }));
+            });
+          }
+        } else {
+          const parts = matched.flatMap(entry => {
+            const notes = childrenOf(entry.id);
+            return notes.length ? notes.filter(note => nameKey(note.description) === target.item) : nameKey(entry.description) === target.item ? [entry] : [];
+          });
+          if (parts.length) changes.push(() => parts.forEach(item => { item.description = name; }));
+        }
+        if (changes.length > before) {
+          months.add(monthIndex);
+          entries += matched.length;
+        }
+      });
+      return { entries, months: months.size, merged, apply: () => changes.forEach(change => change()) };
     }
 
     // ---- entry queries (loaded months only) ----

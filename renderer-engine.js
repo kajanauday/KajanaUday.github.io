@@ -28,12 +28,13 @@
       return [...months.filter(month => month === now), ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
     }
 
-    yearKpis(year) {
+    // `edit` is the year-summary row being renamed, if any.
+    yearKpis(year, edit = null) {
       return this.store.yearCurrencies(year).map(currency => {
         const totals = this.store.yearTotals(year, currency);
         const region = this.ctx.regions[currency];
         const breakdown = this.store.isYearLoaded(year) ? this.store.yearBreakdown(year, currency) : null;
-        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, breakdown }, year, this.ctx);
+        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, breakdown }, year, this.ctx, edit);
       }).join('');
     }
 

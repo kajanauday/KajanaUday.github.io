@@ -84,7 +84,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     let entryDraft = null;
     let subEntryDraftParentId = null;
     let editDraft = null; // { kind: 'entry' | 'note', id } or { kind: 'category', month, property, type, category }
-    const hasDraft = () => Boolean(ledgerDraft || entryDraft || subEntryDraftParentId || editDraft);
+    // Year-summary rename: the row being renamed ({ key, property, target, original, name, open, fresh }), and right after
+    // a rename, [old key, new key] so the renamed row and the rows inside it stay open under their new keys.
+    let summaryEdit = null;
+    let summaryKeyMove = null;
+    const hasDraft = () => Boolean(ledgerDraft || entryDraft || subEntryDraftParentId || editDraft || summaryEdit);
     const expandedEntries = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
@@ -106,16 +110,22 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
     };
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
-    function renderYearKpis(year) { return ledgerRenderer.yearKpis(year); }
+    function renderYearKpis(year) { return ledgerRenderer.yearKpis(year, summaryEdit); }
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     function renderLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year);
-      // Rows opened in the year summary stay open when it is redrawn.
+      // Rows opened in the year summary stay open when it is redrawn, also under their new key after a rename; a row
+      // being renamed keeps what was typed.
       const kpis = document.querySelector('#year-kpis');
-      const openRows = new Set([...kpis.querySelectorAll('details[open][data-key]')].map(row => row.dataset.key));
+      const [movedFrom, movedTo] = summaryKeyMove || [];
+      const moveKey = key => (movedFrom && (key === movedFrom || key.startsWith(`${movedFrom}|`)) ? movedTo + key.slice(movedFrom.length) : key);
+      const openRows = new Set([...kpis.querySelectorAll('details[open][data-key], .is-renaming[data-open][data-key]')].map(row => moveKey(row.dataset.key)));
+      summaryKeyMove = null;
+      const typed = kpis.querySelector('[data-kb-rename] input');
+      if (typed && summaryEdit) summaryEdit.name = typed.value;
       kpis.innerHTML = renderYearKpis(year);
       kpis.querySelectorAll('details[data-key]').forEach(row => { if (openRows.has(row.dataset.key)) row.open = true; });
       const toggle = document.querySelector('[data-toggle-universe]');
@@ -128,6 +138,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
       focusDrafts(host);
+      // After the ledger's own fields, which close any open suggestion list, so the summary field keeps its list.
+      if (summaryEdit) {
+        const field = kpis.querySelector('[data-kb-rename] input');
+        if (!field) summaryEdit = null;
+        else {
+          attachSummarySuggestions(field, summaryEdit);
+          field.focus({ preventScroll: true });
+          if (summaryEdit.fresh) field.select();
+          summaryEdit.fresh = false;
+        }
+      }
       document.body.classList.toggle('show-universe', universeOpen);
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
@@ -150,6 +171,34 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       focusQuietly(rename);
       rename?.select();
       attachLedgerSuggestions(host);
+    }
+    // The year-summary name field suggests names already in use: sections and subsections of the same type, or for an item
+    // past entry and note descriptions (those filed under the same subsection first). The current name is left out.
+    // Picking one only fills it in; Enter then renames, merging into that name after asking.
+    function attachSummarySuggestions(field, { target, original }) {
+      const items = () => {
+        if (target.level === 'section') return sectionChoices([original]).filter(item => item.type === target.type);
+        if (target.level === 'sub') return subsectionChoices(target.type, [original]);
+        const owner = { type: target.type, category: target.sub };
+        const merged = new Map();
+        [...descriptionChoices('notes', owner, original), ...descriptionChoices('entries', owner, original)].forEach(item => {
+          const key = nameKey(item.name);
+          const seen = merged.get(key);
+          if (!seen) return merged.set(key, item);
+          const uses = seen.uses + item.uses;
+          const near = seen.near || item.near;
+          merged.set(key, { ...seen, uses, near, last: seen.last > item.last ? seen.last : item.last, note: near ? `here · ${usesNote(uses)}` : usesNote(uses) });
+        });
+        return [...merged.values()];
+      };
+      suggest.attach(field, {
+        items,
+        onPick: item => {
+          field.value = item.name;
+          field.removeAttribute('aria-invalid');
+          field.focus();
+        }
+      });
     }
     // Inline name fields get suggestions: a new subsection offers names this month and currency do not have yet, and a
     // rename offers every other name of the same type.
@@ -485,6 +534,41 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderLedger();
       showToast(message);
     }
+    // Renaming from the year summary changes the whole year for that currency: every month's section lists and every
+    // entry and note filed under the row (see ExpenseStore.planRename). Merging into a name that already exists asks first.
+    function saveSummaryRename() {
+      const edit = summaryEdit;
+      const input = document.querySelector('[data-kb-rename] input');
+      if (!edit || !input) return;
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const year = currentMonth.getFullYear();
+      const what = { section: 'section', sub: 'subsection', item: 'item' }[edit.target.level];
+      if (name === edit.original) return cancelSummaryRename();
+      if (!name) {
+        input.setAttribute('aria-invalid', 'true');
+        showToast('Type a name first.');
+        return input.focus();
+      }
+      if (!store.isYearLoaded(year)) return showToast(`Still loading ${year}; try again in a moment.`);
+      const plan = store.planRename(year, edit.property, edit.target, name);
+      if (!plan.months) {
+        cancelSummaryRename();
+        return showToast(`Nothing in ${year} is filed under “${edit.original}”.`);
+      }
+      if (plan.merged && !window.confirm(`“${name}” already exists in ${year}. Merge “${edit.original}” into it?`)) return input.focus();
+      plan.apply();
+      trackSave(store.saveTransactions(year));
+      const at = edit.key.lastIndexOf('|') + 1;
+      summaryKeyMove = [edit.key, edit.key.slice(0, at) + (ExpenseStore.nameKey(name) || '—')];
+      summaryEdit = null;
+      renderLedger();
+      showToast(`Renamed ${what} “${edit.original}” to “${name}” in ${plan.months} ${plan.months === 1 ? 'month' : 'months'} of ${year} (${plan.entries} ${plan.entries === 1 ? 'entry' : 'entries'}).`);
+    }
+    function cancelSummaryRename() {
+      if (!summaryEdit) return;
+      summaryEdit = null;
+      renderLedger();
+    }
     // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
     function saveCategoryRename(form) {
       const { month, property, type, category } = form.dataset;
@@ -545,6 +629,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const rowKeyFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form')) return null;
+        const summaryRow = el.closest('[data-kb-level]');
+        if (summaryRow) return `kb:${summaryRow.closest('[data-key]')?.dataset.key}|${summaryRow.dataset.kbItem ?? ''}`;
         const note = el.closest('[data-note-id]');
         if (note) return `note:${note.dataset.noteId}`;
         const entryCell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -583,7 +669,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           lastClick = isDouble ? { key: null, time: 0 } : { key: rowKey, time: Date.now() };
           if (isDouble) {
             event.preventDefault();
-            return triggerEdit(event.target, rowKey);
+            return rowKey.startsWith('kb:') ? startSummaryRename(event.target) : triggerEdit(event.target, rowKey);
           }
         }
         // A year tab switches years; the year already shown opens its settings.
@@ -657,7 +743,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           expandButton.textContent = open ? 'Collapse all' : 'Expand all';
         }
       });
+      // The year-summary name field: Enter renames, Esc cancels, and so does moving focus anywhere else. Focus is checked
+      // a frame later because a redraw replaces the field (and refocuses the new one).
+      ledger.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || !event.target.closest('[data-kb-rename]')) return;
+        event.preventDefault();
+        cancelSummaryRename();
+      });
+      ledger.addEventListener('focusout', event => {
+        if (!event.target.closest?.('[data-kb-rename]')) return;
+        requestAnimationFrame(() => {
+          if (summaryEdit && !document.activeElement?.closest('[data-kb-rename]')) cancelSummaryRename();
+        });
+      });
       ledger.addEventListener('submit', event => {
+        if (event.target.closest('[data-kb-rename]')) {
+          event.preventDefault();
+          return saveSummaryRename();
+        }
         const form = event.target.closest('[data-ledger-form]');
         if (!form) return;
         event.preventDefault();
@@ -827,6 +930,25 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return false;
       };
 
+      // Double-click on a year-summary name: rename it for the whole year. The second click was not let through, so a
+      // section or subsection row was toggled once; its state before the double-click is kept for the edit and after it.
+      const startSummaryRename = element => {
+        const row = getElement(element)?.closest('[data-kb-level]');
+        if (!row) return;
+        if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+        const d = row.dataset;
+        const details = row.tagName === 'SUMMARY' ? row.parentElement : null;
+        summaryEdit = {
+          key: details ? details.dataset.key : `${row.closest('[data-key]').dataset.key}|${d.kbItem}`,
+          property: d.kbProperty,
+          target: { level: d.kbLevel, type: d.kbType, section: d.kbSection, sub: d.kbSub, item: d.kbItem },
+          original: d.kbName,
+          name: d.kbName,
+          open: details ? !details.open : false,
+          fresh: true
+        };
+        renderLedger();
+      };
       // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
       // field; Income/Expenses opens the month's settings, where its sections are named.
       const triggerEdit = (element, rowKey) => {

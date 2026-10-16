@@ -130,11 +130,19 @@
   // Category totals for the year, three levels deep and collapsed until opened: each section, its subsections by size,
   // and what each subsection was spent on (its entries' notes, or the entries themselves). Each row shows its share of the
   // level above and how many months it appeared in. data-key lets an open row stay open across re-renders.
-  const YearBreakdown = (breakdown, property, ctx) => {
+  // Section, subsection and item names can be renamed for the whole year: a renamable row carries data-kb-level and the
+  // keys that identify it, and the row named by `edit` ({ key, name, open }) shows a name field in place of its name.
+  // Event (★) sections and the "Other" fallback are not real sections, so they are not renamable.
+  const YearBreakdown = (breakdown, property, ctx, edit = null) => {
     if (!breakdown) return '<p class="kb-loading">Adding up the year…</p>';
     const months = n => `${n} ${n === 1 ? 'month' : 'months'}`;
     const shareOf = (part, whole) => (whole ? Math.round(part / whole * 100) : 0);
     const bar = share => `<span class="kb-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span>`;
+    const renameAttrs = (level, keys, name) =>
+      ` data-kb-level="${level}" data-kb-property="${property}"${Object.entries(keys).map(([part, key]) => ` data-kb-${part}="${ctx.esc(key)}"`).join('')} data-kb-name="${ctx.esc(name)}"`;
+    const renameField = (key, name) =>
+      `<form class="kb-rename-form" data-kb-rename data-key="${ctx.esc(key)}" novalidate><input name="name" value="${ctx.esc(edit.name ?? name)}" maxlength="80" aria-label="New name for ${ctx.esc(name)}, for the whole year" title="Enter renames it in every month of the year; Esc cancels" autocomplete="off" spellcheck="false" enterkeyhint="done"></form>`;
+    const renameHint = ' · double-click to rename';
     const block = (type, sections) => {
       if (!sections.length) return '';
       const all = sections.reduce((sum, section) => sum + section.total, 0);
@@ -142,17 +150,28 @@
       const rows = sections.map(section => {
         const sectionKey = `${property}|${type}|${section.key}`;
         const subs = section.subsections.map(sub => {
+          const subKey = `${sectionKey}|${sub.key}`;
           const items = sub.items.map(part => {
             const share = shareOf(part.total, sub.total);
-            return `<li class="kb-item"><span class="kb-name" title="${ctx.esc(part.name)}">${ctx.esc(part.name)}</span>${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(part.total, property)}</strong><small class="kb-months" title="${part.count} ${part.count === 1 ? 'payment' : 'payments'}">${months(part.months)}</small></li>`;
+            const itemKey = `${subKey}|${part.key}`;
+            const canRename = !section.event && part.key !== '—';
+            const nameHtml = edit?.key === itemKey ? renameField(itemKey, part.name) : `<span class="kb-name" title="${ctx.esc(part.name)}${canRename ? renameHint : ''}">${ctx.esc(part.name)}</span>`;
+            return `<li class="kb-item${edit?.key === itemKey ? ' is-renaming' : ''}"${canRename ? renameAttrs('item', { type, section: section.key, sub: sub.key, item: part.key }, part.name) : ''}>${nameHtml}${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(part.total, property)}</strong><small class="kb-months" title="${part.count} ${part.count === 1 ? 'payment' : 'payments'}">${months(part.months)}</small></li>`;
           }).join('');
           const share = shareOf(sub.total, section.total);
-          return `<details class="kb-sub" data-key="${ctx.esc(`${sectionKey}|${sub.key}`)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-name" title="${ctx.esc(sub.name)}">${ctx.esc(sub.name)}</span>${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${months(sub.months)}</small></summary><ul class="kb-items">${items}</ul></details>`;
+          const subCells = `${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${months(sub.months)}</small>`;
+          // While renamed, the row is a plain block (a field inside <summary> would toggle it); it keeps its items if open.
+          if (edit?.key === subKey) return `<div class="kb-sub is-renaming" data-key="${ctx.esc(subKey)}"${edit.open ? ' data-open' : ''}><div class="kb-edit-row"><i class="ti ti-pencil" aria-hidden="true"></i>${renameField(subKey, sub.name)}${subCells}</div>${edit.open ? `<ul class="kb-items">${items}</ul>` : ''}</div>`;
+          const subAttrs = section.event ? '' : renameAttrs('sub', { type, section: section.key, sub: sub.key }, sub.name);
+          return `<details class="kb-sub" data-key="${ctx.esc(subKey)}"><summary${subAttrs}><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-name" title="${ctx.esc(sub.name)}${subAttrs ? renameHint : ''}">${ctx.esc(sub.name)}</span>${subCells}</summary><ul class="kb-items">${items}</ul></details>`;
         }).join('');
         const share = shareOf(section.total, all);
         // A lone section would only repeat the Income/Expenses heading above it, so its subsections stand directly there.
         if (sections.length === 1) return `<div class="kb-subs is-flat">${subs}</div>`;
-        return `<details class="kb-section" data-key="${ctx.esc(sectionKey)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name">${ctx.esc(section.name)}</span><span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(section.total, property)}</strong></summary><div class="kb-subs">${subs}</div></details>`;
+        const sectionCells = `<span class="kb-share">${share}%</span><strong class="kb-amount ${type}">${ctx.fmt(section.total, property)}</strong>`;
+        if (edit?.key === sectionKey) return `<div class="kb-section is-renaming" data-key="${ctx.esc(sectionKey)}"${edit.open ? ' data-open' : ''}><div class="kb-edit-row"><i class="ti ti-pencil" aria-hidden="true"></i>${renameField(sectionKey, section.name)}${sectionCells}</div>${edit.open ? `<div class="kb-subs">${subs}</div>` : ''}</div>`;
+        const sectionAttrs = section.renamable && !section.event ? renameAttrs('section', { type, section: section.key }, section.name) : '';
+        return `<details class="kb-section" data-key="${ctx.esc(sectionKey)}"><summary${sectionAttrs}><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name"${sectionAttrs ? ` title="${ctx.esc(section.name)}${renameHint}"` : ''}>${ctx.esc(section.name)}</span>${sectionCells}</summary><div class="kb-subs">${subs}</div></details>`;
       }).join('');
       // Income and Expenses open and close like every row below them, closed until clicked.
       return `<details class="kb-type ${type}" data-key="${ctx.esc(`${property}|${type}`)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>${title}</span><strong class="${type}">${ctx.fmt(all, property)}</strong></summary><div class="kb-type-body">${rows}</div></details>`;
@@ -161,7 +180,7 @@
     return html ? `${html}<p class="kb-note">Entries only; balances brought forward are not included.</p>` : '<p class="kb-loading">No entries yet this year.</p>';
   };
 
-  const YearKpiCard = (country, year, ctx) => {
+  const YearKpiCard = (country, year, ctx, edit = null) => {
     const { id: property, name, code, color, income, expense, net, opening, closing, breakdown } = country;
     const rate = income ? Math.round(net / income * 100) : null;
     return `<article class="kpi-card ${color}">
@@ -173,7 +192,7 @@
             <div><dt>Saved</dt><dd>${rate === null ? '—' : `${rate}%`}</dd></div>
             <div title="Opening ${ctx.fmt(opening, property)} + net"><dt>Balance</dt><dd>${ctx.fmt(closing, property)}</dd></div>
           </dl>
-          <div class="kpi-breakdown">${YearBreakdown(breakdown, property, ctx)}</div>
+          <div class="kpi-breakdown">${YearBreakdown(breakdown, property, ctx, edit?.property === property ? edit : null)}</div>
         </article>`;
   };
 
