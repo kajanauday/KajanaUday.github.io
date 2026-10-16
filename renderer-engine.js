@@ -96,7 +96,7 @@
         open,
         isEvent: true,
         isEmpty: !this.store.eventItems(event.id).length,
-        summaryHtml: open ? '' : B().MonthSummary(countries.map(country => ({ property: country._meta.id, income: country._meta.income, expense: country._meta.expense, balance: country._meta.closing })), { isFuture: false }, this.ctx),
+        summaryHtml: open ? '' : B().MonthSummary(countries.map(country => ({ property: country._meta.id, income: country._meta.income, expense: country._meta.expense, balance: country._meta.closing })), { isFuture: false, expenseOnly: true }, this.ctx),
         panelsHtml: open ? countries.map(country => B().CurrencyPanel(country, { mKey }, state, this.ctx)).join('') : '',
         single: currencies.length <= 1
       });

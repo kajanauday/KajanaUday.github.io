@@ -892,7 +892,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const toggle = entryCell?.querySelector('[data-toggle-entry]');
         const cat = element.closest('.ledger-cat');
         const typeSection = element.closest('.ledger-type-section');
-        const type = typeSection?.querySelector('summary strong')?.textContent.trim() === 'Income' ? 'income' : 'expense';
+        // The block's own type, not its title: an event's blocks are titled with their section's name.
+        const type = typeSection?.dataset.type === 'income' ? 'income' : 'expense';
+        const namedSection = typeSection?.dataset.section;
 
         if (toggle) {
           const entryId = toggle.dataset.entryId;
@@ -905,7 +907,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (cat && typeSection) {
           const categoryName = cat.querySelector('.ledger-cat-name').textContent.trim();
           const candidates = sections.filter(item => item.type === type);
-          const section = candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
+          const section = candidates.find(item => item.name === namedSection) || candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
           if (!section) {
             showToast('Add a section for this month first: double-click the month name.');
             return true;
@@ -917,7 +919,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return true;
         }
         if (typeSection) {
-          const section = sections.find(item => item.type === type);
+          const section = sections.find(item => item.type === type && item.name === namedSection) || sections.find(item => item.type === type);
           if (!section) {
             showToast('Add a section for this month first: double-click the month name.');
             return true;
@@ -969,12 +971,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           editDraft = { kind: 'note', id };
         } else if (kind === 'cat') {
           const cat = element.closest('.ledger-cat');
-          const type = element.closest('.ledger-type-section')?.querySelector('summary strong')?.textContent.trim().toLowerCase() === 'income' ? 'income' : 'expense';
+          const type = element.closest('.ledger-type-section')?.dataset.type === 'income' ? 'income' : 'expense';
           editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim() };
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
-          if (monthBlock.dataset.monthKey.startsWith('ev:')) return showToast('Press and hold Expenses or Income to add a subsection.');
+          if (monthBlock.dataset.monthKey.startsWith('ev:')) return showToast('Press and hold the section name to add a subsection.');
           return openMonthSettings(...yearMonthOf(monthBlock.dataset.monthKey));
         }
         renderLedger();
@@ -1829,7 +1831,19 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return;
         }
         const fields = {};
-        if (name !== store.eventName(row.id)) fields.name = name;
+        if (name !== store.eventName(row.id)) {
+          // The section named after the event follows the new name, in its list and on its entries.
+          const old = nameKey(store.eventName(row.id));
+          const lists = store.events[row.id].sections;
+          const named = Object.values(lists).flat().filter(section => nameKey(section.name) === old);
+          if (named.length) {
+            named.forEach(section => { section.name = name; });
+            store.eventItems(row.id).filter(item => item.section && nameKey(item.section) === old).forEach(item => { item.section = name; });
+            fields.sections = lists;
+            saveTransactions();
+          }
+          fields.name = name;
+        }
         if (row.include !== store.events[row.id].include) fields.include = row.include;
         if (Object.keys(fields).length) {
           trackSave(store.saveEventMeta(row.id, fields));

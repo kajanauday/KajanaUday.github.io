@@ -247,6 +247,7 @@
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
       await store.moveYearSectionsToMonths();
+      await store.migrateEventSections();
       return store;
     }
     // One-time move from year-wide sections to per-month lists. Every month and currency that is on or has entries, and has
@@ -465,11 +466,41 @@
     eventName(id) { return this.events[id]?.name || ''; }
     eventItems(id, currency) { return this.transactions.filter(item => item.eventId === id && (!currency || item.property === currency)); }
     eventSections(id, currency) { return this.events[id]?.sections[currency] || []; }
-    // The event's editable list for a currency; a new one starts with one expense and one income section.
+    // The event's editable list for a currency. An event only spends, so a new list is one expense section named after
+    // the event itself; its subsections and entries go under that.
     ownEventSections(id, currency) {
       const event = this.events[id];
-      event.sections[currency] ||= [{ name: 'Expenses', type: 'expense', subsections: [] }, { name: 'Income', type: 'income', subsections: [] }];
+      event.sections[currency] ||= [{ name: event.name, type: 'expense', subsections: [] }];
       return event.sections[currency];
+    }
+    // One-time move of events made before that: their default "Expenses" section takes the event's name (in the list and
+    // on its entries), and Income sections without income entries are dropped. Written back once; nothing else changes.
+    async migrateEventSections() {
+      const update = {};
+      Object.entries(this.events).forEach(([id, event]) => {
+        let changed = false;
+        Object.entries(event.sections).forEach(([currency, list]) => {
+          const items = this.eventItems(id, currency);
+          const legacy = list.find(section => section.type === 'expense' && section.name === 'Expenses');
+          if (legacy && !list.some(section => nameKey(section.name) === nameKey(event.name))) {
+            legacy.name = event.name;
+            items.filter(item => item.section === 'Expenses').forEach(item => { item.section = event.name; });
+            changed = true;
+          }
+          const kept = list.filter(section => section.type !== 'income' || items.some(item => item.type === 'income'));
+          if (kept.length !== list.length) {
+            event.sections[currency] = kept;
+            changed = true;
+          }
+        });
+        if (!changed) return;
+        update[`events/${id}/sections`] = event.sections;
+        const doc = monthDoc(this.eventItems(id), true);
+        update[`events/${id}/entries`] = doc;
+        this.eventSynced.set(id, JSON.stringify(doc));
+      });
+      if (!Object.keys(update).length) return;
+      await this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the event sections.', error));
     }
     // Entries-only totals that included events add to one month and currency.
     eventMonthTotals(year, monthIndex, currency) {

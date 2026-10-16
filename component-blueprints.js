@@ -79,7 +79,9 @@
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
   // have entries (plus one being added to). A block holding an open form is forced open so the form is visible.
-  const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null) => {
+  // `heading` ({ title, section }), when given, titles the block with one section's own name instead of Income/Expenses;
+  // an event's panel draws each of its sections this way.
+  const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null, heading = null) => {
     if (!sections.length && !carry) return '';
     const categories = [];
     sections.forEach(section => {
@@ -101,9 +103,9 @@
     const subForm = l && l.month === mKey && l.property === property && sections.some(section => section._meta.id === l.section)
       ? SubsectionForm({ sectionName: l.section }, ctx)
       : '';
-    const title = type === 'income' ? 'Income' : 'Expenses';
+    const title = heading ? ctx.esc(heading.title) : type === 'income' ? 'Income' : 'Expenses';
     const open = isOpen || Boolean(carry) || Boolean(subForm) || categoriesHtml.includes('data-ledger-form=');
-    return `<details class="ledger-type-section" data-type="${type}" ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${carryHtml}${subForm}${categoriesHtml || (subForm || carryHtml ? '' : '<p class="ledger-none">Nothing recorded</p>')}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><strong>${title}</strong><span class="${type}">${ctx.fmt(total, property)}</span></summary><div>${carryHtml}${subForm}${categoriesHtml || (subForm || carryHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -115,12 +117,22 @@
     const m = country._meta;
     const carried = Number(m.carried) || 0;
     const carryFor = type => (type === 'income' ? carried > 0 : carried < 0) ? { amount: Math.abs(carried), from: m.carriedFrom } : null;
-    const sections = TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'))
-      + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'));
+    // An event only spends: each of its sections is its own open block under its own name, with no Income block (unless
+    // it already holds income entries, which then still show) and no balance.
+    const isEvent = isEventKey(mKey);
+    const hasEntries = section => Object.values(section.categories).some(category => category.entries.length);
+    const sections = isEvent
+      ? byType.expense.map(section => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id })).join('')
+        + (byType.income.some(hasEntries) ? TypeSection('income', byType.income, { mKey, property }, state, ctx, false) : '')
+      : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'))
+        + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'));
+    const totals = isEvent
+      ? `<span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span>`
+      : `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.name}<small>${m.code}</small></h3>
-          <div class="ledger-totals"><span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span></div>
+          <div class="ledger-totals">${totals}</div>
         </header>
         <div class="ledger-sections">${sections}</div>
       </section>`;
@@ -203,13 +215,14 @@
       : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
-  const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
+  // `expenseOnly` (special events) shows just the Out figure.
+  const MonthSummary = (rows, { isFuture, daysAway, expenseOnly = false }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
     // The short-form suffix (K, L, Cr, M, B) is set apart so it reads as a unit, not a digit.
     const unitTag = text => text.replace(/([A-Za-z]+)$/, '<span class="ms-unit">$1</span>');
     const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '–'}</span>`;
     return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
-      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${expenseOnly ? value(expense, property, 'expense', 'Out') : `${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}`}</span>`).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
