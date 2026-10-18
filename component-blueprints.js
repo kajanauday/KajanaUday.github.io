@@ -121,18 +121,15 @@
     const m = country._meta;
     const carried = Number(m.carried) || 0;
     const carryFor = type => (type === 'income' ? carried > 0 : carried < 0) ? { amount: Math.abs(carried), from: m.carriedFrom } : null;
-    // An event only spends: its own section (the first) fills the panel untitled, any others are open blocks under their
-    // own names, and there is no Income block (unless it already holds income entries, which then still show) and no balance.
+    // An event's own section (the first expense section) fills the panel untitled, other expense sections are open blocks
+    // under their own names, and an Income block follows for money the event brought in (gifts, refunds…).
     const isEvent = isEventKey(mKey);
-    const hasEntries = section => Object.values(section.categories).some(category => category.entries.length);
     const sections = isEvent
       ? byType.expense.map((section, index) => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id, bare: index === 0, panel: m.name })).join('')
-        + (byType.income.some(hasEntries) ? TypeSection('income', byType.income, { mKey, property }, state, ctx, false) : '')
+        + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'));
-    const totals = isEvent
-      ? `<span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span>`
-      : `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="Closing balance at month end">${ctx.fmt(m.closing, property)}</span>`;
+    const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.name}<small>${m.code}</small></h3>
@@ -219,14 +216,13 @@
       : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
-  // `expenseOnly` (special events) shows just the Out figure.
-  const MonthSummary = (rows, { isFuture, daysAway, expenseOnly = false }, ctx) => {
+  const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
     // The short-form suffix (K, L, Cr, M, B) is set apart so it reads as a unit, not a digit.
     const unitTag = text => text.replace(/([A-Za-z]+)$/, '<span class="ms-unit">$1</span>');
     const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '–'}</span>`;
     return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
-      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${expenseOnly ? value(expense, property, 'expense', 'Out') : `${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}`}</span>`).join('')}</span>`;
+      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).

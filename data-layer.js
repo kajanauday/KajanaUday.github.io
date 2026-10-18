@@ -471,15 +471,17 @@
       const tagged = this.events[id]?.currencies || [];
       return this.ordered([...new Set([...tagged, ...this.eventItems(id).map(item => item.property)])]);
     }
-    // The event's editable list for a currency. An event only spends, so a new list is one expense section named after
-    // the event itself; its subsections and entries go under that.
+    // The event's editable list for a currency: an expense section named after the event, and an Income section for money
+    // it brings in (gifts, refunds…). Either is added if missing, so both can always be used.
     ownEventSections(id, currency) {
       const event = this.events[id];
-      event.sections[currency] ||= [{ name: event.name, type: 'expense', subsections: [] }];
-      return event.sections[currency];
+      const list = event.sections[currency] ||= [];
+      if (!list.some(section => section.type === 'expense')) list.unshift({ name: event.name, type: 'expense', subsections: [] });
+      if (!list.some(section => section.type === 'income')) list.push({ name: 'Income', type: 'income', subsections: [] });
+      return list;
     }
     // One-time move of events made before that: their default "Expenses" section takes the event's name (in the list and
-    // on its entries), and Income sections without income entries are dropped. Written back once; nothing else changes.
+    // on its entries). Written back once; nothing else changes.
     async migrateEventSections() {
       const update = {};
       Object.entries(this.events).forEach(([id, event]) => {
@@ -490,11 +492,6 @@
           if (legacy && !list.some(section => nameKey(section.name) === nameKey(event.name))) {
             legacy.name = event.name;
             items.filter(item => item.section === 'Expenses').forEach(item => { item.section = event.name; });
-            changed = true;
-          }
-          const kept = list.filter(section => section.type !== 'income' || items.some(item => item.type === 'income'));
-          if (kept.length !== list.length) {
-            event.sections[currency] = kept;
             changed = true;
           }
         });
