@@ -102,7 +102,16 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     // The ledger is painted from the ExpenseStore tree by LedgerRenderer using LedgerBlueprints.
     // Inline-edit state lives here and is handed to each render, so blueprints stay pure.
-    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft, editDraft });
+    // Child order per subsection (its data-key → 'date-asc' | 'amount-desc' | 'amount-asc'), chosen with the subsection's
+    // sort button. A display preference, so it stays in this browser; no key means the default order.
+    const SORT_KEY = `${STORAGE_KEY}-sort`;
+    const sortModes = (() => {
+      try { return JSON.parse(localStorage.getItem(SORT_KEY) || '{}') || {}; } catch (error) { return {}; }
+    })();
+    function saveSortModes() {
+      try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
+    }
+    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
@@ -112,7 +121,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
     function renderYearKpis(year) { return ledgerRenderer.yearKpis(year, summaryEdit); }
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
-    function renderLedger() {
+    // loadMissing: false redraws from what is already in memory only, without starting any Firebase load.
+    function renderLedger({ loadMissing = true } = {}) {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
@@ -153,6 +163,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const universe = document.querySelector('#universe');
       universe.inert = !universeOpen;
       universe.setAttribute('aria-hidden', String(!universeOpen));
+      if (!loadMissing) return;
       loadOpenMonths(year);
       if (universeOpen) loadYearForSummary(year);
     }
@@ -240,7 +251,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function loadYearForSummary(year) {
       if (!store.year(year) || store.isYearLoaded(year) || yearLoads.has(year)) return;
       yearLoads.add(year);
-      store.ensureYear(year).then(renderLedger, error => {
+      store.ensureYear(year).then(() => renderLedger(), error => {
         console.error('Could not load the year from Firebase.', error);
         showToast(`Could not load ${year} for the summary.`);
       }).finally(() => yearLoads.delete(year));
@@ -252,7 +263,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         .map(key => Number(key.slice(5, 7)) - 1)
         .filter(month => store.monthNode(year, month) && !store.isLoaded(year, month));
       if (!pending.length) return;
-      Promise.all(pending.map(month => store.ensureMonth(year, month))).then(renderLedger, error => {
+      Promise.all(pending.map(month => store.ensureMonth(year, month))).then(() => renderLedger(), error => {
         console.error('Could not load entries from Firebase.', error);
         showToast('Could not load entries from Firebase.');
       });
@@ -628,7 +639,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const DOUBLE_CLICK_MS = 400;
       const rowKeyFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form')) return null;
+        if (!el || el.closest('form') || el.closest('[data-sort-cat]')) return null;
         const summaryRow = el.closest('[data-kb-level]');
         if (summaryRow) return `kb:${summaryRow.closest('[data-key]')?.dataset.key}|${summaryRow.dataset.kbItem ?? ''}`;
         const note = el.closest('[data-note-id]');
@@ -657,6 +668,22 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (Date.now() < suppressClickUntil && !event.target.closest('form')) {
           suppressClickUntil = 0;
           return event.preventDefault();
+        }
+        // A subsection's Day or Amount sort button: orders its entries and their notes. It sits in the row's <summary>,
+        // so the default (opening or closing the row) is prevented, and it never counts toward a double-click rename.
+        // Only what is already loaded is redrawn: nothing is fetched from or written to Firebase.
+        const sortButton = event.target.closest('[data-sort-cat]');
+        if (sortButton) {
+          event.preventDefault();
+          lastClick = { key: null, time: 0 };
+          const { sortCat: key, sortTo: to, sortField: field, sortName: name } = sortButton.dataset;
+          if (to === 'date-desc') delete sortModes[key];
+          else sortModes[key] = to;
+          saveSortModes();
+          const focused = document.activeElement === sortButton;
+          renderLedger({ loadMissing: false });
+          if (focused) document.querySelector(`[data-sort-cat="${CSS.escape(key)}"][data-sort-field="${field}"]`)?.focus({ preventScroll: true });
+          return showToast(`${name}: ${B().SORT_LABELS[to]}.`);
         }
         const deleteButton = event.target.closest('[data-delete-row]');
         if (deleteButton) {
@@ -986,7 +1013,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or an event panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form')) return null;
+        if (!el || el.closest('form') || el.closest('[data-sort-cat]')) return null;
         const note = el.closest('.ledger-sub-entry[data-note-id]');
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');

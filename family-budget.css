@@ -390,12 +390,19 @@
     .ledger-sub-entry .ledger-entry strong.income { color: var(--income-4); font-weight: 400; }
     .ledger-sub-entry .ledger-entry strong.expense { color: inherit; }
     .ledger-cat + .ledger-cat { border-top: 1px solid var(--line-soft); }
-    .ledger-cat > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) minmax(70px, auto); align-items: center; gap: 8px; margin: 0 -6px; padding: 0 6px; border-radius: 6px; cursor: pointer; font-size: 14.5px; list-style: none; }
+    .ledger-cat > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto minmax(70px, auto); align-items: center; gap: 8px; margin: 0 -6px; padding: 0 6px; border-radius: 6px; cursor: pointer; font-size: 14.5px; list-style: none; }
     .ledger-cat > summary:hover { background: var(--hover); }
     .ledger-cat > summary::-webkit-details-marker { display: none; }
     .ledger-cat > summary:hover .ledger-cat-name { color: var(--brand-strong); }
     .ledger-cat > summary > i { color: var(--faint); font-size: 12px; transition: transform .15s; }
-    .ledger-cat > summary > strong { justify-self: end; }
+    .ledger-cat > summary > strong { grid-column: -2 / -1; justify-self: end; }
+    /* Sort buttons, Day and Amount, just left of the amount: seen while the subsection is open or hovered, so closed rows
+       stay as they were. The active one is tinted; the other is faint until hovered. */
+    .ledger-sorts { display: inline-flex; gap: 2px; opacity: 0; pointer-events: none; transition: opacity .15s; }
+    .ledger-cat > summary:hover .ledger-sorts, .ledger-cat[open] > summary .ledger-sorts, .ledger-sorts:focus-within { opacity: 1; pointer-events: auto; }
+    .ledger-sort { width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--faint); font-size: 14px; cursor: pointer; transition: color .15s, background-color .15s; }
+    .ledger-sort:hover, .ledger-sort:focus-visible { background: var(--line-soft); color: var(--brand-strong); }
+    .ledger-sort.is-active { background: var(--brand-soft); color: var(--brand); }
     .ledger-cat[open] > summary > i { transform: rotate(90deg); }
     /* Child markers: a subsection shows its arrow only when it has entries, and an entry with notes gets a small gold
        arrow before its description that turns when the notes are open. */
@@ -423,8 +430,14 @@
     /* Notes sit inside their entry's row and reuse its columns (subgrid); a soft tint marks them as one level down. */
     .ledger-notes > .ledger-sub-entry, .ledger-notes > .ledger-entry-form, .ledger-entry-cell > .ledger-entry-form { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; width: auto; min-width: 0; margin: 0; }
     .ledger-sub-entry { min-height: 24px; padding: 2px 0; border-top: 1px dotted var(--line-soft); color: var(--muted); }
-    .ledger-sub-entry time { position: relative; padding-left: 10px; }
-    .ledger-sub-entry time::before { content: ""; position: absolute; top: 50%; left: 1px; width: 7px; height: 6px; margin-top: -6px; border-bottom: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); border-bottom-left-radius: 3px; }
+    /* A note's date stays in the date column, in line with the entries' dates; its hook sits before its description. */
+    .ledger-sub-entry .ledger-entry-desc { position: relative; padding-left: 14px; }
+    .ledger-sub-entry .ledger-entry-desc::before { content: ""; position: absolute; top: 50%; left: 2px; width: 7px; height: 6px; margin-top: -6px; border-bottom: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); border-bottom-left-radius: 3px; }
+    /* An entry with notes reads as the heading of its group: stronger description and total than its notes and the
+       plain entries around it. */
+    .ledger-entry-line.has-notes .ledger-entry-desc { color: var(--ink); font-weight: 600; }
+    .ledger-entry-line.has-notes .ledger-entry > strong { font-weight: 600; }
+    .ledger-entry-line.has-notes .ledger-entry-toggle:hover .ledger-entry-desc { color: var(--brand-strong); }
     .ledger-sub-entry .ledger-entry-desc, .ledger-sub-entry .ledger-entry-place, .ledger-sub-entry strong { font-size: 13.5px; }
     /* Rows are added by double-click or a 2s hold: stop the double-click selecting text and the hold raising the touch callout. */
     .ledger { touch-action: manipulation; }
@@ -589,9 +602,10 @@
     /* An event's subsections inside a month: marked with the event's name, read-only there. */
     .ledger-cat-event { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--brand); font: 500 11px var(--mono); white-space: nowrap; }
     .ledger-cat-event i { font-size: 10px; }
-    .ledger-cat.is-event-cat > summary { grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr) minmax(70px, auto); }
+    .ledger-cat.is-event-cat > summary { grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr) auto minmax(70px, auto); }
     @media (max-width: 700px) {
-      .month-block.is-event .ledger-entries { --entry-cols: 104px minmax(0, 1fr) 0 84px; }
+      /* No place column on phones: three columns, so the amount lands in the last one, at the right edge. */
+      .month-block.is-event .ledger-entries { --entry-cols: 104px minmax(0, 1fr) 84px; }
       .month-block.is-event .ledger-entry-place { display: none; }
     }
     @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }

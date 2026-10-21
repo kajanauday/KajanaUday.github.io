@@ -36,15 +36,44 @@
   const SubsectionForm = ({ sectionName }, ctx) =>
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
+  // Child order ---------------------------------------------------------------------------------
+  // A subsection has two sort buttons, Day and Amount; exactly one is active. Clicking the active one flips its
+  // direction, clicking the other switches to it. The mode is null for the default (day, newest first: entries as
+  // before, notes as entered), else 'date-asc' | 'amount-desc' | 'amount-asc'.
+  const SORT_LABELS = { 'date-desc': 'day, newest first', 'date-asc': 'day, oldest first', 'amount-desc': 'amount, largest first', 'amount-asc': 'amount, smallest first' };
+  const byEntries = {
+    'date-asc': (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
+    'amount-desc': (a, b) => b._meta.total - a._meta.total || b.date.localeCompare(a.date),
+    'amount-asc': (a, b) => a._meta.total - b._meta.total || b.date.localeCompare(a.date)
+  };
+  const byNotes = {
+    'date-asc': (a, b) => a.date.localeCompare(b.date),
+    'amount-desc': (a, b) => b.amount - a.amount,
+    'amount-asc': (a, b) => a.amount - b.amount
+  };
+  const SortButtons = (key, mode, name, ctx) => {
+    const current = mode || 'date-desc';
+    const button = (field, icons) => {
+      const active = current.startsWith(field);
+      const dir = active ? current.slice(field.length + 1) : 'desc';
+      const to = active ? `${field}-${dir === 'desc' ? 'asc' : 'desc'}` : `${field}-desc`;
+      const now = active ? SORT_LABELS[current] : `${field === 'date' ? 'day' : 'amount'}, off`;
+      return `<button type="button" class="ledger-sort${active ? ' is-active' : ''}" data-sort-cat="${ctx.esc(key)}" data-sort-field="${field}" data-sort-to="${to}" data-sort-name="${ctx.esc(name)}" aria-pressed="${active}" aria-label="Order ${ctx.esc(name)} by ${SORT_LABELS[to]}" title="${now} · click for ${SORT_LABELS[to]}"><i class="ti ${dir === 'asc' ? icons[1] : icons[0]}" aria-hidden="true"></i></button>`;
+    };
+    return `<span class="ledger-sorts">${button('date', ['ti-calendar-down', 'ti-calendar-up'])}${button('amount', ['ti-sort-descending-numbers', 'ti-sort-ascending-numbers'])}</span>`;
+  };
+
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
     : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time><span class="ledger-entry-desc">${ctx.esc(sub.description)}</span><span class="ledger-entry-place">${ctx.esc(sub.place || '')}</span>${amountTag(type, sub.formula, ctx.fmt(sub.amount, property), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
-  const EntryRow = (entry, { mKey, type, property }, state, ctx) => {
+  const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
     const isExpanded = state.expandedEntries.has(entry.id);
-    const subItems = entry.subEntries.filter(sub => sub.date.startsWith(mKey));
+    // In a month, a note dated in another month is not drawn here; an event shows all of an entry's notes.
+    const shown = entry.subEntries.filter(sub => isEventKey(mKey) || sub.date.startsWith(mKey));
+    const subItems = byNotes[order] ? [...shown].sort(byNotes[order]) : shown;
     const hasSubItems = subItems.length > 0;
     const showingSubEntryForm = state.subEntryDraftParentId === entry.id;
     const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
@@ -62,10 +91,14 @@
     Boolean(d && d.month === mKey && d.property === property && d.section === sectionName && d.category === name);
 
   const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId }, state, ctx) => {
+    const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
+    const order = state.sortModes?.[key] || null;
     const entries = [...category.entries]
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-      .map(entry => EntryRow(entry, { mKey, type, property }, state, ctx))
+      .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
+      .map(entry => EntryRow(entry, { mKey, type, property, order }, state, ctx))
       .join('');
+    // The sort button shows only where there is something to order: two entries, or an entry with two notes.
+    const sortable = category.entries.length > 1 || category.entries.some(entry => entry.subEntries.filter(sub => isEventKey(mKey) || sub.date.startsWith(mKey)).length > 1);
     const draftHere = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
     const e = state.editDraft;
     if (e?.kind === 'category' && e.month === mKey && e.property === property && e.type === type && e.category === name) {
@@ -74,7 +107,7 @@
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name))}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}<strong>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}<strong>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -238,5 +271,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { YearBreakdown, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SORT_LABELS, YearBreakdown, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
