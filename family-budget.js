@@ -369,7 +369,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const checks = [
         [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
-        [fields.amount, !parsed.error && !parsed.empty && amount > 0]
+        [fields.amount, !parsed.error && !parsed.empty && amount >= 0] // 0 is allowed: a gift with no money, say
       ];
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
@@ -397,7 +397,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const checks = [
         [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
-        [fields.amount, !parsed.error && !parsed.empty && (isNote ? amount >= 0 : amount > 0)]
+        [fields.amount, !parsed.error && !parsed.empty && amount >= 0]
       ];
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
@@ -1670,7 +1670,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           [fields.date, Boolean(date) && Boolean(store.monthNode(date.getFullYear(), date.getMonth()))],
           [fields.category, Boolean(option)],
           [fields.description, fields.description.value.trim() !== ''],
-          [fields.amount, !parsed.error && !parsed.empty && amount > 0]
+          [fields.amount, !parsed.error && !parsed.empty && amount >= 0] // 0 is allowed: a gift with no money, say
         ];
         checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
         const error = document.querySelector('#entry-error');
