@@ -9,11 +9,11 @@
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261021i">
+  <link rel="stylesheet" href="../family-budget.css?v=20261022a">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
   <script src="../data-layer.js?v=20261021i" defer></script>
-  <script src="../component-blueprints.js?v=20261021c" defer></script>
+  <script src="../component-blueprints.js?v=20261022a" defer></script>
   <script src="../renderer-engine.js?v=20261018a" defer></script>
   <script src="../family-budget.js?v=20261021j" defer></script>
 </head>
@@ -88,7 +88,7 @@
         <label class="field">Subsection<select name="category" id="entry-category" required></select></label>
         <label class="field">Description<input name="description" maxlength="80" autocomplete="off" required></label>
         <div class="entry-pair">
-          <label class="field"><span>Place <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
+          <label class="field"><span>Comment <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
           <label class="field"><span>Amount</span><input name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="450 or =210+178" required><small class="amount-preview" id="entry-amount-preview" aria-live="polite"></small></label>
         </div>
       </div>
