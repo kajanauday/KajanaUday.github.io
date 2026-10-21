@@ -98,17 +98,23 @@
   const nameKey = name => String(name ?? '').normalize('NFC').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
 
   class FirebaseDb {
-    constructor(databaseURL, root) {
+    // readOnly (view-only accounts): reads as usual, but every write is dropped here, before any request is made.
+    // auth, when given, resolves to a Firebase Auth ID token that goes with every request, so database rules can tell
+    // the admin from a view-only account.
+    constructor(databaseURL, root, readOnly = false, auth = null) {
       this.base = `${databaseURL.replace(/\/$/, '')}/${root}`;
+      this.readOnly = readOnly;
+      this.auth = auth;
     }
     async request(path, options) {
-      const response = await fetch(`${this.base}${path ? `/${path}` : ''}.json`, options);
+      const token = this.auth ? await this.auth() : null;
+      const response = await fetch(`${this.base}${path ? `/${path}` : ''}.json${token ? `?auth=${encodeURIComponent(token)}` : ''}`, options);
       if (!response.ok) throw new Error(`Firebase ${options?.method || 'GET'} ${path || '/'} failed: HTTP ${response.status}`);
       return response.json();
     }
     get(path) { return this.request(path); }
     // Multi-path update: keys are paths under root, null deletes. Applied atomically.
-    patch(update) { return this.request('', { method: 'PATCH', body: JSON.stringify(update) }); }
+    patch(update) { return this.readOnly ? Promise.resolve(null) : this.request('', { method: 'PATCH', body: JSON.stringify(update) }); }
   }
 
   // Firebase drops empty arrays and objects, so restore them before the UI reads a year.
@@ -238,8 +244,9 @@
       this.eventSynced = new Map(); // eventId → JSON of its entries document as Firebase holds it
       Object.entries(events || {}).forEach(([id, event]) => this.addEvent(id, event));
     }
-    static async open({ databaseURL, root }) {
-      const db = new FirebaseDb(databaseURL, root);
+    // readOnly opens a store that can never write to Firebase (view-only accounts); auth supplies the ID token per request.
+    static async open({ databaseURL, root, readOnly = false, auth = null }) {
+      const db = new FirebaseDb(databaseURL, root, readOnly, auth);
       const [currencies, years, events] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events')]);
       const ordered = Object.fromEntries(Object.entries(currencies || {}).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
       Object.values(years || {}).forEach(normalizeYear);

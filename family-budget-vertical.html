@@ -60,51 +60,68 @@
     button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
     [hidden] { display: none !important; }
     h1, p { margin-top: 0; }
-    .login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-    .login-box { width: min(400px, 100%); padding: 32px; border: 1px solid var(--line); border-top: 2px solid var(--brand); border-radius: 14px; background: linear-gradient(180deg, var(--card-sheen), transparent 120px), var(--surface); box-shadow: var(--shadow); }
-    .brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 26px; color: var(--ink); text-decoration: none; font: 800 17px var(--display); }
-    .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--gold-gradient); color: var(--on-brand); font-size: 15px; box-shadow: 0 4px 14px rgba(212, 175, 55, .25); }
-    .brand-word span { color: var(--brand-text); }
-    .eyebrow { margin: 0 0 8px; color: var(--brand-text); font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
-    .login-box h1 { margin: 0 0 8px; background: var(--gold-text); -webkit-background-clip: text; background-clip: text; color: transparent; font: 800 26px var(--display); }
-    .login-copy { margin-bottom: 22px; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
-    .login-form { display: grid; gap: 12px; }
-    .field { display: grid; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
-    .field input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); color: var(--ink); font-size: 14px; }
-    .field input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 3px var(--focus); }
-    .login-error { min-height: 14px; margin: -4px 0 0; color: var(--expense); font-size: 11.5px; font-weight: 600; }
-    .primary-button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--gold-gradient); color: var(--on-brand); cursor: pointer; font-size: 13.5px; font-weight: 700; box-shadow: 0 4px 16px rgba(212, 175, 55, .22); transition: filter .15s, transform .15s; }
-    .primary-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
-    .demo-hint { margin: 16px 0 0; padding: 10px; border-radius: 8px; background: var(--surface-soft); color: var(--muted); font-size: 11.5px; text-align: center; }
-    .theme-button { position: fixed; top: 16px; right: 16px; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); cursor: pointer; font-size: 16px; }
-    .theme-button:hover { color: var(--ink); }
+    /* Nothing but the passkey: one field with its arrow, centred on the app's background. */
+    .login-screen { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+    .passkey { width: min(340px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 6px 6px 18px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s; }
+    .passkey:focus-within { border-color: var(--brand); box-shadow: var(--shadow), 0 0 0 3px var(--focus); }
+    .passkey input { min-width: 0; height: 40px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: 500 16px var(--mono); letter-spacing: .12em; }
+    .passkey button { width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--gold-gradient); color: var(--on-brand); cursor: pointer; font-size: 18px; transition: filter .15s, transform .15s; }
+    .passkey button:hover { filter: brightness(1.08); }
+    .passkey button:active { transform: scale(.94); }
+    .passkey button:disabled { cursor: wait; }
+    .passkey button:disabled i { animation: spin .8s linear infinite; }
+    .passkey button:disabled i::before { content: "\f226"; }
+    .passkey.is-wrong, .passkey.is-wrong:focus-within { border-color: var(--expense); box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--expense) 35%, transparent); animation: shake .32s ease; }
+    .passkey input::selection { background: color-mix(in srgb, var(--brand) 35%, transparent); color: var(--ink); }
+    @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (prefers-reduced-motion: reduce) { .passkey.is-wrong { animation: none; } .passkey button:disabled i { animation: none; } }
   </style>
 </head>
 <body>
-  <button type="button" class="theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
-  <div id="login-screen" class="login-screen" hidden>
-    <section class="login-box" aria-labelledby="login-title">
-      <span class="brand"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">family<span>budget</span></span></span>
-      <p class="eyebrow">Your household, at a glance</p>
-      <h1 id="login-title">Welcome back.</h1>
-      <p class="login-copy">Enter your passkey to see your family finances across India and Japan.</p>
-      <form id="login-form" class="login-form">
-        <label class="field" for="login-passkey">Passkey<input id="login-passkey" name="passkey" type="password" autocomplete="current-password" required></label>
-        <p id="login-error" class="login-error" role="alert"></p>
-        <button class="primary-button" type="submit">Continue <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
-      </form>
-      <p class="demo-hint">Demo passkey · kajanauday</p>
-    </section>
-  </div>
+  <main id="login-screen" class="login-screen" hidden>
+    <form id="login-form" class="passkey" novalidate>
+      <input id="login-passkey" name="passkey" type="password" autocomplete="current-password" aria-label="Passkey" aria-describedby="login-error" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+      <button type="submit" aria-label="Sign in" title="Sign in"><i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+    </form>
+    <p id="login-error" class="sr-only" role="alert"></p>
+  </main>
+  <script src="firebase-config.js?v=20261012a"></script>
+  <script src="firebase-auth.js?v=20261021k"></script>
   <script>
     const STORAGE_KEY = 'family-budget-static-demo-v1';
     const LEDGER = 'family-budget/months.html';
-    document.querySelector('#login-form').addEventListener('submit', event => {
+    document.querySelector('#login-form').addEventListener('submit', async event => {
       event.preventDefault();
-      if (new FormData(event.currentTarget).get('passkey') !== 'kajanauday') {
-        document.querySelector('#login-error').textContent = 'That passkey was not recognized.';
+      const form = event.currentTarget;
+      const error = document.querySelector('#login-error');
+      const button = form.querySelector('button[type="submit"]');
+      const input = form.elements.passkey;
+      if (!input.value.trim()) return input.focus();
+      error.textContent = '';
+      form.classList.remove('is-wrong');
+      button.disabled = true;
+      // The passkey signs in to Firebase Auth (firebase-auth.js); Firebase decides whether it is right and which role
+      // its account has.
+      let role;
+      try {
+        role = await FamilyAuth.signIn(new FormData(form).get('passkey'));
+      } catch (failure) {
+        button.disabled = false;
+        // Wrong: the field shakes and turns red, and its text is selected to type again. The words are for screen readers.
+        void form.offsetWidth;
+        form.classList.add('is-wrong');
+        input.select();
+        error.textContent = {
+          'not-recognized': 'That passkey was not recognized.',
+          'too-many': 'Too many tries. Wait a few minutes and try again.',
+          disabled: 'This sign-in has been turned off.'
+        }[failure.code] || 'Could not reach Firebase. Check your connection and try again.';
         return;
       }
+      if (role === 'viewer') sessionStorage.setItem(`${STORAGE_KEY}-viewer`, 'true');
+      else sessionStorage.removeItem(`${STORAGE_KEY}-viewer`);
       sessionStorage.setItem(`${STORAGE_KEY}-signed-in`, 'true');
       sessionStorage.setItem(`${STORAGE_KEY}-passkey-signed-in`, 'true');
       sessionStorage.removeItem(`${STORAGE_KEY}-universe`);
@@ -113,25 +130,13 @@
       sessionStorage.setItem(`${STORAGE_KEY}-month`, `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
       window.location.href = LEDGER;
     });
-    const themeButton = document.querySelector('#theme-button');
-    const showTheme = () => {
-      const light = document.documentElement.dataset.theme === 'light';
-      themeButton.innerHTML = `<i class="ti ti-${light ? 'moon' : 'sun'}" aria-hidden="true"></i>`;
-      themeButton.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} theme`);
-      themeButton.title = `Switch to ${light ? 'dark' : 'light'} theme`;
-      document.querySelector('meta[name="theme-color"]').content = light ? '#f6f3ec' : '#090a0f';
-    };
-    themeButton.addEventListener('click', () => {
-      const light = document.documentElement.dataset.theme !== 'light';
-      if (light) document.documentElement.dataset.theme = 'light';
-      else delete document.documentElement.dataset.theme;
-      try { localStorage.setItem('family-budget-theme', light ? 'light' : 'dark'); } catch (error) { /* Not remembered this time. */ }
-      showTheme();
-    });
-    showTheme();
-    const isSignedIn = sessionStorage.getItem(`${STORAGE_KEY}-signed-in`) === 'true';
-    if (isSignedIn) window.location.replace(LEDGER);
-    document.querySelector('#login-screen').hidden = isSignedIn;
+    // Already signed in on this device (or in this tab): straight to the ledger, without showing the field.
+    (async () => {
+      if (await FamilyAuth.restore()) return window.location.replace(LEDGER);
+      document.querySelector('#login-screen').hidden = false;
+      document.querySelector('#login-passkey').focus();
+    })();
+    document.querySelector('#login-passkey').addEventListener('input', () => document.querySelector('#login-form').classList.remove('is-wrong'));
   </script>
 </body>
 </html>

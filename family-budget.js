@@ -1,11 +1,24 @@
 const STORAGE_KEY = 'family-budget-static-demo-v1';
     // Data now lives in Firebase; drop what older builds kept in this browser.
     try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`, `${STORAGE_KEY}-view`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
-    if (sessionStorage.getItem(`${STORAGE_KEY}-passkey-signed-in`) !== 'true') window.location.replace('../family-budget-vertical.html');
+    // Signed in means a Firebase Auth session (see firebase-auth.js), for this tab or kept on this device; without one,
+    // back to the sign-in page.
+    const LOGIN_PAGE = '../family-budget-vertical.html';
     (async () => {
+    const authSession = window.FamilyAuth ? await FamilyAuth.restore() : null;
+    if (!authSession) return window.location.replace(LOGIN_PAGE);
+    // View-only accounts: everything can be seen, nothing can be changed. The store itself cannot write,
+    // and every way into editing below stops with a short note instead. Database rules enforce the same on the server.
+    const isViewer = authSession.role === 'viewer';
+    if (isViewer) document.documentElement.classList.add('is-viewer');
     let store;
     try {
-      store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT });
+      // Every request carries the signed-in user's ID token; a session Firebase no longer accepts goes back to sign-in.
+      const auth = () => FamilyAuth.token().catch(error => {
+        if (error.code === 'signed-out') window.location.replace(LOGIN_PAGE);
+        throw error;
+      });
+      store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT, readOnly: isViewer, auth });
     } catch (error) {
       console.error('Could not load data from Firebase.', error);
       const saveState = document.querySelector('.save-state');
@@ -41,6 +54,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       trackSave(store.saveMonthSections(year, monthIndex, property, store.ownSections(year, monthIndex, property)));
     }
     function trackSave(write) {
+      if (isViewer) return;
       const saveState = document.querySelector('.save-state');
       if (saveState) saveState.textContent = 'Saving…';
       write.then(() => {
@@ -731,6 +745,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const addSub = event.target.closest('[data-add-subsection]');
         const addEntry = event.target.closest('[data-add-entry-row]');
         if (addEntry) event.preventDefault();
+        if ((addSub || addEntry) && isViewer) return viewOnly();
         if ((addSub || addEntry) && hasDraft()) {
           showToast('Save or cancel the current inline edit first.');
           return;
@@ -902,6 +917,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Opens the inline add form for whatever was pressed: an entry → sub-entry, a category → entry,
       // an Income/Expenses header → subsection. Month and currency come from the pressed panel, not the page state.
       const triggerLongPress = (element) => {
+        if (isViewer) return false;
         element = getElement(element);
         if (!element || element.closest('form')) return false;
         const panel = element.closest('.ledger-panel');
@@ -963,6 +979,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Double-click on a year-summary name: rename it for the whole year. The second click was not let through, so a
       // section or subsection row was toggled once; its state before the double-click is kept for the edit and after it.
       const startSummaryRename = element => {
+        if (isViewer) return viewOnly();
         const row = getElement(element)?.closest('[data-kb-level]');
         if (!row) return;
         if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
@@ -982,6 +999,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
       // field; Income/Expenses opens the month's settings, where its sections are named.
       const triggerEdit = (element, rowKey) => {
+        if (isViewer) return viewOnly();
         element = getElement(element);
         const panel = element?.closest('.ledger-panel');
         const monthBlock = element?.closest('.month-block');
@@ -1048,6 +1066,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       let lift = null; // { row, source, panel, month, property, dragging, ghost, target, x, y }
       const pointOf = e => e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
       const startLongPress = (target, e) => {
+        if (isViewer) return; // no hold to add, no drag to move
         suppressClickUntil = 0; // a new press means the previous press's click has happened or never will
         longPressFired = false;
         const row = pressRowFor(target);
@@ -1395,6 +1414,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         .filter(item => !takenKeys.has(nameKey(item.name)))
         .map(item => ({ ...item, note: `${item.type === 'income' ? 'Income' : 'Expense'} · ${usesNote(item.uses)}` }));
     }
+    function viewOnly() {
+      showToast('View only: you can look around, but not change anything.');
+    }
     function showToast(message) {
       const toast = document.querySelector('#toast');
       toast.textContent = message;
@@ -1477,6 +1499,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
     }
     function openMonthSettings(year, month) {
+      if (isViewer) return viewOnly();
       if (!store.year(year)) return showToast(`${year} is not set up in Firebase.`);
       // Section usage and the first copy of a month's sections need its entries.
       store.ensureMonth(year, month).then(() => {
@@ -1589,6 +1612,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     }
     // Opens on today's date; only if today's month is not set up does it fall back to the newest open month.
     function openEntryDialog() {
+      if (isViewer) return viewOnly();
       const today = new Date();
       const openKey = [...expandedMonths].filter(key => key.startsWith(`${currentMonth.getFullYear()}-`)).sort().pop();
       const fallback = openKey ? new Date(Number(openKey.slice(0, 4)), Number(openKey.slice(5, 7)) - 1, 1) : new Date(currentMonth.getFullYear(), today.getFullYear() === currentMonth.getFullYear() ? today.getMonth() : 0, 1);
@@ -1904,6 +1928,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderConfig();
     }
     function openYearSettings(year) {
+      if (isViewer) return viewOnly();
       const dialog = document.querySelector('#year-settings-dialog');
       if (!dialog) return;
       configState.drafts = {};
@@ -2050,7 +2075,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     document.querySelector('#logout-button').addEventListener('click', () => {
       sessionStorage.removeItem(`${STORAGE_KEY}-passkey-signed-in`);
       sessionStorage.removeItem(`${STORAGE_KEY}-signed-in`);
-      window.location.href = '../family-budget-vertical.html';
+      sessionStorage.removeItem(`${STORAGE_KEY}-viewer`);
+      FamilyAuth.signOut();
+      window.location.href = LOGIN_PAGE;
     });
+    if (isViewer) {
+      const saveState = document.querySelector('.save-state');
+      if (saveState) saveState.innerHTML = '<i class="ti ti-eye" aria-hidden="true"></i> View only';
+    }
     renderLedger();
     })();

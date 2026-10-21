@@ -659,3 +659,6 @@
     }
     @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    /* View-only accounts: nothing to add or configure, and the top bar says so (on phones too, where the save state is hidden). */
+    .is-viewer #add-entry-button, .is-viewer .year-tab[aria-pressed="true"] i { display: none; }
+    .is-viewer .save-state { display: inline-flex; color: var(--brand); }
