@@ -926,3 +926,75 @@
     .year-bar { justify-content: flex-start; gap: 8px; }
     .summary-toggle { width: 34px; height: 34px; min-height: 34px; margin-left: 0; padding: 0; justify-content: center; gap: 0; font-size: 15px; }
     .summary-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+    /* Past month names in the theme's steel blue (not plain black / white), matching their open-state underline:
+       gold is the current month, steel blue the months gone by, grey the ones to come. */
+    :root { --past-name: #aebcd8; }
+    :root[data-theme="light"] { --past-name: #3f5684; }
+    .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name,
+    :root[data-theme="light"] .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name,
+    .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name[aria-expanded="true"] { color: var(--past-name); -webkit-text-fill-color: var(--past-name); }
+    /* An open month's lines at 1.5px (from 2px): still clearly "open" beside the 1px closed lines, no longer heavy. The
+       summaries keep their height (padding makes up the difference). */
+    .month-name[aria-expanded="true"]::before { box-shadow: inset 0 -1.5px 0 var(--brand); height: 1.5px; }
+    .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name[aria-expanded="true"]::before { box-shadow: inset 0 -1.5px 0 var(--past-accent); }
+    .month-block.is-future .month-name[aria-expanded="true"]::before { box-shadow: none; border-bottom-width: 1.5px; }
+    .month-block.is-open button.month-tag.ms-cur[aria-pressed="true"] { border-bottom-width: 1.5px; padding-bottom: 4.5px; }
+    /* 1.5px open lines for the summaries too: browsers round borders to whole pixels, so a 1px border plus a half-pixel
+       shadow beneath it, in the month's open colour (gold now, steel blue past). Upcoming: 1px dashed, darker grey. */
+    .month-block.is-now { --open-line: var(--brand); }
+    .month-block:not(.is-now):not(.is-future) { --open-line: var(--past-accent); }
+    .month-block.is-event { --open-line: var(--brand); }
+    .month-block.is-open:not(.is-future) button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 1px solid var(--open-line); box-shadow: 0 .5px 0 var(--open-line); padding-bottom: 5px; }
+    .month-block.is-open.is-future button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 1px dashed var(--muted); box-shadow: none; padding-bottom: 5px; }
+    .month-block.is-future .month-name[aria-expanded="true"]::before { border-bottom: 1px dashed var(--muted); height: 0; }
+    /* Simple currency boxes: no thick coloured cap, sheen or glow; an even 1px border, a flat tinted fill (INR blue,
+       JPY amber) and a small shadow. The Year summary cards match. */
+    .ledger-panel, .kpi-card, .ledger-panel.japan, .kpi-card.japan,
+    :root[data-theme="light"] .ledger-panel, :root[data-theme="light"] .kpi-card,
+    :root[data-theme="light"] .ledger-panel.japan, :root[data-theme="light"] .kpi-card.japan {
+      border: 1px solid var(--line); border-top-width: 1px; border-top-color: var(--line);
+      background: var(--card);
+      box-shadow: 0 1px 2px var(--base-shadow);
+    }
+    /* =====================================================================================================================
+       Dark theme, mirrored on the light theme. Like GitHub, Linear and Material's dark guidance: a neutral graphite page
+       (not black, no coloured glows), surfaces that lift by lightness, panels only faintly tinted (INR cool, JPY warm, as
+       the light theme's pale tints), text a little below white, and income / expense in the light theme's own green and
+       red hues, lightened for a dark ground. Every text colour stays at least 4.5:1 on what it sits on.
+       ===================================================================================================================== */
+    :root:not([data-theme="light"]) {
+      --canvas: #121417;
+      --surface: #1a1d22;
+      --surface-soft: #20242a;
+      --surface-raised: #262a31;
+      --ink: #e8e9ec;
+      --muted: #9ca1ab;
+      --faint: #858a94;
+      --line: #2b2f36;
+      --line-soft: #23262c;
+      --line-strong: #3c414a;
+      --hover: rgba(255, 255, 255, .045);
+      --chip-hover: rgba(255, 255, 255, .08);
+      --income-1: #4cb98f; --income-2: #4cb98f; --income-3: #6cc9a4; --income-4: #6cc9a4;
+      --expense: #ee8a82; --expense-soft-text: #ee8a82; --expense-soft: rgba(238, 138, 130, .12);
+      --page-bg: linear-gradient(180deg, #15171b 0, var(--canvas) 420px);
+      --topbar-bg: rgba(18, 20, 23, .86);
+      --backdrop: rgba(0, 0, 0, .6);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 18px rgba(0, 0, 0, .25);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+      --modal-shadow: 0 24px 64px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06);
+    }
+    :root:not([data-theme="light"]) .ledger-panel, :root:not([data-theme="light"]) .kpi-card {
+      --card: #191d24; --halo: transparent;
+      --ink: #e8e9ec; --text: #d3d6dc; --muted: #9ea4b0; --note: #b8bdc7;
+      --line: rgba(255, 255, 255, .08); --line-soft: rgba(255, 255, 255, .05); --line-strong: rgba(255, 255, 255, .2);
+      --surface: rgba(255, 255, 255, .04); --surface-soft: rgba(255, 255, 255, .06);
+      --edge: rgba(255, 255, 255, .08); --inset: transparent; --base-shadow: rgba(0, 0, 0, .3);
+      --expense: #ee8a82; --expense-soft-text: #ee8a82;
+    }
+    :root:not([data-theme="light"]) .ledger-panel.japan, :root:not([data-theme="light"]) .kpi-card.japan {
+      --card: #1e1b18;
+      --ink: #ecebe8; --text: #d9d5cf; --muted: #a8a197; --note: #c2bcb3;
+    }
+/* Dark: currency dots softened to the same muted register as the rest of the dark palette. */
+:root:not([data-theme="light"]) { --india: #7d9bd6; --japan: #e0a273; }

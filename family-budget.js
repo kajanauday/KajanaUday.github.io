@@ -2440,7 +2440,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       themeButton.innerHTML = `<i class="ti ti-${light ? 'moon' : 'sun'}" aria-hidden="true"></i>`;
       themeButton.setAttribute('aria-label', `Switch to ${light ? 'dark' : 'light'} theme`);
       themeButton.title = `Switch to ${light ? 'dark' : 'light'} theme`;
-      document.querySelector('meta[name="theme-color"]').content = light ? '#f6f3ec' : '#090a0f';
+      document.querySelector('meta[name="theme-color"]').content = light ? '#f6f3ec' : '#121417';
     };
     themeButton.addEventListener('click', () => {
       const light = document.documentElement.dataset.theme !== 'light';
