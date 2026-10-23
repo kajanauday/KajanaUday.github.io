@@ -261,12 +261,16 @@
       Object.entries(events || {}).forEach(([id, event]) => this.addEvent(id, event));
     }
     // readOnly opens a store that can never write to Firebase (view-only accounts); auth supplies the ID token per request.
-    static async open({ databaseURL, root, readOnly = false, auth = null }) {
-      const db = new FirebaseDb(databaseURL, root, readOnly, auth);
+    // `offline`, when given ({ vault, deviceId, onState, onConflict }), puts the device's copy and its outbox behind the
+    // same get/patch: the app then opens and takes new entries with no connection, and sends them when one returns.
+    static async open({ databaseURL, root, readOnly = false, auth = null, offline = null }) {
+      const wire = new FirebaseDb(databaseURL, root, readOnly, auth);
+      const db = offline?.vault ? new OfflineSync(offline.vault, wire, { ...offline, readOnly }) : wire;
       const [currencies, years, events] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events')]);
       const ordered = Object.fromEntries(Object.entries(currencies || {}).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
       Object.values(years || {}).forEach(normalizeYear);
       const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {} });
+      store.sync = db === wire ? null : db;
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
       await store.moveYearSectionsToMonths();

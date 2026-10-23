@@ -9,14 +9,15 @@
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261026b">
+  <link rel="stylesheet" href="../family-budget.css?v=20261026c">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
-  <script src="../data-layer.js?v=20261025m" defer></script>
+  <script src="../offline-store.js?v=20261026c" defer></script>
+  <script src="../data-layer.js?v=20261026c" defer></script>
   <script src="../ledger-search.js?v=20261023a" defer></script>
   <script src="../component-blueprints.js?v=20261026b" defer></script>
   <script src="../renderer-engine.js?v=20261025b" defer></script>
-  <script src="../family-budget.js?v=20261025m" defer></script>
+  <script src="../family-budget.js?v=20261026d" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -43,6 +44,14 @@
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
+
+  <dialog class="modal conflict-dialog" id="conflict-dialog" aria-labelledby="conflict-dialog-title">
+    <div class="modal-header"><h2 id="conflict-dialog-title">Changed on another device</h2></div>
+    <p class="conflict-what" id="conflict-what"></p>
+    <ul class="conflict-paths" id="conflict-paths"></ul>
+    <p class="conflict-when" id="conflict-when"></p>
+    <div class="modal-actions"><button type="button" class="quiet-button" data-conflict="theirs">Use the other version</button><button type="button" class="primary-button" data-conflict="mine">Keep my offline changes</button></div>
+  </dialog>
 
   <dialog class="modal move-dialog" id="move-dialog" aria-labelledby="move-dialog-title">
     <form id="move-form" novalidate>

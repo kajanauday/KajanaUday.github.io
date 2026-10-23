@@ -1,4 +1,11 @@
 const STORAGE_KEY = 'family-budget-static-demo-v1';
+    // How much of the ledger this device may keep offline.
+    const OFFLINE_BUDGET = 200 * 1024 * 1024;
+    // The app's own files are kept on the device too (sw.js), so it opens with no connection; the ledger's data is kept
+    // separately, by offline-store.js.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register(new URL('../sw.js', document.baseURI)).catch(error => console.warn('The app cannot be kept on this device.', error)));
+    }
     // Data now lives in Firebase; drop what older builds kept in this browser.
     try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`, `${STORAGE_KEY}-view`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
     // Signed in means a Firebase Auth session (see firebase-auth.js), for this tab or kept on this device; without one,
@@ -18,7 +25,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (error.code === 'signed-out') window.location.replace(LOGIN_PAGE);
         throw error;
       });
-      store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT, readOnly: isViewer, auth });
+      // The copy of the ledger kept on this device: the app opens and takes new entries with no connection, and what was
+      // added offline goes out as soon as there is one. Without it (a private window, say) the app runs online-only.
+      const vault = window.OfflineVault ? await OfflineVault.open({ budget: OFFLINE_BUDGET }) : null;
+      const offline = vault ? { vault, deviceId: deviceId(), onState: setSyncStatus, onConflict: askAboutConflict } : null;
+      store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT, readOnly: isViewer, auth, offline });
     } catch (error) {
       console.error('Could not load data from Firebase.', error);
       setSaveStatus('load-error');
@@ -55,12 +66,61 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // The save status in the top bar is only a coloured dot: green saved, amber saving, red when saving or loading
     // failed, blue for a view-only sign-in. The words are its tooltip and are read out by screen readers.
     function setSaveStatus(state) {
-      const text = { saved: 'All changes saved', saving: 'Saving…', error: 'Could not save to Firebase', 'load-error': 'Could not load data from Firebase', viewer: 'View only' }[state] || '';
+      const text = { saved: 'All changes saved', saving: 'Saving…', pending: 'Waiting to send to Firebase', offline: 'Offline — changes are saved on this device', error: 'Could not save to Firebase', 'load-error': 'Could not load data from Firebase', viewer: 'View only' }[state] || '';
       const el = document.querySelector('.save-state');
       if (!el) return;
       el.dataset.state = state;
       el.title = text;
       el.innerHTML = `<span class="save-dot" aria-hidden="true"></span><span class="sr-only">${text}</span>`;
+    }
+    // The name this device signs its writes with, so its own saves are never mistaken for another device's.
+    function deviceId() {
+      try {
+        const kept = localStorage.getItem(`${STORAGE_KEY}-device`);
+        if (kept) return kept;
+        const made = `d${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+        localStorage.setItem(`${STORAGE_KEY}-device`, made);
+        return made;
+      } catch (error) {
+        return 'device';
+      }
+    }
+    // What the sync layer reports, as the dot in the top bar. A viewer's dot stays on 'viewer'.
+    function setSyncStatus(state) {
+      if (isViewer) return;
+      setSaveStatus({ synced: 'saved', pending: 'pending', offline: 'offline', saving: 'saving', error: 'error' }[state] || 'saved');
+    }
+    // Another device wrote the same part of the ledger after this one last read it. Nothing is merged on its own: the
+    // choice is this device's queued change or the newer one already in Firebase.
+    function askAboutConflict({ paths, at }) {
+      const dialog = document.querySelector('#conflict-dialog');
+      if (!dialog) return Promise.resolve('mine');
+      const names = [...new Set(paths.map(describePath))];
+      document.querySelector('#conflict-what').textContent = `${names.length === 1 ? names[0] : `${names.length} parts of the ledger`} changed on another device after this one went offline.`;
+      document.querySelector('#conflict-when').textContent = `Changed here ${new Date(at).toLocaleString()}.`;
+      const list = document.querySelector('#conflict-paths');
+      list.replaceChildren(...names.map(name => Object.assign(document.createElement('li'), { textContent: name })));
+      return new Promise(resolve => {
+        const choose = event => {
+          const button = event.target.closest('[data-conflict]');
+          if (!button) return;
+          dialog.removeEventListener('click', choose);
+          dialog.close();
+          resolve(button.dataset.conflict);
+        };
+        dialog.addEventListener('click', choose);
+        dialog.showModal();
+      });
+    }
+    // A Firebase path as something to read: "October 2026", "the 2026 totals", an event's name.
+    function describePath(path) {
+      const month = /^months\/(\d{4})_(\w+)$/.exec(path);
+      if (month) return `${month[2]} ${month[1]}`;
+      const year = /^years\/(\d{4})$/.exec(path);
+      if (year) return `the ${year[1]} totals`;
+      const event = /^events\/([^/]+)/.exec(path);
+      if (event) return `the event “${store?.eventName?.(event[1]) || 'special'}”`;
+      return path;
     }
     function trackSave(write) {
       if (isViewer) return;
@@ -69,6 +129,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         setSaveStatus('saved');
       }).catch(error => {
         console.error('Could not save to Firebase.', error);
+        // With a copy on this device the change is already safe here and goes out when the connection returns.
+        if (store.sync) return showToast('No connection. The change is saved on this device and will go out later.');
         setSaveStatus('error');
         showToast('Could not save to Firebase. Check your connection and try again.');
       });
@@ -2493,6 +2555,19 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     });
     if (isViewer) {
       setSaveStatus('viewer');
+    }
+    // Anything added with no connection goes out when one returns; a clash settled in the other device's favour means this
+    // page is showing what Firebase no longer holds, so it is read again.
+    if (store.sync) {
+      const send = () => store.sync.flush().then(() => {
+        if (!store.sync.stale) return;
+        showToast('Taking the newer version from your other device…');
+        setTimeout(() => window.location.reload(), 1200);
+      });
+      window.addEventListener('online', send);
+      window.addEventListener('offline', () => setSyncStatus('offline'));
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) send(); });
+      send();
     }
     renderLedger();
     })();
