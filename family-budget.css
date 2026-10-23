@@ -458,7 +458,7 @@
     .ledger-entry-actions { display: none; }
     .ledger-entry-form.is-edit .ledger-entry-actions, .cat-rename-form .ledger-entry-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; padding: 4px 0 2px; }
     @media not (pointer: coarse) {
-      .ledger-entry-form.is-edit .ledger-entry-actions .mini-btn:not(.is-delete) { display: none; }
+      .ledger-entry-form.is-edit .ledger-entry-actions .mini-btn:not(.is-delete):not(.is-move) { display: none; }
     }
     .mini-btn.is-delete { width: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; color: var(--expense); font-size: 12px; font-weight: 600; margin-right: auto; }
     .mini-btn.is-delete:hover { background: var(--expense-soft); color: var(--expense); }
@@ -467,6 +467,7 @@
       .ledger-entry-actions .mini-btn { width: auto; height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 700; }
       .ledger-entry-actions .mini-btn.is-save { border-color: var(--brand); background: var(--gold-gradient); color: var(--on-brand); }
       .ledger-entry-actions .mini-btn.is-delete { color: var(--expense); }
+      .ledger-entry-actions .mini-btn.is-move { color: var(--brand-strong); }
     }
     /* Hold feedback: a fill sweeps across the row and completes exactly when the 0.8s hold fires.
        It starts after a short pause so ordinary clicks never flash. */
@@ -724,3 +725,118 @@
       .search-group-head { padding: 8px 14px 6px; }
     }
     @media (prefers-reduced-motion: reduce) { .search-spin { animation: none; } }
+
+    /* The ★ Special tab after the years: every special event, grouped by year. */
+    .year-tab.is-special { gap: 5px; }
+    .year-tab.is-special i { color: var(--brand); font-size: 12px; }
+
+    /* Move: a button beside Delete in an entry's edit form, and its dialog. */
+    .mini-btn.is-move { width: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; color: var(--brand-strong); font-size: 12px; font-weight: 600; }
+    .mini-btn.is-move:hover { background: var(--brand-soft); }
+    .move-dialog { width: min(560px, calc(100% - 20px)); }
+    .move-what { margin: -8px 0 14px; color: var(--muted); font-size: 13px; }
+    .move-what b { color: var(--ink); font-weight: 700; }
+    .move-fields { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 10px; }
+    .move-fields .move-sub { grid-column: 1 / -1; }
+    .move-fields input, .move-fields select { width: 100%; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font-size: 13.5px; }
+    .move-hint { min-height: 18px; margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+    .move-hint.is-error { color: var(--expense); }
+    .move-dialog .modal-actions .primary-button:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Collapsed month: each currency's In / Out / Balance packed together inside a hairline outline, labelled by its
+       code, so INR and JPY figures never read as one row; the packs sit side by side after the month name. */
+    .month-summary:has(.ms-cur) { flex-wrap: wrap; gap: 6px 8px; }
+    .month-tag.ms-cur { display: inline-flex; align-items: baseline; padding: 3px 10px 3px 8px; border: .5px solid var(--line-strong); border-radius: 7px; background: transparent; white-space: nowrap; }
+    .month-tag.ms-cur .ms-code { min-width: 0; margin-right: 8px; font-size: 11px; letter-spacing: .04em; }
+    @media (max-width: 700px) {
+      /* Phone: the name above, the packs side by side below it (wrapping only if they cannot fit). */
+      .month-block:not(.is-open) .month-summary { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 6px; margin: 0 0 0 8px; }
+      .month-tag.ms-cur { flex: 0 1 auto; margin-left: 0; padding: 2px 7px; }
+      .month-tag.ms-cur .ms-code { margin-right: 5px; font-size: 10px; }
+      .month-tag.ms-cur .ms-kv { min-width: 0; font-size: 12.5px; }
+      .month-tag.ms-cur .ms-kv + .ms-kv::before { padding: 0 4px; }
+      /* An empty month stays on one line: each currency's balance pack beside the name. */
+      .month-block.is-empty:not(.is-open) .month-summary { flex: 0 1 auto; margin-left: auto; }
+    }
+    /* Packs, tightened: no outline, amounts only as wide as they are (a small dot between them), and a modest gap
+       between the INR and JPY groups. */
+    .month-summary:has(.ms-cur) { gap: 4px 22px; }
+    .month-tag.ms-cur { padding: 0; border: 0; border-radius: 0; }
+    .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { min-width: 0; }
+    .month-tag.ms-cur .ms-kv + .ms-kv::before { padding: 0 6px; }
+    @media (max-width: 700px) {
+      .month-block:not(.is-open) .month-summary { gap: 4px 16px; }
+      .month-tag.ms-cur { padding: 0; }
+      .month-tag.ms-cur .ms-kv + .ms-kv::before { padding: 0 4px; }
+    }
+    /* No dividers across the page between months: instead a fine underline under the month name and under each currency
+       summary. A currency summary is a button: on a closed month it opens just that currency, on an open one it shows
+       or hides that currency's panel (shown ones underlined in gold, hidden ones dimmed). */
+    .month-block + .month-block { border-top: 0; }
+    .month-name { text-decoration: underline; text-decoration-color: var(--line-strong); text-decoration-thickness: 1px; text-underline-offset: 7px; }
+    .month-name[aria-expanded="true"] { text-decoration-color: transparent; }
+    button.month-tag.ms-cur { margin: 0; padding: 2px 1px 5px; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-align: left; transition: border-color .15s, opacity .15s; }
+    button.month-tag.ms-cur:hover { border-bottom-color: var(--brand); }
+    button.month-tag.ms-cur:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
+    .month-block.is-open button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 2px solid var(--brand); padding-bottom: 4px; }
+    .month-block.is-open button.month-tag.ms-cur[aria-pressed="false"] { opacity: .5; }
+    .month-block.is-open button.month-tag.ms-cur[aria-pressed="false"]:hover { opacity: .85; }
+    @media (max-width: 700px) {
+      /* Open month on a phone: name and Expand all on the first line, the currency toggles below. */
+      .month-block.is-open .month-ledger-head { flex-wrap: wrap; }
+      .month-block.is-open .month-summary { order: 3; display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 0 8px; }
+    }
+    /* Wide screens: every month's figures in fixed columns. Each currency is a code (36px) and three right-aligned
+       slots (70px: room for −13.135K), so all incomes end on one vertical line, all expenses on another and all balances
+       on a third, whatever the sign or digits. A currency a month lacks leaves a same-width invisible placeholder, and an
+       empty month keeps its columns (only the balance shows). A panel shown alone stays in its own half (INR left,
+       JPY right), as when both are open. */
+    @media (min-width: 701px) {
+      .month-tag.ms-cur { display: inline-flex; align-items: baseline; }
+      .month-tag.ms-cur .ms-code { width: 36px; margin-right: 0; }
+      .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: 70px; min-width: 70px; justify-content: flex-end; }
+      .month-tag.ms-cur .ms-kv + .ms-kv::before { content: none; }
+      .month-tag.ms-cur.is-placeholder { width: calc(36px + 3 * 70px + 2px); visibility: hidden; }
+      .month-block.is-empty:not(.is-open) .month-tag.ms-cur .ms-kv:not(.balance) { display: inline-flex; visibility: hidden; }
+      .month-block.is-event .month-ledger-head h2 { min-width: 260px; }
+    }
+    @media (max-width: 700px) {
+      .month-tag.ms-cur.is-placeholder { display: none; }
+    }
+    /* Tighter columns, sized from measurements: a 60px slot fits −13.135K (58px), the code takes 30px, the month-name
+       column is the longest name (September, 121px) plus a little, and the INR and JPY groups sit 14px apart. Every
+       month's summary still starts on the same vertical line. */
+    @media (min-width: 701px) {
+      .month-ledger-head h2 { min-width: 124px; }
+      .month-summary:has(.ms-cur) { gap: 4px 14px; }
+      .month-tag.ms-cur .ms-code { width: 30px; }
+      .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: 60px; min-width: 60px; }
+      .month-tag.ms-cur.is-placeholder { width: calc(30px + 3 * 60px + 2px); }
+    }
+
+    /* Currency panels: headed by the code alone (INR, JPY), with a small expand / collapse-all control at the end of the
+       header for that panel's subsections. A currency shown alone takes the left half on wide screens. */
+    .ledger-panel-head h3 { font-size: 15px; letter-spacing: .04em; }
+    .panel-expand { width: 26px; height: 26px; flex: none; display: grid; place-items: center; margin-left: -6px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
+    .panel-expand:hover { border-color: var(--brand); color: var(--brand-strong); }
+    .ledger-panel-head { justify-content: flex-start; }
+    .ledger-panel-head .ledger-totals { margin-left: auto; }
+    /* Figure columns sized to the widest figure showing (--ms-slot, set by the app), figures close to their INR / JPY
+       code, and a clear gap between the INR and JPY groups. */
+    @media (min-width: 701px) {
+      .month-summary:has(.ms-cur) { gap: 4px 18px; }
+      .month-tag.ms-cur .ms-code { width: 26px; }
+      .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: var(--ms-slot, 52px); min-width: var(--ms-slot, 52px); }
+      .month-tag.ms-cur.is-placeholder { width: calc(26px + 3 * var(--ms-slot, 52px) + 2px); }
+    }
+    /* The Special tab is just its star. */
+    .year-tab.is-special { min-width: 36px; padding: 0 10px; }
+    .year-tab.is-special i { font-size: 14px; }
+    /* Three small stars for the Special tab, a little overlapped so they read as one mark. */
+    .special-stars { display: inline-flex; align-items: center; }
+    .special-stars i { color: var(--brand); font-size: 11px; }
+    .special-stars i + i { margin-left: -1px; }
+    .special-stars i:nth-child(2) { font-size: 13px; transform: translateY(-1px); }
+    /* Two stars now: both the same size. */
+    .special-stars i, .special-stars i:nth-child(2) { font-size: 12px; transform: none; }
+    .year-tab.is-special .special-stars i { font-size: 12px; transform: none; }

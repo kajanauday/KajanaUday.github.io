@@ -19,8 +19,9 @@
   // Inline forms --------------------------------------------------------------------------------
   // Save / Cancel buttons: hidden with a mouse (Enter and Esc do it), shown on touch screens, whose number pad has no Enter.
   // A Delete button, when given, shows for every pointer; it carries the data-delete-row attributes the click handler reads.
-  const FormActions = (cancelAttr, deleteAttrs = '') =>
-    `<span class="ledger-entry-actions">${deleteAttrs ? DeleteButton(deleteAttrs) : ''}<button type="button" class="mini-btn" ${cancelAttr} aria-label="Cancel" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i><span>Cancel</span></button><button type="submit" class="mini-btn is-save" aria-label="Save" title="Save"><i class="ti ti-check" aria-hidden="true"></i><span>Save</span></button></span>`;
+  // A Move button (entries only) opens the move dialog: another month or year, or into or out of a special event.
+  const FormActions = (cancelAttr, deleteAttrs = '', moveId = '') =>
+    `<span class="ledger-entry-actions">${deleteAttrs ? DeleteButton(deleteAttrs) : ''}${moveId ? `<button type="button" class="mini-btn is-move" data-move-entry="${moveId}" aria-label="Move" title="Move to another month, year or special event"><i class="ti ti-arrows-move" aria-hidden="true"></i><span>Move</span></button>` : ''}<button type="button" class="mini-btn" ${cancelAttr} aria-label="Cancel" title="Cancel"><i class="ti ti-x" aria-hidden="true"></i><span>Cancel</span></button><button type="submit" class="mini-btn is-save" aria-label="Save" title="Save"><i class="ti ti-check" aria-hidden="true"></i><span>Save</span></button></span>`;
   const DeleteButton = attrs =>
     `<button type="button" class="mini-btn is-delete" ${attrs} aria-label="Delete" title="Delete"><i class="ti ti-trash" aria-hidden="true"></i><span>Delete</span></button>`;
   const EntryForm = ({ mKey, property, type, category, sectionName }, ctx) =>
@@ -31,7 +32,7 @@
 
   // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
   const EditEntryForm = ({ mKey, item, kind }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date)}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date)}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`, kind === 'note' ? '' : ctx.esc(item.id))}</form>`;
 
   const SubsectionForm = ({ sectionName }, ctx) =>
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
@@ -171,8 +172,9 @@
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
-          <h3>${m.name}<small>${m.code}</small></h3>
+          <h3>${m.code}</h3>
           <div class="ledger-totals">${totals}</div>
+          <button type="button" class="panel-expand" data-panel-expand aria-label="Expand all ${m.code} subsections" title="Expand all"><i class="ti ti-chevrons-down" aria-hidden="true"></i></button>
         </header>
         <div class="ledger-sections">${sections}</div>
       </section>`;
@@ -236,7 +238,7 @@
     const { id: property, name, code, color, income, expense, net, opening, closing, breakdown } = country;
     const rate = income ? Math.round(net / income * 100) : null;
     return `<article class="kpi-card ${color}">
-          <header class="kpi-head"><strong>${name}</strong><span>${code} · ${year} to date</span></header>
+          <header class="kpi-head"><strong>${code}</strong><span>${year} to date</span></header>
           <dl class="kpi-values">
             <div><dt>Income</dt><dd class="income">${ctx.fmt(income, property)}</dd></div>
             <div><dt>Expenses</dt><dd class="expense">${ctx.fmt(expense, property)}</dd></div>
@@ -249,19 +251,33 @@
   };
 
   // The selected year's tab also opens its settings, so it carries a small settings mark.
-  const YearTabs = (years, activeYear) =>
-    years.map(value => value === activeYear
+  // After the years, a ★ Special tab: every special event, of every year. While it is chosen no year tab is.
+  const YearTabs = (years, activeYear, special = false) =>
+    years.map(value => value === activeYear && !special
       ? `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="true" title="${value} settings">${value}<i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>`
-      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
+      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('')
+    + `<button type="button" class="year-tab is-special" data-ledger-special aria-pressed="${special}" aria-label="Special events" title="Special events of every year"><span class="special-stars" aria-hidden="true">${`<i class="ti ti-star${special ? '-filled' : ''}"></i>`.repeat(2)}</span></button>`;
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
-  const MonthSummary = (rows, { isFuture, daysAway }, ctx) => {
+  // With `mKey`, each currency's summary is a button: on a closed month it opens the month with just that currency; on an
+  // open one it shows or hides that currency's panel (`shown` lists the currencies whose panels are showing).
+  // `slots` (every currency, in order) keeps each currency's figures in the same columns in every month: a currency a
+  // month does not have leaves an invisible placeholder of the same width.
+  const MonthSummary = (rows, { isFuture, daysAway, mKey = '', shown = null, slots = null }, ctx) => {
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
     // The short-form suffix (K, L, Cr, M, B) is set apart so it reads as a unit, not a digit.
     const unitTag = text => text.replace(/([A-Za-z]+)$/, '<span class="ms-unit">$1</span>');
     const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '–'}</span>`;
-    return `<span class="month-summary">${rows.map(({ property, income, expense, balance }) =>
-      `<span class="month-tag ms-cur ${ctx.regions[property].color}"><span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}</span>`).join('')}</span>`;
+    const ordered = slots ? slots.map(property => rows.find(row => row.property === property) || { property, placeholder: true }) : rows;
+    while (ordered.length && ordered[ordered.length - 1].placeholder) ordered.pop(); // nothing to line up after the last
+    return `<span class="month-summary">${ordered.map(({ property, income, expense, balance, placeholder }) => {
+        if (placeholder) return '<span class="month-tag ms-cur is-placeholder" aria-hidden="true"></span>';
+        const body = `<span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}`;
+        if (!mKey) return `<span class="month-tag ms-cur ${ctx.regions[property].color}">${body}</span>`;
+        const on = Boolean(shown?.includes(property));
+        const tip = shown ? `${on ? 'Hide' : 'Show'} ${ctx.regions[property].code}` : `Open with ${ctx.regions[property].code} only`;
+        return `<button type="button" class="month-tag ms-cur ${ctx.regions[property].color}" data-month-currency="${property}" data-month="${mKey}" aria-pressed="${on}" title="${tip}">${body}</button>`;
+      }).join('')}</span>`;
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
@@ -269,7 +285,7 @@
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}${isEvent ? ' is-event' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
           <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${name}</button></h2>
-          ${open ? '<button type="button" class="quiet-button month-ledger-toggle" data-ledger-expand>Expand all</button>' : summaryHtml}
+          ${summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}
       </section>`;

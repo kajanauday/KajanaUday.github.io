@@ -8,19 +8,19 @@
     // Apply the saved theme before anything paints, so the page never flashes the other one.
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
-  <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261023a">
+  <title>Kajana Uday Expenses | Monthly ledger</title>
+  <link rel="stylesheet" href="../family-budget.css?v=20261024n">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
   <script src="../data-layer.js?v=20261021i" defer></script>
   <script src="../ledger-search.js?v=20261023a" defer></script>
-  <script src="../component-blueprints.js?v=20261022a" defer></script>
-  <script src="../renderer-engine.js?v=20261018a" defer></script>
-  <script src="../family-budget.js?v=20261023a" defer></script>
+  <script src="../component-blueprints.js?v=20261024m" defer></script>
+  <script src="../renderer-engine.js?v=20261024h" defer></script>
+  <script src="../family-budget.js?v=20261024j" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
-    <a class="brand" href="months.html" aria-label="Expense Tracker"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Expense Tracker</span></a>
+    <a class="brand" href="months.html" aria-label="Kajana Uday Expenses"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Kajana Uday <span>Expenses</span></span></a>
     <div></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
@@ -43,6 +43,20 @@
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
+
+  <dialog class="modal move-dialog" id="move-dialog" aria-labelledby="move-dialog-title">
+    <form id="move-form" novalidate>
+      <div class="modal-header"><h2 id="move-dialog-title">Move entry</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="move-what" id="move-what"></p>
+      <div class="move-fields">
+        <label class="field">Move to<select name="target" required></select></label>
+        <label class="field">Date<input name="date" type="date" required></label>
+        <label class="field move-sub">Subsection<select name="category" required></select></label>
+      </div>
+      <p class="move-hint" id="move-hint" aria-live="polite"></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button"><i class="ti ti-arrows-move" aria-hidden="true"></i> Move</button></div>
+    </form>
+  </dialog>
 
   <dialog class="modal search-dialog" id="search-dialog" aria-label="Search entries">
     <div class="search-box">

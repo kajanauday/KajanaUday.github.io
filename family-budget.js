@@ -111,6 +111,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // starts closed so the whole year's list fits on screen (an open month is several screens tall there).
     const isPhone = () => window.matchMedia('(max-width: 700px)').matches;
     const expandedMonths = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-open-months`) || 'null') || (isPhone() ? [] : [keyOf(new Date().getFullYear(), new Date().getMonth())]));
+    // Which currencies an open month (or event) shows, when chosen from its summary: month key → currency list. A month
+    // not listed shows every currency. Remembered for the tab, like the open months.
+    const monthCurrencies = new Map(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-month-currencies`) || '[]'));
+    function saveMonthCurrencies() {
+      sessionStorage.setItem(`${STORAGE_KEY}-month-currencies`, JSON.stringify([...monthCurrencies]));
+    }
     function saveExpandedMonths() {
       sessionStorage.setItem(`${STORAGE_KEY}-open-months`, JSON.stringify([...expandedMonths]));
     }
@@ -125,7 +131,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     function saveSortModes() {
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
     }
-    const renderState = () => ({ expandedEntries, expandedMonths, entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
+    // The ledger shows one year's months, or (the ★ Special tab beside the years) every special event, grouped by the
+    // year it belongs to, newest year first. Remembered for the tab.
+    let specialMode = sessionStorage.getItem(`${STORAGE_KEY}-special`) === 'true';
+    function setSpecialMode(on) {
+      specialMode = Boolean(on);
+      sessionStorage.setItem(`${STORAGE_KEY}-special`, String(specialMode));
+    }
+    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes, special: specialMode });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
@@ -140,7 +153,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
       const year = currentMonth.getFullYear();
-      document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year);
+      document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year, specialMode);
       // Rows opened in the year summary stay open when it is redrawn, also under their new key after a rename; a row
       // being renamed keeps what was typed.
       const kpis = document.querySelector('#year-kpis');
@@ -155,10 +168,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const toggle = document.querySelector('[data-toggle-universe]');
       toggle.setAttribute('aria-pressed', String(universeOpen));
       toggle.querySelector('span').textContent = universeOpen ? 'Hide summary' : 'Year summary';
+      toggle.hidden = specialMode; // the year summary belongs to a year, not to the Special tab
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
-      host.innerHTML = store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
+      host.innerHTML = specialMode || store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       revealKey = null;
       focusDrafts(host);
@@ -173,14 +187,29 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           summaryEdit.fresh = false;
         }
       }
-      document.body.classList.toggle('show-universe', universeOpen);
+      const showUniverse = universeOpen && !specialMode;
+      document.body.classList.toggle('show-universe', showUniverse);
       const universe = document.querySelector('#universe');
-      universe.inert = !universeOpen;
-      universe.setAttribute('aria-hidden', String(!universeOpen));
+      universe.inert = !showUniverse;
+      universe.setAttribute('aria-hidden', String(!showUniverse));
+      fitSummaryColumns();
       if (!loadMissing) return;
       loadOpenMonths(year);
       if (universeOpen) loadYearForSummary(year);
     }
+    // The month list's figure columns are as wide as the widest figure showing (plus a small gap), so every month's
+    // figures line up without spreading out; a longer figure (say −13.135K) widens them all. Fonts arriving late
+    // re-measure once.
+    function fitSummaryColumns() {
+      let widest = 0;
+      document.querySelectorAll('#month-ledger .ms-cur .ms-kv').forEach(kv => {
+        const range = document.createRange();
+        range.selectNodeContents(kv);
+        widest = Math.max(widest, range.getBoundingClientRect().width);
+      });
+      if (widest) document.documentElement.style.setProperty('--ms-slot', `${Math.ceil(widest) + 8}px`);
+    }
+    document.fonts?.ready.then(fitSummaryColumns);
     // Focus an open inline form without jumping the page, and give its name fields suggestions.
     function focusDrafts(host) {
       const focusQuietly = input => {
@@ -699,6 +728,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           if (focused) document.querySelector(`[data-sort-cat="${CSS.escape(key)}"][data-sort-field="${field}"]`)?.focus({ preventScroll: true });
           return showToast(`${name}: ${B().SORT_LABELS[to]}.`);
         }
+        const moveButton = event.target.closest('[data-move-entry]');
+        if (moveButton) {
+          event.preventDefault();
+          return openMoveDialog(moveButton.dataset.moveEntry);
+        }
         const deleteButton = event.target.closest('[data-delete-row]');
         if (deleteButton) {
           event.preventDefault();
@@ -714,13 +748,52 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           }
         }
         // A year tab switches years; the year already shown opens its settings.
+        // The ★ Special tab shows every special event; a year tab goes back to that year's months (and, when that
+        // year is already showing, opens its settings).
+        if (event.target.closest('[data-ledger-special]')) {
+          setSpecialMode(true);
+          renderLedger();
+          return window.scrollTo({ top: 0 });
+        }
         const yearTab = event.target.closest('[data-ledger-year]');
         if (yearTab) {
           const year = Number(yearTab.dataset.ledgerYear);
+          if (specialMode) {
+            setSpecialMode(false);
+            return selectLedgerYear(year);
+          }
           return year === currentMonth.getFullYear() ? openYearSettings(year) : selectLedgerYear(year);
         }
         if (event.target.closest('[data-toggle-universe]')) return setUniverse(!universeOpen);
-        // A month name opens or closes the month; a double-click undoes that and opens the month's settings instead.
+        // A currency's summary beside a month name: on a closed month, opens it with only that currency; on an open one,
+        // shows or hides that currency's panel (hiding the last one closes the month).
+        const currencyPack = event.target.closest('[data-month-currency]');
+        if (currencyPack) {
+          const key = currencyPack.dataset.month;
+          const currency = currencyPack.dataset.monthCurrency;
+          const all = [...currencyPack.closest('.month-summary').querySelectorAll('[data-month-currency]')].map(button => button.dataset.monthCurrency);
+          if (!expandedMonths.has(key)) {
+            expandedMonths.add(key);
+            monthCurrencies.set(key, [currency]);
+          } else {
+            const shown = monthCurrencies.get(key) || all;
+            const next = shown.includes(currency) ? shown.filter(item => item !== currency) : all.filter(item => item === currency || shown.includes(item));
+            if (!next.length) expandedMonths.delete(key);
+            if (!next.length || next.length === all.length) monthCurrencies.delete(key);
+            else monthCurrencies.set(key, next);
+          }
+          saveExpandedMonths();
+          saveMonthCurrencies();
+          if (!expandedMonths.has(key)) {
+            if (ledgerDraft?.month === key) ledgerDraft = null;
+            if (entryDraft?.month === key) entryDraft = null;
+            editDraft = null;
+          }
+          renderLedger();
+          return document.querySelector(`[data-month-currency="${CSS.escape(currency)}"][data-month="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+        }
+        // A month name opens or closes the month (with every currency); a double-click undoes that and opens the month's
+        // settings instead.
         const eye = event.target.closest('[data-toggle-month]');
         if (eye) {
           const key = eye.dataset.toggleMonth;
@@ -728,11 +801,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           lastMonthClick = isDouble ? { key: null, time: 0 } : { key, time: Date.now() };
           if (expandedMonths.has(key)) expandedMonths.delete(key);
           else expandedMonths.add(key);
+          monthCurrencies.delete(key);
+          saveMonthCurrencies();
           if (isDouble) {
             saveExpandedMonths();
             renderLedger();
             // An event's settings live with its year's events.
-            if (key.startsWith('ev:')) return openYearSettings(currentMonth.getFullYear());
+            if (key.startsWith('ev:')) return openYearSettings(store.events[key.slice(3)]?.year || currentMonth.getFullYear());
             return openMonthSettings(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1);
           }
           saveExpandedMonths();
@@ -777,12 +852,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           subEntryDraftParentId = null;
           return renderLedger();
         }
-        const expandButton = event.target.closest('[data-ledger-expand]');
+        // The small control in a currency panel's header expands (or collapses) every subsection of that panel only.
+        const expandButton = event.target.closest('[data-panel-expand]');
         if (expandButton) {
-          const cats = [...expandButton.closest('.month-block').querySelectorAll('.ledger-cat')];
+          const panel = expandButton.closest('.ledger-panel');
+          const cats = [...panel.querySelectorAll('.ledger-cat')];
           const open = cats.some(cat => !cat.open);
           cats.forEach(cat => { cat.open = open; });
-          expandButton.textContent = open ? 'Collapse all' : 'Expand all';
+          const code = panel.querySelector('.ledger-panel-head h3')?.textContent.trim() || '';
+          expandButton.querySelector('i').className = `ti ti-chevrons-${open ? 'up' : 'down'}`;
+          expandButton.title = open ? 'Collapse all' : 'Expand all';
+          expandButton.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} all ${code} subsections`);
         }
       });
       // The year-summary name field: Enter renames, Esc cancels, and so does moving focus anywhere else. Focus is checked
@@ -1895,6 +1975,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           store.events[id].currencies.forEach(key => store.ownEventSections(id, key));
           trackSave(store.saveEventMeta(id, { sections: store.events[id].sections, ...(row.include && { include: true }) }));
           expandedMonths.add(`ev:${id}`);
+          setSpecialMode(true);
           changed.push(`added ${name}`);
           return;
         }
@@ -2078,9 +2159,17 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // Opens a result in the ledger: its year and month (or event), its subsection, and its entry's notes for a note;
     // then scrolls it into view and makes it glow. Only already-loaded data is shown; a month not yet fetched is loaded.
     async function openSearchResult({ year, mKey, property, entryId, noteId, category }) {
-      if (currentMonth.getFullYear() !== year) selectLedgerYear(year);
+      // Special events live under the Special tab; anything else under its year.
+      setSpecialMode(mKey.startsWith('ev:'));
+      if (!specialMode && currentMonth.getFullYear() !== year) selectLedgerYear(year);
       expandedMonths.add(mKey);
       saveExpandedMonths();
+      // The currency being opened must be among the panels showing.
+      const chosen = monthCurrencies.get(mKey);
+      if (chosen && !chosen.includes(property)) {
+        monthCurrencies.set(mKey, [...chosen, property]);
+        saveMonthCurrencies();
+      }
       if (noteId && entryId) expandedEntries.add(entryId);
       if (!mKey.startsWith('ev:')) {
         const [y, m] = yearMonthOf(mKey);
@@ -2100,6 +2189,120 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       void target.offsetWidth; // restart the glow when the same row is opened twice
       target.classList.add('is-search-hit');
       target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    // ---- Move an entry (with its notes) to any month of any year, or into or out of a special event ----
+    // The destination month is loaded first, so saving writes it whole; a subsection missing there is added to its list.
+    let moveState = null; // { entryId }
+    const moveDestination = form => {
+      const target = form.elements.target.value;
+      const date = form.elements.date.value;
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(date);
+      if (target.startsWith('ev:')) return { kind: 'event', id: target.slice(3), date: valid ? date : null };
+      if (!valid) return { kind: 'month', date: null };
+      const year = Number(date.slice(0, 4));
+      const monthIndex = Number(date.slice(5, 7)) - 1;
+      return { kind: 'month', date, year, monthIndex, mKey: keyOf(year, monthIndex) };
+    };
+    // The destination's subsections of the entry's type; the entry's own subsection is offered (as new) if missing.
+    function renderMoveChoices() {
+      const form = document.querySelector('#move-form');
+      const item = transactions.find(t => t.id === moveState?.entryId);
+      if (!form || !item) return;
+      const dest = moveDestination(form);
+      const hint = document.querySelector('#move-hint');
+      const where = dest.date && dest.kind === 'month' ? monthLabel(new Date(dest.year, dest.monthIndex, 1)) : '';
+      let lists = [];
+      let problem = '';
+      if (!dest.date) problem = 'Pick a date.';
+      else if (dest.kind === 'event') lists = store.eventSections(dest.id, item.property);
+      else if (!store.monthNode(dest.year, dest.monthIndex)) problem = `${where} is not set up. Add ${dest.year} in Year settings first.`;
+      else if (!store.monthCurrencies(dest.year, dest.monthIndex).includes(item.property)) problem = `${regions[item.property]?.code || item.property} is not on in ${where}, so the entry would not show there.`;
+      else lists = store.sections(dest.year, dest.monthIndex, item.property);
+      const names = [...new Set(lists.filter(section => section.type === item.type).flatMap(section => section.subsections))];
+      const previous = form.elements.category.value || item.category;
+      const options = names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+      if (!names.includes(item.category)) options.unshift(`<option value="${escapeHtml(item.category)}">${escapeHtml(item.category)} (new there)</option>`);
+      form.elements.category.innerHTML = options.join('');
+      form.elements.category.value = [...form.elements.category.options].some(option => option.value === previous) ? previous : item.category;
+      hint.textContent = problem || (dest.kind === 'event' ? `Into ★ ${store.eventName(dest.id)}.` : `Into ${where}.`);
+      hint.classList.toggle('is-error', Boolean(problem));
+      form.querySelector('[type="submit"]').disabled = Boolean(problem);
+    }
+    function openMoveDialog(entryId) {
+      const item = transactions.find(t => t.id === entryId);
+      const dialog = document.querySelector('#move-dialog');
+      if (!item || !dialog || item.parentId) return;
+      if (isViewer) return viewOnly();
+      moveState = { entryId };
+      const form = document.querySelector('#move-form');
+      const notes = childrenOf(item.id).length;
+      const now = item.eventId ? `★ ${store.eventName(item.eventId)}` : monthLabel(new Date(Number(item.date.slice(0, 4)), Number(item.date.slice(5, 7)) - 1, 1));
+      document.querySelector('#move-what').innerHTML = `<b>${escapeHtml(item.description)}</b> · ${formatMoney(store.entryTotal(item.id), item.property)} ${escapeHtml(regions[item.property]?.code || '')}${notes ? ` · with ${notes} ${notes === 1 ? 'note' : 'notes'}` : ''} · now in ${escapeHtml(now)}`;
+      form.elements.target.innerHTML = `<option value="month">A month (by date)</option>${store.eventList().sort((a, b) => b.year - a.year || a.name.localeCompare(b.name)).map(event => `<option value="ev:${escapeHtml(event.id)}">★ ${escapeHtml(event.name)} (${event.year})</option>`).join('')}`;
+      form.elements.target.value = 'month';
+      form.elements.date.value = item.date;
+      form.elements.category.innerHTML = '';
+      renderMoveChoices();
+      dialog.showModal();
+      form.elements.date.focus();
+    }
+    async function saveMove(form) {
+      const item = transactions.find(t => t.id === moveState?.entryId);
+      const dialog = document.querySelector('#move-dialog');
+      if (!item) return dialog.close();
+      const dest = moveDestination(form);
+      const category = form.elements.category.value;
+      const hint = document.querySelector('#move-hint');
+      if (!dest.date || !category || form.querySelector('[type="submit"]').disabled) return;
+      try {
+        // Load the destination month before anything changes, so saving writes it whole.
+        if (dest.kind === 'month' && !store.isLoaded(dest.year, dest.monthIndex)) {
+          hint.textContent = 'Loading that month…';
+          await store.ensureMonth(dest.year, dest.monthIndex);
+        }
+      } catch (error) {
+        hint.textContent = 'Could not load that month from Firebase. Nothing was moved.';
+        hint.classList.add('is-error');
+        return;
+      }
+      const notes = childrenOf(item.id);
+      // The section it goes under: the one listing the subsection, else one of the same name, else the first of its
+      // type; a destination without one gets it.
+      const lists = dest.kind === 'event' ? store.ownEventSections(dest.id, item.property) : store.ownSections(dest.year, dest.monthIndex, item.property);
+      const ofType = lists.filter(section => section.type === item.type);
+      let home = ofType.find(section => section.subsections.includes(category)) || ofType.find(section => section.name === item.section) || ofType[0];
+      if (!home) lists.push(home = { name: item.section || (item.type === 'income' ? 'Income' : 'Expenses'), type: item.type, subsections: [] });
+      if (!home.subsections.includes(category)) home.subsections.push(category);
+      [item, ...notes].forEach(row => {
+        Object.assign(row, { category, section: home.name, type: item.type });
+        if (dest.kind === 'event') row.eventId = dest.id;
+        else delete row.eventId;
+      });
+      item.date = dest.date;
+      // Notes keep their day; in a month they must fall in it to show, so they move into the destination month.
+      const lastDay = new Date(Number(dest.date.slice(0, 4)), Number(dest.date.slice(5, 7)), 0).getDate();
+      notes.forEach(note => {
+        if (dest.kind === 'month' || !note.date) note.date = `${dest.date.slice(0, 7)}-${String(Math.min(Number((note.date || dest.date).slice(8, 10)), lastDay)).padStart(2, '0')}`;
+      });
+      if (dest.kind === 'event') trackSave(store.saveEventMeta(dest.id, { sections: store.events[dest.id].sections }));
+      else saveMonthSections(dest.mKey, item.property);
+      saveTransactions();
+      editDraft = null;
+      moveState = null;
+      dialog.close();
+      await openSearchResult({ year: Number(dest.date.slice(0, 4)), mKey: dest.kind === 'event' ? `ev:${dest.id}` : dest.mKey, property: item.property, entryId: item.id, noteId: null, category });
+      showToast(`Moved “${item.description}” to ${dest.kind === 'event' ? `★ ${store.eventName(dest.id)}` : monthLabel(new Date(dest.year, dest.monthIndex, 1))} › ${category}.`);
+    }
+    function setupMoveDialog() {
+      const form = document.querySelector('#move-form');
+      if (!form) return;
+      form.elements.target.addEventListener('change', renderMoveChoices);
+      form.elements.date.addEventListener('change', renderMoveChoices);
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        saveMove(form);
+      });
+      document.querySelector('#move-dialog').addEventListener('close', () => { moveState = null; });
     }
     function setupSearch() {
       const dialog = document.querySelector('#search-dialog');
@@ -2213,6 +2416,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     setupEntryDialog();
     setupLedger();
     setupSearch();
+    setupMoveDialog();
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
     // Light or dark: remembered per browser; dark is the default.
     const themeButton = document.querySelector('#theme-button');

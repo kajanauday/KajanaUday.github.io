@@ -42,14 +42,20 @@
       return B().CurrencyPanel(this.store.country(year, monthIndex, currency), { year, monthIndex }, state, this.ctx);
     }
 
-    monthSummary(year, monthIndex, currencies, isFuture) {
+    // The currencies whose panels an open month (or event) shows: those chosen from its summary, else all of them.
+    shownCurrencies(mKey, currencies, state) {
+      const chosen = state.monthCurrencies?.[mKey] || [];
+      const shown = currencies.filter(currency => chosen.includes(currency)); // in the usual currency order
+      return shown.length ? shown : currencies;
+    }
+    monthSummary(year, monthIndex, currencies, isFuture, options = {}) {
       const today = new Date();
       const daysAway = isFuture ? Math.ceil((new Date(year, monthIndex, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000) : 0;
       const rows = currencies.map(currency => {
         const totals = this.store.monthTotals(year, monthIndex, currency);
         return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
       });
-      return B().MonthSummary(rows, { isFuture, daysAway }, this.ctx);
+      return B().MonthSummary(rows, { isFuture, daysAway, slots: this.store.currencyKeys(), ...options }, this.ctx);
     }
 
     monthBlock(year, monthIndex, state) {
@@ -58,12 +64,13 @@
       const currencies = this.store.monthCurrencies(year, monthIndex);
       const open = state.expandedMonths.has(mKey);
       const isFuture = new Date(year, monthIndex, 1) > today;
+      const shown = this.shownCurrencies(mKey, currencies, state);
       let panelsHtml = '';
       if (open) {
         panelsHtml = !currencies.length
           ? '<p class="ledger-none">No currency is active this month.</p>'
           : this.store.isLoaded(year, monthIndex)
-            ? currencies.map(currency => this.currencyPanel(currency, year, monthIndex, state)).join('')
+            ? shown.map(currency => this.currencyPanel(currency, year, monthIndex, state)).join('')
             : '<p class="ledger-none">Loading entries…</p>';
       }
       return B().MonthBlock({
@@ -74,7 +81,7 @@
         isNow: year === today.getFullYear() && monthIndex === today.getMonth(),
         isFuture,
         isEmpty: !isFuture && !this.store.monthNode(year, monthIndex)?.metadata.entries,
-        summaryHtml: open ? '' : this.monthSummary(year, monthIndex, currencies, isFuture),
+        summaryHtml: this.monthSummary(year, monthIndex, currencies, isFuture, { mKey, shown: open ? shown : null }),
         panelsHtml,
         single: currencies.length <= 1
       });
@@ -88,6 +95,7 @@
       currencies.forEach(currency => this.store.ownEventSections(event.id, currency));
       const open = state.expandedMonths.has(mKey);
       const countries = currencies.map(currency => this.store.eventCountry(event.id, currency));
+      const shown = this.shownCurrencies(mKey, currencies, state);
       const name = this.ctx.esc(event.name);
       return B().MonthBlock({
         mKey,
@@ -96,8 +104,8 @@
         open,
         isEvent: true,
         isEmpty: !this.store.eventItems(event.id).length,
-        summaryHtml: open ? '' : B().MonthSummary(countries.map(country => ({ property: country._meta.id, income: country._meta.income, expense: country._meta.expense, balance: country._meta.closing })), { isFuture: false }, this.ctx),
-        panelsHtml: open ? countries.map(country => B().CurrencyPanel(country, { mKey }, state, this.ctx)).join('') : '',
+        summaryHtml: B().MonthSummary(countries.map(country => ({ property: country._meta.id, income: country._meta.income, expense: country._meta.expense, balance: country._meta.closing })), { isFuture: false, mKey, shown: open ? shown : null, slots: this.store.currencyKeys() }, this.ctx),
+        panelsHtml: open ? countries.filter(country => shown.includes(country._meta.id)).map(country => B().CurrencyPanel(country, { mKey }, state, this.ctx)).join('') : '',
         single: currencies.length <= 1
       });
     }
@@ -110,15 +118,24 @@
       const groups = year === today.getFullYear()
         ? [['This month', order.filter(month => month === today.getMonth())], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
         : [[`${year}, newest first`, order]];
-      const events = this.store.eventsOfYear(year);
-      const eventGroup = events.length ? B().MonthGroup('Special events', events.length, events.map(event => this.eventBlock(event, year, state)).join(''), 'events') : '';
-      return eventGroup + groups.filter(([, months]) => months.length)
+      // The Special tab: every special event, grouped by the year it belongs to, newest year first. A year's own view
+      // shows its months only.
+      if (state.special) {
+        const events = this.store.eventList();
+        if (!events.length) return '<p class="ledger-none">No special events yet. Add one in Year settings.</p>';
+        const years = [...new Set(events.map(event => event.year))].sort((a, b) => b - a);
+        return years.map(eventYear => {
+          const ofYear = events.filter(event => event.year === eventYear);
+          return B().MonthGroup(String(eventYear), ofYear.length, ofYear.map(event => this.eventBlock(event, eventYear, state)).join(''), 'events');
+        }).join('');
+      }
+      return groups.filter(([, months]) => months.length)
         .map(([title, months]) => B().MonthGroup(title, months.length, months.map(month => this.monthBlock(year, month, state)).join('')))
         .join('');
     }
 
-    yearTabs(activeYear) {
-      return B().YearTabs(this.store.yearIds().map(Number).reverse(), activeYear);
+    yearTabs(activeYear, special = false) {
+      return B().YearTabs(this.store.yearIds().map(Number).reverse(), activeYear, special);
     }
 
   }
