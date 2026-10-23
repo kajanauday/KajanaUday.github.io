@@ -840,3 +840,89 @@
     /* Two stars now: both the same size. */
     .special-stars i, .special-stars i:nth-child(2) { font-size: 12px; transform: none; }
     .year-tab.is-special .special-stars i { font-size: 12px; transform: none; }
+    /* The panel's expand / collapse-all control leads its header, in line with the subsection chevrons below it, so it
+       reads as the same kind of control; the totals keep the right edge. */
+    .ledger-panel-head { gap: 8px; }
+    .panel-expand { width: 24px; height: 24px; margin: 0 2px 0 -5px; font-size: 13px; }
+
+    /* Income and Expenses headings lead with the same expand / collapse-all control as the panel, in the same column as
+       the panel's control and the subsection chevrons. */
+    .ledger-type-section > summary { justify-content: flex-start; gap: 8px; }
+    .ledger-type-section > summary > span { margin-left: auto; }
+    .type-expand { width: 24px; height: 24px; flex: none; display: grid; place-items: center; margin: 0 2px 0 -5px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
+    .type-expand:hover { border-color: var(--brand); color: var(--brand-strong); }
+    /* Save status: a coloured dot only (words in the tooltip and for screen readers). Green saved, amber (pulsing)
+       saving, red when saving or loading failed, blue for a view-only sign-in. Shown on phones too. */
+    .save-state, .is-viewer .save-state { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; gap: 0; cursor: default; }
+    .save-state .save-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--income); box-shadow: 0 0 0 3px color-mix(in srgb, var(--income) 18%, transparent); transition: background .2s, box-shadow .2s; }
+    .save-state[data-state="saving"] .save-dot { background: var(--amber); box-shadow: 0 0 0 3px color-mix(in srgb, var(--amber) 22%, transparent); animation: save-pulse 1s ease-in-out infinite; }
+    .save-state[data-state="error"] .save-dot, .save-state[data-state="load-error"] .save-dot { background: var(--expense); box-shadow: 0 0 0 3px color-mix(in srgb, var(--expense) 22%, transparent); }
+    .save-state[data-state="viewer"] .save-dot { background: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, .2); }
+    :root[data-theme="light"] .save-state[data-state="viewer"] .save-dot { background: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+    @keyframes save-pulse { 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) { .save-state[data-state="saving"] .save-dot { animation: none; } }
+    /* No app icon: the name alone, also on phones (a little smaller there). */
+    .brand { gap: 0; }
+    @media (max-width: 700px) {
+      .save-state, .is-viewer .save-state { display: inline-flex; }
+      .brand-word, .ledger-topbar .brand-word { display: inline; font-size: 14px; white-space: nowrap; }
+    }
+    @media (max-width: 370px) {
+      .brand-word span { display: none; } /* very narrow phones: "Kajana Uday" */
+    }
+    /* A wider gap between the INR and JPY groups beside a month name. */
+    @media (min-width: 701px) { .month-summary:has(.ms-cur) { column-gap: 32px; } }
+    @media (max-width: 700px) { .month-block:not(.is-open) .month-summary, .month-block.is-open .month-summary { column-gap: 24px; } }
+
+    /* Income and Expenses open like a subsection: a single chevron on the left (right when closed, down when open), in
+       the same column as the subsection chevrons, and a click shows just their list of subsections. */
+    .ledger-type-caret { width: 14px; flex: none; color: var(--muted); font-size: 12px; text-align: center; transition: transform .15s; }
+    .ledger-type-section[open] > summary > .ledger-type-caret { transform: rotate(90deg); }
+    /* Past, current and upcoming months, told apart by colour instead of group labels (the list runs newest first):
+       the current month keeps the gold name with a thicker gold underline, also under its currency summaries; past
+       months are plain text with a quiet underline; upcoming months are muted with a dashed underline. An open month's
+       name still gets the gold bar. Special events keep their gold names. */
+    .month-list { margin-top: 6px; }
+    .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name,
+    :root[data-theme="light"] .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name {
+      background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--ink); -webkit-text-fill-color: currentColor; filter: none;
+      text-decoration-color: var(--line-strong);
+    }
+    .month-block.is-future .month-name, :root[data-theme="light"] .month-block.is-future .month-name {
+      background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--muted); -webkit-text-fill-color: currentColor; filter: none;
+      text-decoration-style: dashed; text-decoration-color: var(--line-strong);
+    }
+    .month-block.is-future .month-tag { border-style: dashed; color: var(--muted); }
+    .month-block.is-now .month-name:not([aria-expanded="true"]) { text-decoration-color: var(--brand); text-decoration-thickness: 2px; }
+    .month-block.is-now:not(.is-open) button.month-tag.ms-cur { border-bottom: 2px solid var(--brand); padding-bottom: 4px; }
+    .month-block:not(.is-now):not(.is-future) .month-name[aria-expanded="true"] { color: var(--ink); }
+    /* Upcoming month names: muted text with no gold fill (outranks the older antique-gold rule for closed upcoming months). */
+    .month-block.is-future:not(.is-open) .month-name, :root[data-theme="light"] .month-block.is-future:not(.is-open) .month-name { background: none; background-image: none; color: var(--muted); -webkit-text-fill-color: currentColor; }
+    /* Month name and its INR / JPY summaries underlined the same way (a bottom border, not a text underline), so their
+       lines match exactly: 2px gold for the current month, 1px neutral for past months, 1px dashed neutral for upcoming
+       ones (the Upcoming tag's outline too). An open month's name keeps its gold bar instead. */
+    .month-name, :root[data-theme="light"] .month-name { text-decoration: none; border-bottom: 1px solid var(--line-strong); border-radius: 0; padding-bottom: 4px; }
+    .month-block.is-now .month-name:not([aria-expanded="true"]) { border-bottom: 2px solid var(--brand); padding-bottom: 3px; }
+    .month-block.is-future .month-name { border-bottom-style: dashed; }
+    .month-block.is-future .month-tag { border-color: var(--line-strong); }
+    .month-name[aria-expanded="true"] { border-bottom-color: transparent; }
+    /* The name's underline hugs its text like the summaries' (the side padding moves outside the line). */
+    .month-name, :root[data-theme="light"] .month-name { padding-left: 0; padding-right: 0; margin-left: 10px; margin-right: 10px; }
+    .month-name[aria-expanded="true"]::before { inset: auto 0 0; }
+    /* An upcoming month with planned entries shows its figures; its underlines stay dashed (upcoming), like its name. */
+    .month-block.is-future button.month-tag.ms-cur, .month-block.is-future .month-tag.ms-cur { border-bottom-style: dashed; border-bottom-color: var(--line-strong); }
+    /* Gold marks only the current month. A past month that is opened (or hovered) is underlined in steel blue, an
+       upcoming one in dashed grey; special events keep their gold. */
+    :root { --past-accent: #8ea3cc; }
+    :root[data-theme="light"] { --past-accent: #4a6491; }
+    .month-block:not(.is-now):not(.is-future):not(.is-event) .month-name[aria-expanded="true"]::before { box-shadow: inset 0 -2px 0 var(--past-accent); }
+    .month-block.is-open:not(.is-now):not(.is-future):not(.is-event) button.month-tag.ms-cur[aria-pressed="true"],
+    .month-block:not(.is-now):not(.is-future):not(.is-event) button.month-tag.ms-cur:hover { border-bottom-color: var(--past-accent); }
+    .month-block.is-future .month-name[aria-expanded="true"]::before { box-shadow: none; border-bottom: 2px dashed var(--line-strong); height: 0; }
+    .month-block.is-open.is-future button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 2px dashed var(--line-strong); }
+    .month-block.is-future button.month-tag.ms-cur:hover { border-bottom-color: var(--muted); }
+    /* Year summary: a compact icon button right after the year tabs (it summarises the selected year), the same height
+       as the tab group; its words stay for screen readers and the tooltip. */
+    .year-bar { justify-content: flex-start; gap: 8px; }
+    .summary-toggle { width: 34px; height: 34px; min-height: 34px; margin-left: 0; padding: 0; justify-content: center; gap: 0; font-size: 15px; }
+    .summary-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }

@@ -9,21 +9,21 @@
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261024n">
+  <link rel="stylesheet" href="../family-budget.css?v=20261025d">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
-  <script src="../data-layer.js?v=20261021i" defer></script>
+  <script src="../data-layer.js?v=20261025a" defer></script>
   <script src="../ledger-search.js?v=20261023a" defer></script>
-  <script src="../component-blueprints.js?v=20261024m" defer></script>
-  <script src="../renderer-engine.js?v=20261024h" defer></script>
-  <script src="../family-budget.js?v=20261024j" defer></script>
+  <script src="../component-blueprints.js?v=20261024s" defer></script>
+  <script src="../renderer-engine.js?v=20261025b" defer></script>
+  <script src="../family-budget.js?v=20261024s" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
-    <a class="brand" href="months.html" aria-label="Kajana Uday Expenses"><span class="brand-mark"><i class="ti ti-wallet" aria-hidden="true"></i></span><span class="brand-word">Kajana Uday <span>Expenses</span></span></a>
+    <a class="brand" href="months.html" aria-label="Kajana Uday Expenses"><span class="brand-word">Kajana Uday <span>Expenses</span></span></a>
     <div></div>
     <div class="header-actions">
-      <span class="save-state"><span class="save-dot"></span> Saved</span>
+      <span class="save-state" role="status" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></span>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="primary-button add-entry-button" id="add-entry-button" title="Add an expense or income"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
@@ -34,7 +34,7 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
-      <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
+      <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe" title="Year summary"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
     </div>
     <div class="universe" id="universe">
       <div class="universe-inner">

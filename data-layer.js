@@ -421,8 +421,13 @@
 
     // Month totals come from loaded entries when the month is loaded, otherwise from the stored metadata (minus its carry).
     // Each active month opens on the previous balance when it carries, or on zero when it does not.
+    // An upcoming month (one that has not begun) carries nothing in: the current month's balance is not known until it
+    // ends, so an upcoming month shows only its own entries. The running balance still passes through it underneath, so
+    // later totals and the year's closing are unchanged; once the month begins, the next recompute (every time the app
+    // opens) carries the balance in as usual.
     recomputeYear(year) {
       const node = this.year(year);
+      const now = new Date();
       const keys = this.currencyKeys().filter(key => node.currencies[key] || Object.values(node.monthConfig).some(month => month?.[key]?.active));
       const running = {};
       const sums = {};
@@ -439,11 +444,12 @@
           const raw = { income: own.income + fromEvents.income, expenses: own.expenses + fromEvents.expenses, entries: own.entries + fromEvents.entries };
           const first = !(key in running);
           const previous = first ? this.yearOpening(year, key) : running[key];
-          const carried = setup[key].carry ? previous : 0;
+          const upcoming = new Date(Number(year), monthIndex, 1) > now;
+          const carried = setup[key].carry && !upcoming ? previous : 0;
           const income = raw.income + Math.max(carried, 0);
           const expenses = raw.expenses + Math.max(-carried, 0);
-          running[key] = income - expenses;
-          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: running[key], carried, previous, ...(fromEvents.entries && { fromEvents }) };
+          running[key] = upcoming ? (setup[key].carry ? previous : 0) + raw.income - raw.expenses : income - expenses;
+          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: upcoming ? income - expenses : running[key], carried, previous, ...(upcoming && { upcoming: true }), ...(fromEvents.entries && { fromEvents }) };
           metadata.entries += raw.entries;
           const sum = sums[key] ||= { ...zeroTotals(), opening: previous, carriedIn: first ? carried : 0 };
           sum.income += raw.income;

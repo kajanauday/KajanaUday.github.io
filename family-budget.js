@@ -21,8 +21,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       store = await ExpenseStore.open({ databaseURL: FIREBASE_CONFIG.databaseURL, root: FIREBASE_ROOT, readOnly: isViewer, auth });
     } catch (error) {
       console.error('Could not load data from Firebase.', error);
-      const saveState = document.querySelector('.save-state');
-      if (saveState) saveState.textContent = 'Could not load data from Firebase';
+      setSaveStatus('load-error');
       return;
     }
     // Currencies, years and months all come from Firebase; entries are fetched per month as they are needed.
@@ -53,15 +52,24 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const [year, monthIndex] = yearMonthOf(mKey);
       trackSave(store.saveMonthSections(year, monthIndex, property, store.ownSections(year, monthIndex, property)));
     }
+    // The save status in the top bar is only a coloured dot: green saved, amber saving, red when saving or loading
+    // failed, blue for a view-only sign-in. The words are its tooltip and are read out by screen readers.
+    function setSaveStatus(state) {
+      const text = { saved: 'All changes saved', saving: 'Saving…', error: 'Could not save to Firebase', 'load-error': 'Could not load data from Firebase', viewer: 'View only' }[state] || '';
+      const el = document.querySelector('.save-state');
+      if (!el) return;
+      el.dataset.state = state;
+      el.title = text;
+      el.innerHTML = `<span class="save-dot" aria-hidden="true"></span><span class="sr-only">${text}</span>`;
+    }
     function trackSave(write) {
       if (isViewer) return;
-      const saveState = document.querySelector('.save-state');
-      if (saveState) saveState.textContent = 'Saving…';
+      setSaveStatus('saving');
       write.then(() => {
-        if (saveState) saveState.innerHTML = '<span class="save-dot"></span> All changes saved';
+        setSaveStatus('saved');
       }).catch(error => {
         console.error('Could not save to Firebase.', error);
-        if (saveState) saveState.textContent = 'Could not save to Firebase';
+        setSaveStatus('error');
         showToast('Could not save to Firebase. Check your connection and try again.');
       });
     }
@@ -172,8 +180,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
+      const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
       host.innerHTML = specialMode || store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
+      // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
+      host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
+      host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing').forEach(cat => { const section = cat.closest('details.ledger-type-section'); if (section) section.open = true; });
       revealKey = null;
       focusDrafts(host);
       // After the ledger's own fields, which close any open suggestion list, so the summary field keeps its list.
@@ -682,7 +694,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const DOUBLE_CLICK_MS = 400;
       const rowKeyFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form') || el.closest('[data-sort-cat]')) return null;
+        if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
         const summaryRow = el.closest('[data-kb-level]');
         if (summaryRow) return `kb:${summaryRow.closest('[data-key]')?.dataset.key}|${summaryRow.dataset.kbItem ?? ''}`;
         const note = el.closest('[data-note-id]');
@@ -852,13 +864,16 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           subEntryDraftParentId = null;
           return renderLedger();
         }
-        // The small control in a currency panel's header expands (or collapses) every subsection of that panel only.
+        // The small control in a currency panel's header expands everything in that panel (its Income and Expenses
+        // blocks and all their subsections) or collapses it all back to the Income and Expenses headings.
         const expandButton = event.target.closest('[data-panel-expand]');
         if (expandButton) {
           const panel = expandButton.closest('.ledger-panel');
           const cats = [...panel.querySelectorAll('.ledger-cat')];
-          const open = cats.some(cat => !cat.open);
+          const types = [...panel.querySelectorAll('details.ledger-type-section')];
+          const open = cats.some(cat => !cat.open) || types.some(section => !section.open);
           cats.forEach(cat => { cat.open = open; });
+          types.forEach(section => { section.open = open; });
           const code = panel.querySelector('.ledger-panel-head h3')?.textContent.trim() || '';
           expandButton.querySelector('i').className = `ti ti-chevrons-${open ? 'up' : 'down'}`;
           expandButton.title = open ? 'Collapse all' : 'Expand all';
@@ -1111,7 +1126,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or an event panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form') || el.closest('[data-sort-cat]')) return null;
+        if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
         const note = el.closest('.ledger-sub-entry[data-note-id]');
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -2443,8 +2458,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       window.location.href = LOGIN_PAGE;
     });
     if (isViewer) {
-      const saveState = document.querySelector('.save-state');
-      if (saveState) saveState.innerHTML = '<i class="ti ti-eye" aria-hidden="true"></i> View only';
+      setSaveStatus('viewer');
     }
     renderLedger();
     })();

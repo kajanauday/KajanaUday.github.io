@@ -55,7 +55,10 @@
         const totals = this.store.monthTotals(year, monthIndex, currency);
         return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
       });
-      return B().MonthSummary(rows, { isFuture, daysAway, slots: this.store.currencyKeys(), ...options }, this.ctx);
+      // An upcoming month with entries (planned income or expenses) shows its figures like any month, so the future can
+      // be planned; one with nothing in it shows when it starts.
+      const planned = rows.some(row => row.income || row.expense);
+      return B().MonthSummary(rows, { isFuture: isFuture && !planned, daysAway, slots: this.store.currencyKeys(), ...options }, this.ctx);
     }
 
     monthBlock(year, monthIndex, state) {
@@ -113,11 +116,6 @@
     // The year's special events first, then months grouped by priority: this month, earlier months (newest first),
     // then the ones still to come.
     monthGroups(year, state) {
-      const today = new Date();
-      const order = this.monthOrder(year);
-      const groups = year === today.getFullYear()
-        ? [['This month', order.filter(month => month === today.getMonth())], [`Earlier in ${year}`, order.filter(month => month < today.getMonth())], ['Coming up', order.filter(month => month > today.getMonth())]]
-        : [[`${year}, newest first`, order]];
       // The Special tab: every special event, grouped by the year it belongs to, newest year first. A year's own view
       // shows its months only.
       if (state.special) {
@@ -129,9 +127,9 @@
           return B().MonthGroup(String(eventYear), ofYear.length, ofYear.map(event => this.eventBlock(event, eventYear, state)).join(''), 'events');
         }).join('');
       }
-      return groups.filter(([, months]) => months.length)
-        .map(([title, months]) => B().MonthGroup(title, months.length, months.map(month => this.monthBlock(year, month, state)).join('')))
-        .join('');
+      // Months as one list with no group labels: the current month first, then earlier months (newest first), then
+      // upcoming ones at the bottom (soonest first). Past, current and upcoming show in their colours (see the stylesheet).
+      return `<div class="month-group month-list">${this.monthOrder(year).map(month => this.monthBlock(year, month, state)).join('')}</div>`;
     }
 
     yearTabs(activeYear, special = false) {
