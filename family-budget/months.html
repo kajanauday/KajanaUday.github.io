@@ -9,13 +9,14 @@
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Expense Tracker | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261022a">
+  <link rel="stylesheet" href="../family-budget.css?v=20261023a">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
   <script src="../data-layer.js?v=20261021i" defer></script>
+  <script src="../ledger-search.js?v=20261023a" defer></script>
   <script src="../component-blueprints.js?v=20261022a" defer></script>
   <script src="../renderer-engine.js?v=20261018a" defer></script>
-  <script src="../family-budget.js?v=20261022b" defer></script>
+  <script src="../family-budget.js?v=20261023a" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -23,6 +24,7 @@
     <div></div>
     <div class="header-actions">
       <span class="save-state"><span class="save-dot"></span> Saved</span>
+      <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="primary-button add-entry-button" id="add-entry-button" title="Add an expense or income"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
@@ -41,6 +43,20 @@
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
+
+  <dialog class="modal search-dialog" id="search-dialog" aria-label="Search entries">
+    <div class="search-box">
+      <i class="ti ti-search" aria-hidden="true"></i>
+      <input id="search-input" type="search" placeholder="Search in Telugu or English" aria-label="Search" aria-controls="search-results" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <div class="search-scope" role="group" aria-label="Where to search">
+        <button type="button" data-search-scope="year" aria-pressed="true">This year</button>
+        <button type="button" data-search-scope="all" aria-pressed="false">All years</button>
+      </div>
+      <button type="button" class="search-close" data-close-dialog aria-label="Close search" title="Close (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button>
+    </div>
+    <div class="search-terms" id="search-terms" aria-live="polite"></div>
+    <div class="search-results" id="search-results" role="listbox" aria-label="Results"></div>
+  </dialog>
 
   <dialog class="modal config-dialog" id="year-settings-dialog" aria-labelledby="year-settings-title">
     <form id="year-settings-form" novalidate>

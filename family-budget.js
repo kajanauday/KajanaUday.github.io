@@ -2049,11 +2049,170 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         showToast(parts.length ? `${parts.join(', ').replace(/^./, char => char.toUpperCase())}.` : 'No changes to save.');
       });
     }
+    // ---- Search (ledger-search.js): every entry and note, this year or all years, by word in either script ----
+    // Rows carry where they live (month or ★ event, section › subsection) and how to open them in the ledger.
+    function searchRows(year) {
+      const byId = new Map(transactions.map(item => [item.id, item]));
+      const rows = [];
+      transactions.forEach(item => {
+        const rowYear = Number(item.date.slice(0, 4));
+        if (year && rowYear !== year) return;
+        const parent = item.parentId ? byId.get(item.parentId) : null;
+        const head = parent || item;
+        const headYear = Number(head.date.slice(0, 4));
+        const monthIndex = Number(head.date.slice(5, 7)) - 1;
+        const eventName = head.eventId ? store.eventName(head.eventId) : '';
+        const section = head.eventId ? (head.section || eventName) : store.summarySection(head, store.sections(headYear, monthIndex, head.property)).name;
+        const mKey = head.eventId ? `ev:${head.eventId}` : keyOf(headYear, monthIndex);
+        rows.push({
+          id: item.id, parentId: item.parentId || null, year: rowYear, date: item.date, kind: item.parentId ? 'note' : 'entry',
+          description: item.description, comment: item.place || '', parent: parent?.description || '',
+          type: head.type, amount: item.parentId ? Number(item.amount) : store.entryTotal(item.id), property: item.property,
+          where: head.eventId ? `★ ${eventName}` : monthLabel(new Date(headYear, monthIndex, 1)), crumbs: `${section} › ${head.category}`,
+          category: head.category, section, eventName,
+          jump: { year: headYear, mKey, property: head.property, type: head.type, entryId: head.id, noteId: item.parentId ? item.id : null, category: head.category }
+        });
+      });
+      return rows;
+    }
+    // Opens a result in the ledger: its year and month (or event), its subsection, and its entry's notes for a note;
+    // then scrolls it into view and makes it glow. Only already-loaded data is shown; a month not yet fetched is loaded.
+    async function openSearchResult({ year, mKey, property, entryId, noteId, category }) {
+      if (currentMonth.getFullYear() !== year) selectLedgerYear(year);
+      expandedMonths.add(mKey);
+      saveExpandedMonths();
+      if (noteId && entryId) expandedEntries.add(entryId);
+      if (!mKey.startsWith('ev:')) {
+        const [y, m] = yearMonthOf(mKey);
+        if (!store.isLoaded(y, m)) await store.ensureMonth(y, m);
+      }
+      renderLedger();
+      const block = document.querySelector(`.month-block[data-month-key="${CSS.escape(mKey)}"]`);
+      if (!block) return showToast('Could not find that in the ledger.');
+      const lineOf = el => el?.closest('.ledger-entry-line');
+      let target = noteId ? block.querySelector(`[data-note-id="${CSS.escape(noteId)}"] .ledger-entry-line`) : null;
+      target ||= entryId ? lineOf(block.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(entryId)}"]`)) : null;
+      target ||= [...block.querySelectorAll(`.ledger-panel[data-property="${CSS.escape(property)}"] .ledger-cat`)]
+        .find(cat => cat.querySelector('.ledger-cat-name')?.textContent.trim() === category)?.querySelector(':scope > summary');
+      target ||= block.querySelector('.month-ledger-head');
+      for (let details = target.closest('details'); details; details = details.parentElement.closest('details')) details.open = true;
+      target.classList.remove('is-search-hit');
+      void target.offsetWidth; // restart the glow when the same row is opened twice
+      target.classList.add('is-search-hit');
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    function setupSearch() {
+      const dialog = document.querySelector('#search-dialog');
+      const input = document.querySelector('#search-input');
+      const termsEl = document.querySelector('#search-terms');
+      const list = document.querySelector('#search-results');
+      if (!dialog || !window.LedgerSearch) return;
+      let scope = 'year';
+      let terms = [];
+      let query = '';
+      let loading = '';
+      let active = -1;
+      let timer = null;
+      const yearOf = () => currentMonth.getFullYear();
+      const showScope = () => dialog.querySelectorAll('[data-search-scope]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.searchScope === scope));
+        if (button.dataset.searchScope === 'year') button.textContent = String(yearOf());
+      });
+      const rowsEls = () => [...list.querySelectorAll('[data-search-jump]')];
+      const setActive = index => {
+        const rows = rowsEls();
+        active = rows.length ? Math.max(0, Math.min(index, rows.length - 1)) : -1;
+        rows.forEach((row, i) => row.classList.toggle('is-active', i === active));
+        rows[active]?.scrollIntoView({ block: 'nearest' });
+      };
+      const draw = () => {
+        if (query.length < 2) {
+          termsEl.innerHTML = '';
+          list.innerHTML = '<p class="search-empty">Type a word in Telugu or English. It is also searched in the other script and by its meaning.</p>';
+          return;
+        }
+        const found = LedgerSearch.results(searchRows(scope === 'year' ? yearOf() : null), terms);
+        termsEl.innerHTML = LedgerSearch.termsHtml(terms, found.counts, escapeHtml);
+        list.innerHTML = (loading ? `<p class="search-empty"><i class="ti ti-loader-2 search-spin" aria-hidden="true"></i> Loading ${loading}…</p>` : '') + LedgerSearch.resultsHtml(found, terms, ledgerCtx);
+        setActive(0);
+      };
+      // Months not fetched yet are loaded once (only reads), then the results are drawn again.
+      const ensureLoaded = async () => {
+        const years = scope === 'year' ? [yearOf()] : store.yearIds().map(Number);
+        const missing = years.filter(year => store.year(year) && !store.isYearLoaded(year));
+        if (!missing.length) return;
+        loading = missing.length === 1 ? String(missing[0]) : `${missing.length} years`;
+        draw();
+        try { await Promise.all(missing.map(year => store.ensureYear(year))); } catch (error) { showToast('Could not load every month from Firebase.'); }
+        loading = '';
+        draw();
+      };
+      const run = () => {
+        query = input.value.trim();
+        const asked = query;
+        if (query.length < 2) { terms = []; return draw(); }
+        LedgerSearch.expand(query, next => {
+          if (asked !== query) return; // a newer query has started
+          terms = next;
+          draw();
+        });
+        ensureLoaded();
+      };
+      const open = () => {
+        if (dialog.open) return input.focus();
+        showScope();
+        dialog.showModal();
+        input.focus();
+        input.select();
+        run();
+      };
+      document.querySelector('#search-button')?.addEventListener('click', open);
+      document.addEventListener('keydown', event => {
+        const typing = event.target.closest?.('input, textarea, select, [contenteditable="true"]');
+        if ((event.key === '/' && !typing && !event.ctrlKey && !event.metaKey) || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) {
+          if (document.querySelector('dialog[open]:not(#search-dialog)')) return;
+          event.preventDefault();
+          open();
+        }
+      });
+      input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(run, 220);
+      });
+      input.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          setActive(active + (event.key === 'ArrowDown' ? 1 : -1));
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          clearTimeout(timer);
+          if (input.value.trim() !== query) return run();
+          rowsEls()[active]?.click();
+        }
+      });
+      dialog.querySelectorAll('[data-search-scope]').forEach(button => button.addEventListener('click', () => {
+        scope = button.dataset.searchScope;
+        showScope();
+        input.focus();
+        run();
+      }));
+      list.addEventListener('click', event => {
+        const row = event.target.closest('[data-search-jump]');
+        if (!row) return;
+        dialog.close();
+        openSearchResult(JSON.parse(row.dataset.searchJump));
+      });
+      list.addEventListener('mousemove', event => {
+        const row = event.target.closest('[data-search-jump]');
+        if (row) setActive(rowsEls().indexOf(row));
+      });
+    }
     ensureNextYear();
     setupYearConfig();
     setupMonthSettings();
     setupEntryDialog();
     setupLedger();
+    setupSearch();
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
     // Light or dark: remembered per browser; dark is the default.
     const themeButton = document.querySelector('#theme-button');
