@@ -15,9 +15,11 @@
   // The colour of an amount: its type's, except in a balance section ('net'), where zero or more is income and less is an expense.
   const toneOf = (type, amount) => (type === 'net' ? (Number(amount) < 0 ? 'expense' : 'income') : type);
 
-  // An amount typed as a formula shows its total, with the formula on hover.
+  // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
+  // `title`: the row around it is a button with its own title, and a native tooltip inside one is unreliable, so the CSS
+  // draws this one itself.
   const amountTag = (type, formula, text, ctx) =>
-    `<strong class="${type}${formula ? ' has-formula' : ''}"${formula ? ` title="${ctx.esc(formula)}"` : ''}>${text}</strong>`;
+    `<strong class="${type}${formula ? ' has-formula' : ''}"${formula ? ` data-formula="${ctx.esc(formula)}"` : ''}>${text}</strong>`;
 
   // Inline forms --------------------------------------------------------------------------------
   // Save / Cancel buttons: hidden with a mouse (Enter and Esc do it), shown on touch screens, whose number pad has no Enter.
@@ -97,7 +99,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, hasSubItems ? `<i class="ti ti-chevron-right ledger-entry-caret" aria-hidden="true" title="${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}"></i>` : '')}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, ctx.fmt(entry._meta.total, property), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, ctx.fmt(entry._meta.total, property), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------

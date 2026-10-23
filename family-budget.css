@@ -404,11 +404,9 @@
     .ledger-sort:hover, .ledger-sort:focus-visible { background: var(--line-soft); color: var(--brand-strong); }
     .ledger-sort.is-active { background: var(--brand-soft); color: var(--brand); }
     .ledger-cat[open] > summary > i { transform: rotate(90deg); }
-    /* Child markers: a subsection shows its arrow only when it has entries, and an entry with notes gets a small gold
-       arrow before its description that turns when the notes are open. */
+    /* Child markers: a subsection shows its arrow only when it has entries. An entry with notes carries no arrow; its
+       bold description and total set it apart from the plain entries around it. */
     .ledger-cat.is-empty > summary > i { visibility: hidden; }
-    .ledger-entry-caret { display: inline-block; margin-right: 4px; color: var(--brand); font-size: 10px; vertical-align: 1px; transition: transform .15s; }
-    .ledger-entry-toggle[aria-expanded="true"] .ledger-entry-caret { transform: rotate(90deg); }
     .ledger-cat-name { overflow: hidden; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
     .ledger-cat > summary strong { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .ledger-entries { container-type: inline-size; display: grid; gap: 0; margin-bottom: 4px; padding: 0 0 0 16px; border-left: 2px solid var(--line-soft); margin-left: 5px; }
@@ -500,7 +498,10 @@
       .ledger-totals { flex-wrap: wrap; }
     }
     /* An amount entered as a formula: a quiet dotted underline says "hover to see how it was worked out". */
-    .has-formula { cursor: help; text-decoration: underline dotted var(--formula-line); text-underline-offset: 3px; }
+    .has-formula { position: relative; cursor: help; text-decoration: underline dotted var(--formula-line); text-underline-offset: 3px; }
+    /* The formula itself, drawn above the amount on hover (and while the row has keyboard focus). */
+    .has-formula::after { content: attr(data-formula); position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font: 400 12.5px var(--mono); letter-spacing: .02em; white-space: nowrap; box-shadow: var(--shadow-sm); opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity .12s ease, transform .12s ease; }
+    .has-formula:hover::after, .ledger-entry-toggle:focus-visible .has-formula::after { opacity: 1; transform: none; }
     .amount-preview { min-height: 14px; color: var(--income-2); font: 500 11.5px var(--mono); }
     .amount-preview.is-error { color: var(--muted); }
     .ledger-carry { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 13.5px; font-style: italic; }
