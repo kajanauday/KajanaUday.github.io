@@ -401,6 +401,28 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       renderLedger();
       showToast(existing ? `Add an entry to "${category}".` : `Added "${name}" to ${section.name}${scope.isEvent ? '' : ' for this month'}.`);
     }
+    // Adds a balance section beside Income and Expenses to this month and currency, then asks for its first subsection.
+    // Its entries may be negative; its balance counts as income when zero or more, else as an expense.
+    function saveDraftSection(form) {
+      const input = form.elements.name;
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const hint = form.querySelector('.ledger-form-hint');
+      const { month, property } = ledgerDraft;
+      const scope = panelScope(month, property);
+      const reserved = ['income', 'expenses', 'other income', 'other expenses'];
+      const problem = !name ? 'Type a name first.'
+        : reserved.includes(name.toLowerCase()) || scope.sections().some(item => item.name.toLowerCase() === name.toLowerCase()) ? `There is already a section called "${name}" here.` : '';
+      if (problem) {
+        hint.textContent = problem;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      scope.own().push({ name, type: 'net', subsections: [], block: true });
+      scope.save();
+      ledgerDraft = { month, property, section: name };
+      renderLedger();
+      showToast(`Added the section "${name}" for this month. Name its first subsection.`);
+    }
     function saveEntryDraft(form) {
       const fields = form.elements;
       const { month, property, section, type, category } = form.dataset;
@@ -410,7 +432,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const checks = [
         [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
-        [fields.amount, !parsed.error && !parsed.empty && amount >= 0] // 0 is allowed: a gift with no money, say
+        [fields.amount, !parsed.error && !parsed.empty && (amount >= 0 || type === 'net')] // 0 is allowed: a gift with no money, say
       ];
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
@@ -438,7 +460,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const checks = [
         [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
-        [fields.amount, !parsed.error && !parsed.empty && amount >= 0]
+        [fields.amount, !parsed.error && !parsed.empty && (amount >= 0 || item.type === 'net')]
       ];
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
@@ -528,6 +550,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     // source: { kind: 'note'|'entry'|'category', id?, name?, type?, section? }; target: { kind: 'entry'|'category'|'type', ... }
     function moveVerdict(source, target) {
       if (!target) return { ok: false };
+      // Balance entries are signed, so they move only between balance sections.
+      const typeOf = side => (side.kind === 'category' || side.kind === 'type' ? side.type : transactions.find(item => item.id === side.id)?.type);
+      if ((typeOf(source) === 'net') !== (typeOf(target) === 'net')) return { ok: false, label: 'Balance entries stay in balance sections' };
       if (source.kind === 'note') {
         const note = transactions.find(item => item.id === source.id);
         if (target.kind === 'entry') return target.id === note?.parentId ? { ok: false, label: 'Already in this entry' } : { ok: true, label: `Make a note of “${target.label}”` };
@@ -925,7 +950,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           const day = form.elements.day?.value ? Math.min(Number(form.elements.day.value), daysInMonth) : undefined;
           const date = form.elements.date ? (form.elements.date.value || undefined) : day ? `${parentYear}-${String(parentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}` : undefined;
           const parsed = ExpenseStore.readAmount(form.elements.amount.value);
-          if (parsed.error || parsed.value < 0) {
+          if (parsed.error || (parsed.value < 0 && parentItem.type !== 'net')) {
             form.elements.amount.setAttribute('aria-invalid', 'true');
             form.elements.amount.focus();
             return showToast('Enter an amount, or a formula like =120+80.');
@@ -953,6 +978,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return showToast('Sub-entry added.');
         }
         if (form.dataset.ledgerForm === 'subsection' && ledgerDraft) saveDraftSubsection(form);
+        if (form.dataset.ledgerForm === 'section' && ledgerDraft) saveDraftSection(form);
       });
       ledger.addEventListener('keydown', event => {
         const form = event.target.closest('[data-ledger-form]');
@@ -1010,7 +1036,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         return true;
       };
       // Opens the inline add form for whatever was pressed: an entry → sub-entry, a category → entry,
-      // an Income/Expenses header → subsection. Month and currency come from the pressed panel, not the page state.
+      // an Income/Expenses header → subsection, a month's currency header → section. Month and currency come from the pressed panel, not the page state.
       const triggerLongPress = (element) => {
         if (isViewer) return false;
         element = getElement(element);
@@ -1026,13 +1052,20 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           showToast('Save or cancel the current inline edit first.');
           return true;
         }
+        // A month's currency header adds a section beside Income and Expenses (an event's header stands for its own section).
+        if (!mKey.startsWith('ev:') && element.closest('.ledger-panel-head')) {
+          ledgerDraft = { month: mKey, property, newSection: true };
+          renderLedger();
+          showToast(`Add a section to ${panel.querySelector('.ledger-panel-head h3')?.textContent.trim() || 'this currency'}.`);
+          return true;
+        }
         const entryCell = element.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         const toggle = entryCell?.querySelector('[data-toggle-entry]');
         const cat = element.closest('.ledger-cat');
         // An event panel's currency header stands for the event's own section, which has no title row of its own.
         const typeSection = element.closest('.ledger-type-section') || (element.closest('.ledger-panel-head') && panel.querySelector('.ledger-type-section.is-bare'));
         // The block's own type, not its title: an event's blocks are titled with their section's name.
-        const type = typeSection?.dataset.type === 'income' ? 'income' : 'expense';
+        const type = ['income', 'net'].includes(typeSection?.dataset.type) ? typeSection.dataset.type : 'expense';
         const namedSection = typeSection?.dataset.section;
 
         if (toggle) {
@@ -1112,7 +1145,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           editDraft = { kind: 'note', id };
         } else if (kind === 'cat') {
           const cat = element.closest('.ledger-cat');
-          const type = element.closest('.ledger-type-section')?.dataset.type === 'income' ? 'income' : 'expense';
+          const blockType = element.closest('.ledger-type-section')?.dataset.type;
+          const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
           editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim() };
         } else {
           const section = element.closest('.ledger-type-section');
@@ -1123,7 +1157,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         renderLedger();
       };
 
-      // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or an event panel's currency header.
+      // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or a panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
@@ -1131,7 +1165,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         if (cell) return cell.querySelector(':scope > .ledger-entry-line');
-        return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .month-block.is-event .ledger-panel-head');
+        return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .ledger-panel-head');
       };
       // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
       const moveSourceFor = row => {

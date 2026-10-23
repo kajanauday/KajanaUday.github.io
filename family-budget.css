@@ -998,3 +998,14 @@
     }
 /* Dark: currency dots softened to the same muted register as the rest of the dark palette. */
 :root:not([data-theme="light"]) { --india: #7d9bd6; --japan: #e0a273; }
+/* New balance section beside Income and Expenses (hold the currency header): name, add and cancel. */
+.section-form { grid-template-columns: minmax(0, 1fr) 20px 20px; align-items: center; gap: 6px; margin-top: 6px; }
+.section-form .ledger-form-hint { grid-column: 1 / -1; }
+.month-block:not(.is-event) .ledger-panel-head { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Balance sections: amounts take the income colour at zero or more and the expense colour below; their balance shows as a
+   line in Income or Expenses. */
+.ledger-cat > summary > strong.income { color: var(--income-2); }
+.ledger-cat > summary > strong.expense { color: var(--expense); }
+.ledger-carry.is-balance strong.expense { color: var(--expense); }
+.ledger-type-section[data-type="net"] .ledger-entry strong.expense { color: var(--expense); }
+.ledger-type-section[data-type="net"] .ledger-entry strong.income { color: var(--income-2); }

@@ -29,12 +29,15 @@
 // opened (ensureMonth). Amounts are minor units (paise / sen). An entry with notes counts as the sum of its notes.
 (function (global) {
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const BUCKETS = [['income', 'income'], ['expenses', 'expense']];
+  // A balance section (type 'net', drawn beside Income and Expenses) keeps its signed entries in a third bucket.
+  const BUCKETS = [['income', 'income'], ['expenses', 'expense'], ['net', 'net']];
+  const bucketOf = type => (type === 'income' ? 'income' : type === 'net' ? 'net' : 'expenses');
   const pad = n => String(n).padStart(2, '0');
   const monthIdOf = (year, monthIndex) => `${year}_${MONTH_NAMES[monthIndex]}`;
   const dateKeyOf = (year, monthIndex) => `${year}-${pad(monthIndex + 1)}`;
   const noteTotal = (amount, notes) => (notes.length ? notes.reduce((sum, note) => sum + Number(note.amount), 0) : Number(amount));
   const zeroTotals = () => ({ income: 0, expenses: 0, entries: 0 });
+  const otherSectionName = type => (type === 'income' ? 'Other income' : type === 'net' ? 'Other balance' : 'Other expenses');
 
   // Amount fields accept a formula such as "=(210+178)+178": + - * /, brackets and decimals only. A small parser
   // works it out; nothing is passed to eval. Returns { value, formula } in major units, or { error } / { empty }.
@@ -165,8 +168,7 @@
       childrenOf.get(item.parentId).push(item);
     });
     items.filter(item => !item.parentId).sort((a, b) => a.date.localeCompare(b.date)).forEach(item => {
-      const bucket = item.type === 'income' ? 'income' : 'expenses';
-      const groups = (doc[item.property] ||= { income: [], expenses: [] })[bucket];
+      const groups = (doc[item.property] ||= { income: [], expenses: [] })[bucketOf(item.type)] ||= [];
       let group = groups.find(g => g.category === item.category);
       if (!group) groups.push(group = { category: item.category, total: 0, count: 0, entries: [] });
       const when = row => (dated ? { date: row.date } : { day: Number(row.date.slice(8, 10)) });
@@ -221,12 +223,26 @@
     };
   }
 
+  // A balance section's entries are signed; each section's balance for the month counts as income when it is zero or more,
+  // else as an expense.
   function docTotals(buckets) {
     const totals = zeroTotals();
+    const balances = new Map();
     BUCKETS.forEach(([bucket]) => (buckets?.[bucket] || []).forEach(group => {
-      totals[bucket] += group.total;
       totals.entries += group.count;
+      if (bucket !== 'net') {
+        totals[bucket] += group.total;
+        return;
+      }
+      (group.entries || []).forEach(entry => {
+        const key = entry.section || '';
+        balances.set(key, (balances.get(key) || 0) + noteTotal(entry.amount, entry.notes || []));
+      });
     }));
+    balances.forEach(balance => {
+      if (balance >= 0) totals.income += balance;
+      else totals.expenses -= balance;
+    });
     return totals;
   }
 
@@ -631,13 +647,13 @@
     // by its month's list, else under "Other". A section is `renamable` when it is a real section (stored on entries or
     // in a month's list), not an event's ★ section or the "Other" fallback.
     yearBreakdown(year, currency) {
-      const byType = { income: new Map(), expense: new Map() };
+      const byType = { income: new Map(), expense: new Map(), net: new Map() };
       MONTH_NAMES.forEach((_, monthIndex) => {
         const lists = this.sections(year, monthIndex, currency);
         this.items(year, currency, monthIndex, { withEvents: true }).filter(item => !item.parentId).forEach(item => {
           const { name: sectionName, source } = this.summarySection(item, lists);
           const total = this.entryTotal(item.id);
-          const sections = byType[item.type === 'income' ? 'income' : 'expense'];
+          const sections = byType[item.type in byType ? item.type : 'expense'];
           const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map(), renamable: false, event: false };
           section.total += total;
           if (source === 'stored' || source === 'list') section.renamable = true;
@@ -664,7 +680,7 @@
         ...section,
         subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size, items: sorted(sub.items).map(part => ({ ...part, months: part.months.size })) }))
       }));
-      return { expense: finish(byType.expense), income: finish(byType.income) };
+      return { expense: finish(byType.expense), income: finish(byType.income), net: finish(byType.net) };
     }
 
     // The section the year summary files an entry under, and where that came from: 'event' (★ event name), 'stored' (the
@@ -674,7 +690,7 @@
       if (item.section) return { name: item.section, source: 'stored' };
       const listed = lists.find(section => section.type === item.type && section.subsections.includes(item.category))?.name;
       if (listed) return { name: listed, source: 'list' };
-      return { name: item.type === 'income' ? 'Other income' : 'Other expenses', source: 'other' };
+      return { name: otherSectionName(item.type), source: 'other' };
     }
 
     // ---- year-wide rename (from the year summary) ----
@@ -800,12 +816,15 @@
           const own = items.filter(item => item.type === section.type && !claimed.has(item) && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));
           own.forEach(item => claimed.add(item));
           sections[section.name] = this.buildSection(section.name, section.type, section.subsections, own);
+          // A section added beside Income and Expenses is drawn as its own block, under its own name.
+          if (section.block || section.type === 'net') sections[section.name]._meta.block = true;
         });
-      ['income', 'expense'].forEach(type => {
+      ['income', 'expense', 'net'].forEach(type => {
         const leftover = items.filter(item => item.type === type && !claimed.has(item));
         if (leftover.length) {
-          const name = type === 'income' ? 'Other income' : 'Other expenses';
+          const name = otherSectionName(type);
           sections[name] = this.buildSection(name, type, [], leftover);
+          if (type === 'net') sections[name]._meta.block = true;
         }
       });
       return sections;
