@@ -14,6 +14,8 @@
 
   // The colour of an amount: its type's, except in a balance section ('net'), where zero or more is income and less is an expense.
   const toneOf = (type, amount) => (type === 'net' ? (Number(amount) < 0 ? 'expense' : 'income') : type);
+  // A custom section's amounts show without a minus sign: red already says it is negative. Editing still shows the sign.
+  const amountText = (type, amount, property, ctx) => ctx.fmt(type === 'net' ? Math.abs(Number(amount)) : amount, property);
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
   // `title`: the row around it is a button with its own title, and a native tooltip inside one is unreliable, so the CSS
@@ -43,8 +45,12 @@
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
   // A new balance section beside Income and Expenses: just its name. Its entries may be negative.
+  // How a custom section counts in its month (see ExpenseStore.netRule): the same two choices when it is made and in
+  // Month settings later.
+  const SectionRuleFields = (rule = { count: 'split', positive: 'income' }, ctx) =>
+    `<div class="section-rule"><label><span>Counts in the month as</span><select name="count" data-section-count aria-label="How this section counts in the month">${[['split', 'Each amount: + and − to income or expenses'], ['balance', 'Its balance only'], ['none', 'Not counted, just shown']].map(([value, label]) => `<option value="${value}"${rule.count === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label><label><span>Positive amounts are</span><select name="positive" data-section-positive aria-label="What positive amounts count as">${[['income', 'Income (negatives are expenses)'], ['expense', 'Expenses (negatives are income)']].map(([value, label]) => `<option value="${value}"${rule.positive === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label></div>`;
   const SectionForm = ({ code }, ctx) =>
-    `<form class="ledger-form sub-form section-form" data-ledger-form="section" novalidate><input name="name" placeholder="New ${ctx.esc(code)} section (amounts may be negative)" maxlength="40" aria-label="New section name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add section" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
+    `<form class="ledger-form sub-form section-form" data-ledger-form="section" novalidate><input name="name" placeholder="New ${ctx.esc(code)} section (amounts may be negative)" maxlength="40" aria-label="New section name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add section" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button>${SectionRuleFields(undefined, ctx)}<p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
   // Child order ---------------------------------------------------------------------------------
   // A subsection has two sort buttons, Day and Amount; exactly one is active. Clicking the active one flips its
@@ -82,7 +88,7 @@
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
-    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx)}${amountTag(toneOf(type, sub.amount), sub.formula, ctx.fmt(sub.amount, property), ctx)}</span></div></div>`;
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx)}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
@@ -99,7 +105,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, ctx.fmt(entry._meta.total, property), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -118,12 +124,12 @@
     const draftHere = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
     const e = state.editDraft;
     if (e?.kind === 'category' && e.month === mKey && e.property === property && e.type === type && e.category === name) {
-      return `<div class="ledger-cat is-editing" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><form class="ledger-form cat-rename-form" data-ledger-form="rename-category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-category="${ctx.esc(name)}" novalidate><input name="name" value="${ctx.esc(name)}" maxlength="40" aria-label="Subsection name" autocomplete="off"><strong>${ctx.fmt(category._meta.total, property)}</strong><p class="ledger-form-hint" aria-live="polite"></p><span class="ledger-entry-actions">${DeleteButton(`data-delete-row="category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-category="${ctx.esc(name)}"`)}</span></form><div class="ledger-entries">${entries}</div></div>`;
+      return `<div class="ledger-cat is-editing" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}"><form class="ledger-form cat-rename-form" data-ledger-form="rename-category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-category="${ctx.esc(name)}" novalidate><input name="name" value="${ctx.esc(name)}" maxlength="40" aria-label="Subsection name" autocomplete="off"><strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong><p class="ledger-form-hint" aria-live="polite"></p><span class="ledger-entry-actions">${DeleteButton(`data-delete-row="category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-category="${ctx.esc(name)}"`)}</span></form><div class="ledger-entries">${entries}</div></div>`;
     }
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${ctx.fmt(category._meta.total, property)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -131,7 +137,7 @@
   // `heading` ({ title, section }), when given, titles the block with one section's own name instead of Income/Expenses;
   // an event's panel draws each of its sections this way. With `heading.bare` the block has no title row at all: an
   // event's own section is the panel itself, so its subsections sit straight under the currency header.
-  // `balances` ([{ name, amount }]) are the month's balance sections whose balance lands in this block, each as one line.
+  // `balances` ([{ label, amount }]) are what the month's custom sections add to this block, one line each.
   const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null, heading = null, balances = []) => {
     if (!sections.length && !carry && !balances.length) return '';
     const categories = [];
@@ -145,7 +151,7 @@
     });
     // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
     const carryHtml = carry ? `<div class="ledger-carry" title="Previous balance brought into this month"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i><span>Brought forward from ${ctx.esc(carry.from)}</span><strong class="${type}">${ctx.fmt(carry.amount, property)}</strong></div>` : '';
-    const balancesHtml = balances.map(({ name, amount }) => `<div class="ledger-carry is-balance" title="This month's balance of ${ctx.esc(name)}, counted as ${type === 'income' ? 'income' : 'an expense'}"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${ctx.esc(name)} balance</span><strong class="${type}">${ctx.fmt(amount, property)}</strong></div>`).join('');
+    const balancesHtml = balances.map(({ label, amount }) => `<div class="ledger-carry is-balance" title="${ctx.esc(label)}, counted as ${type === 'income' ? 'income' : 'an expense'}"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${ctx.esc(label)}</span><strong class="${type}">${ctx.fmt(amount, property)}</strong></div>`).join('');
     const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0) + (carry ? carry.amount : 0) + balances.reduce((sum, { amount }) => sum + amount, 0);
     const categoriesHtml = categories
       .sort((a, b) => b.category._meta.total - a.category._meta.total)
@@ -163,7 +169,7 @@
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong><span class="${toneOf(type, total)}">${ctx.fmt(total, property)}</span></summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong><span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span></summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -179,10 +185,27 @@
     // An event's own section (the first expense section) fills the panel untitled, other expense sections are open blocks
     // under their own names, and an Income block follows for money the event brought in (gifts, refunds…).
     const isEvent = isEventKey(mKey);
-    // Each balance section's balance this month: zero or more is income, less is an expense (as the stored totals count it).
-    const balances = blocks.filter(section => section._meta.type === 'net' && Object.values(section.categories).some(category => category.entries.length))
-      .map(section => ({ name: section._meta.id, net: Object.values(section.categories).reduce((sum, category) => sum + category._meta.total, 0) }));
-    const balancesFor = type => balances.filter(({ net }) => (type === 'income' ? net >= 0 : net < 0)).map(({ name, net }) => ({ name, amount: Math.abs(net) }));
+    // What each custom section adds to Income and Expenses this month, by its own rule (as the stored totals count it):
+    // each amount separately (positive ones to one side, negative to the other), its balance only, or nothing.
+    const lines = [];
+    blocks.filter(section => section._meta.type === 'net').forEach(section => {
+      const rule = section._meta.rule || { count: 'balance', positive: 'income' };
+      if (rule.count === 'none') return;
+      const amounts = Object.values(section.categories).flatMap(category => category.entries.map(entry => entry._meta.total));
+      if (!amounts.length) return;
+      const sideOf = amount => ((amount >= 0) === (rule.positive === 'income') ? 'income' : 'expense');
+      const name = section._meta.id;
+      if (rule.count === 'balance') {
+        const net = amounts.reduce((sum, amount) => sum + amount, 0);
+        lines.push({ type: sideOf(net), label: `${name} balance`, amount: Math.abs(net) });
+        return;
+      }
+      const plus = amounts.filter(amount => amount >= 0).reduce((sum, amount) => sum + amount, 0);
+      const minus = amounts.filter(amount => amount < 0).reduce((sum, amount) => sum - amount, 0);
+      if (plus) lines.push({ type: sideOf(1), label: `${name}: positive amounts`, amount: plus });
+      if (minus) lines.push({ type: sideOf(-1), label: `${name}: negative amounts`, amount: minus });
+    });
+    const balancesFor = type => lines.filter(line => line.type === type);
     const sections = isEvent
       ? byType.expense.map((section, index) => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id, bare: index === 0, panel: m.name })).join('')
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
@@ -233,10 +256,10 @@
             const itemKey = `${subKey}|${part.key}`;
             const canRename = !section.event && part.key !== '—';
             const nameHtml = edit?.key === itemKey ? renameField(itemKey, part.name) : `<span class="kb-name" title="${ctx.esc(part.name)}${canRename ? renameHint : ''}">${ctx.esc(part.name)}</span>`;
-            return `<li class="kb-item${edit?.key === itemKey ? ' is-renaming' : ''}"${canRename ? renameAttrs('item', { type, section: section.key, sub: sub.key, item: part.key }, part.name) : ''}>${nameHtml}${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(part.total)}">${ctx.fmt(part.total, property)}</strong><small class="kb-months" title="${part.count} ${part.count === 1 ? 'payment' : 'payments'}">${months(part.months)}</small></li>`;
+            return `<li class="kb-item${edit?.key === itemKey ? ' is-renaming' : ''}"${canRename ? renameAttrs('item', { type, section: section.key, sub: sub.key, item: part.key }, part.name) : ''}>${nameHtml}${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(part.total)}">${amountText(type, part.total, property, ctx)}</strong><small class="kb-months" title="${part.count} ${part.count === 1 ? 'payment' : 'payments'}">${months(part.months)}</small></li>`;
           }).join('');
           const share = shareOf(sub.total, section.total);
-          const subCells = `${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(sub.total)}">${ctx.fmt(sub.total, property)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${months(sub.months)}</small>`;
+          const subCells = `${bar(share)}<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(sub.total)}">${amountText(type, sub.total, property, ctx)}</strong><small class="kb-months" title="${sub.entries} ${sub.entries === 1 ? 'entry' : 'entries'}">${months(sub.months)}</small>`;
           // While renamed, the row is a plain block (a field inside <summary> would toggle it); it keeps its items if open.
           if (edit?.key === subKey) return `<div class="kb-sub is-renaming" data-key="${ctx.esc(subKey)}"${edit.open ? ' data-open' : ''}><div class="kb-edit-row"><i class="ti ti-pencil" aria-hidden="true"></i>${renameField(subKey, sub.name)}${subCells}</div>${edit.open ? `<ul class="kb-items">${items}</ul>` : ''}</div>`;
           const subAttrs = section.event ? '' : renameAttrs('sub', { type, section: section.key, sub: sub.key }, sub.name);
@@ -245,7 +268,7 @@
         const share = shareOf(section.total, all);
         // A lone section would only repeat the Income/Expenses heading above it, so its subsections stand directly there.
         if (sections.length === 1) return `<div class="kb-subs is-flat">${subs}</div>`;
-        const sectionCells = `<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(section.total)}">${ctx.fmt(section.total, property)}</strong>`;
+        const sectionCells = `<span class="kb-share">${share}%</span><strong class="kb-amount ${tone(section.total)}">${amountText(type, section.total, property, ctx)}</strong>`;
         if (edit?.key === sectionKey) return `<div class="kb-section is-renaming" data-key="${ctx.esc(sectionKey)}"${edit.open ? ' data-open' : ''}><div class="kb-edit-row"><i class="ti ti-pencil" aria-hidden="true"></i>${renameField(sectionKey, section.name)}${sectionCells}</div>${edit.open ? `<div class="kb-subs">${subs}</div>` : ''}</div>`;
         const sectionAttrs = section.renamable && !section.event ? renameAttrs('section', { type, section: section.key }, section.name) : '';
         return `<details class="kb-section" data-key="${ctx.esc(sectionKey)}"><summary${sectionAttrs}><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="kb-section-name"${sectionAttrs ? ` title="${ctx.esc(section.name)}${renameHint}"` : ''}>${ctx.esc(section.name)}</span>${sectionCells}</summary><div class="kb-subs">${subs}</div></details>`;
@@ -316,5 +339,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SORT_LABELS, YearBreakdown, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, YearBreakdown, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, CurrencyPanel, YearKpiCard, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

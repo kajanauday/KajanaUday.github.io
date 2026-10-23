@@ -479,7 +479,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      scope.own().push({ name, type: 'net', subsections: [], block: true });
+      const rule = ExpenseStore.netRule({ count: form.elements.count?.value, positive: form.elements.positive?.value });
+      scope.own().push({ name, type: 'net', subsections: [], block: true, ...rule });
       scope.save();
       ledgerDraft = { month, property, section: name };
       renderLedger();
@@ -609,16 +610,41 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       return true;
     }
     const fileUnder = (item, { category, section, type }) => Object.assign(item, { category, section, type });
+    // Balance (custom) sections hold signed amounts: + counts as income, − as an expense. Moving rows between one and
+    // Income or Expenses flips signs where needed, so every total stays exactly the same.
+    const signFactor = (from, to) => ((from === 'net') !== (to === 'net') && (from === 'expense' || to === 'expense') ? -1 : 1);
+    const negateFormula = formula => (/^=-\((.*)\)$/.test(formula) ? `=${formula.slice(3, -1)}` : `=-(${formula.slice(1)})`);
+    // The amounts that count for an entry: its notes when it has any, else its own.
+    const countedRows = rows => rows.flatMap(row => (row.parentId ? [row] : childrenOf(row.id).length ? [] : [row]));
+    function retype(rows, to) {
+      rows.forEach(row => {
+        if (signFactor(row.type, to) > 0) return;
+        row.amount = -Number(row.amount);
+        if (row.formula) row.formula = negateFormula(row.formula);
+      });
+    }
+    // Why rows cannot become `to`, or '' if they can: a balance amount must end up zero or more in Income or Expenses.
+    function retypeProblem(rows, to) {
+      if (to === 'net') return '';
+      const negative = countedRows(rows).some(row => row.type === 'net' && signFactor('net', to) * Number(row.amount) < 0);
+      if (!negative) return '';
+      return to === 'income' ? 'Only positive balance amounts can move to Income' : 'Only negative balance amounts can move to Expenses';
+    }
     // source: { kind: 'note'|'entry'|'category', id?, name?, type?, section? }; target: { kind: 'entry'|'category'|'type', ... }
-    function moveVerdict(source, target) {
+    function moveVerdict(source, target, where = {}) {
       if (!target) return { ok: false };
-      // Balance entries are signed, so they move only between balance sections.
+      // Rows can move between any sections; amounts that cannot keep their meaning in the destination are refused.
       const typeOf = side => (side.kind === 'category' || side.kind === 'type' ? side.type : transactions.find(item => item.id === side.id)?.type);
-      if ((typeOf(source) === 'net') !== (typeOf(target) === 'net')) return { ok: false, label: 'Balance entries stay in balance sections' };
+      const moving = source.kind === 'category'
+        ? transactions.filter(item => where.month && panelScope(where.month, where.property).match(item) && item.type === source.type && item.category === source.name)
+        : [transactions.find(item => item.id === source.id), ...childrenOf(source.id)].filter(Boolean);
+      const problem = retypeProblem(moving, typeOf(target));
+      if (problem) return { ok: false, label: problem };
       if (source.kind === 'note') {
         const note = transactions.find(item => item.id === source.id);
         if (target.kind === 'entry') return target.id === note?.parentId ? { ok: false, label: 'Already in this entry' } : { ok: true, label: `Make a note of “${target.label}”` };
         if (target.kind === 'category') return { ok: true, label: `Make an entry in “${target.name}”` };
+        if (target.kind === 'type' && target.section) return { ok: true, label: `Make an entry in “${target.section}”` };
       }
       if (source.kind === 'entry') {
         const entry = transactions.find(item => item.id === source.id);
@@ -627,10 +653,15 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           return childrenOf(source.id).length ? { ok: false, label: 'An entry with notes can’t become a note' } : { ok: true, label: `Make a note of “${target.label}”` };
         }
         if (target.kind === 'category') return target.name === entry?.category && target.type === entry?.type ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.name}”` };
+        // Onto a custom section's heading: the entry keeps its subsection name inside that section.
+        if (target.kind === 'type' && target.section) return target.section === entry?.section ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.section}”` };
       }
       if (source.kind === 'category') {
         if (target.kind === 'category') return target.name === source.name && target.type === source.type ? { ok: false } : { ok: true, label: `Merge into “${target.name}”` };
-        if (target.kind === 'type') return target.type === source.type ? { ok: false, label: `Already under ${source.type === 'income' ? 'Income' : 'Expenses'}` } : { ok: true, label: `Move to ${target.type === 'income' ? 'Income' : 'Expenses'}` };
+        if (target.kind === 'type') {
+          const label = target.section || (target.type === 'income' ? 'Income' : 'Expenses');
+          return target.type === source.type && (!target.section || target.section === source.section) ? { ok: false, label: `Already under ${label}` } : { ok: true, label: `Move to ${label}` };
+        }
       }
       return { ok: false };
     }
@@ -647,6 +678,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           const parent = transactions.find(row => row.id === target.id);
           const kept = keepOwnAmountAsNote(parent);
           item.parentId = parent.id;
+          retype([item], parent.type);
           fileUnder(item, parent);
           expandedEntries.add(parent.id);
           revealKey = catKey(month, property, parent.type, parent.category);
@@ -654,9 +686,21 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         } else {
           delete item.parentId;
           const moved = [item, ...childrenOf(item.id)];
-          moved.forEach(row => fileUnder(row, { category: target.name, section: target.section, type: target.type }));
-          revealKey = catKey(month, property, target.type, target.name);
-          message = `Moved “${item.description}” to “${target.name}”.`;
+          // Dropped on a custom section's heading, it keeps its subsection name, which the section gains if needed.
+          const destination = target.kind === 'type'
+            ? { category: item.category, section: target.section, type: target.type }
+            : { category: target.name, section: target.section, type: target.type };
+          if (target.kind === 'type') {
+            const home = scope.own().find(section => section.name === target.section);
+            if (home && !home.subsections.includes(destination.category)) {
+              home.subsections.push(destination.category);
+              listsChanged = true;
+            }
+          }
+          retype(moved, destination.type);
+          moved.forEach(row => fileUnder(row, destination));
+          revealKey = catKey(month, property, destination.type, destination.category);
+          message = `Moved “${item.description}” to “${target.kind === 'type' ? target.section : target.name}”.`;
         }
         if (oldParent && oldParent.id !== item.parentId && zeroIfEmptied(oldParent)) message += ` “${oldParent.description}” has no notes left, so it is now 0.`;
       } else {
@@ -668,19 +712,21 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           if (!window.confirm(`Merge “${source.name}” (${count} ${count === 1 ? 'entry' : 'entries'}) into “${target.name}”?`)) return;
           destination = { category: target.name, section: target.section, type: target.type };
         } else {
-          const home = lists.find(section => section.type === target.type);
+          // A custom section's heading names its own section; Income/Expenses take the first section of that type.
+          const home = lists.find(section => target.section && section.name === target.section) || lists.find(section => section.type === target.type);
           if (!home) return showToast(`Add an ${target.type === 'income' ? 'income' : 'expense'} section here first.`);
-          if (!window.confirm(`Move “${source.name}” and its entries to ${target.type === 'income' ? 'Income' : 'Expenses'}?`)) return;
+          if (!window.confirm(`Move “${source.name}” and its entries to ${target.section || (target.type === 'income' ? 'Income' : 'Expenses')}?`)) return;
           if (!home.subsections.includes(source.name)) home.subsections.push(source.name);
           destination = { category: source.name, section: home.name, type: target.type };
         }
-        lists.filter(section => section.type === source.type).forEach(section => {
+        lists.filter(section => section.type === source.type && section.name !== destination.section).forEach(section => {
           section.subsections = section.subsections.filter(name => name !== source.name);
         });
         listsChanged = true;
+        retype(rows, destination.type);
         rows.forEach(item => fileUnder(item, destination));
         revealKey = catKey(month, property, destination.type, destination.category);
-        message = target.kind === 'category' ? `Merged “${source.name}” into “${target.name}”.` : `Moved “${source.name}” to ${target.type === 'income' ? 'Income' : 'Expenses'}.`;
+        message = target.kind === 'category' ? `Merged “${source.name}” into “${target.name}”.` : `Moved “${source.name}” to ${target.section || (target.type === 'income' ? 'Income' : 'Expenses')}.`;
       }
       if (listsChanged) scope.save();
       saveTransactions();
@@ -1250,7 +1296,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const cat = el.closest('details.ledger-cat');
         if (cat) return { kind: 'category', name: cat.querySelector('.ledger-cat-name').textContent.trim(), type: cat.closest('.ledger-type-section').dataset.type, section: cat.dataset.section, el: cat.querySelector(':scope > summary') };
         const typeHead = el.closest('.ledger-type-section > summary');
-        if (typeHead) return { kind: 'type', type: typeHead.parentElement.dataset.type, el: typeHead };
+        if (typeHead) return { kind: 'type', type: typeHead.parentElement.dataset.type, section: typeHead.parentElement.dataset.section || '', el: typeHead };
         return null;
       };
       let pressedRow = null;
@@ -1290,7 +1336,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const setDropTarget = target => {
         if (lift.target?.el !== target?.el) lift.target?.el?.classList.remove('is-drop-target', 'is-drop-invalid');
         lift.target = target;
-        const verdict = moveVerdict(lift.source, target);
+        const verdict = moveVerdict(lift.source, target, lift);
         lift.verdict = verdict;
         target?.el?.classList.toggle('is-drop-target', verdict.ok);
         target?.el?.classList.toggle('is-drop-invalid', !verdict.ok && Boolean(verdict.label));
@@ -1662,10 +1708,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           const entries = items(key).filter(item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category)))).length;
           box.innerHTML = `<div class="config-section-head">
               <input class="config-section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40">
-              <div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>
+              ${section.type === 'net' ? '' : `<div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>`}
               <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
               <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
             </div>
+            ${section.type === 'net' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.netRule(section), { esc: escapeHtml }) : ''}
             <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
           box.querySelector('.kv-row').append(chipInput({
             values: section.subsections,
@@ -1711,6 +1758,14 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const carry = event.target.closest('[data-month-carry]');
         if (carry) monthState.setup[carry.dataset.monthCarry].carry = carry.checked;
         if (active) renderMonthSettings();
+        // A custom section's counting rule: how it counts in the month, and which side positive amounts go to.
+        const rule = event.target.closest('[data-section-count], [data-section-positive]');
+        const block = rule?.closest('[data-currency]');
+        if (rule && block) {
+          const section = monthSectionsFor(block.dataset.currency)[Number(rule.closest('.config-section').dataset.sectionIndex)];
+          section[rule.matches('[data-section-count]') ? 'count' : 'positive'] = rule.value;
+          monthState.dirty.add(block.dataset.currency);
+        }
       });
       form.addEventListener('input', event => {
         const name = event.target.closest('.config-section-name');
@@ -1767,7 +1822,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
               }
             });
           });
-          trackSave(store.saveMonthSections(year, month, key, list.map(section => ({ name: section.name.trim(), type: section.type, subsections: [...section.subsections] }))));
+          // Keep every setting a section has (custom sections' block flag and counting rule), not just its name and type.
+          trackSave(store.saveMonthSections(year, month, key, list.map(({ originalName, ...section }) => ({ ...section, name: section.name.trim(), subsections: [...section.subsections] }))));
         });
         if (renamed) saveTransactions();
         trackSave(store.saveMonthSetup(year, month, setup));

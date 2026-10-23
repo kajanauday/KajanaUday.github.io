@@ -1002,6 +1002,11 @@
 /* New balance section beside Income and Expenses (hold the currency header): name, add and cancel. */
 .section-form { grid-template-columns: minmax(0, 1fr) 20px 20px; align-items: center; gap: 6px; margin-top: 6px; }
 .section-form .ledger-form-hint { grid-column: 1 / -1; }
+/* How a custom section counts in its month: two choices under its name, in the new-section form and in Month settings. */
+.section-rule { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 4px 0 2px; }
+.section-rule label { min-width: 0; display: grid; flex: 1 1 210px; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.section-rule select { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font-size: 12.5px; }
+.section-rule select:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
 .month-block:not(.is-event) .ledger-panel-head { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* Balance sections: amounts take the income colour at zero or more and the expense colour below; their balance shows as a
    line in Income or Expenses. */

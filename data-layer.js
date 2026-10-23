@@ -223,9 +223,19 @@
     };
   }
 
-  // A balance section's entries are signed; each section's balance for the month counts as income when it is zero or more,
-  // else as an expense.
-  function docTotals(buckets) {
+  // How a custom (balance) section counts in its month, chosen per section:
+  //   count 'split'   each amount on its own: positive ones to one side, negative ones to the other;
+  //         'balance' only the section's total for the month, to one side or the other by its sign;
+  //         'none'    shown but not counted.
+  //   positive 'income' | 'expense': which side positive amounts (or a positive balance) go to; negatives go to the other.
+  // Sections made before the choice existed keep their old behaviour: balance only, positive as income.
+  const netRule = section => ({ count: ['split', 'balance', 'none'].includes(section?.count) ? section.count : 'balance', positive: section?.positive === 'expense' ? 'expense' : 'income' });
+  // Adds signed amounts to { income, expenses } by a section's rule.
+  function addSigned(totals, amount, rule) {
+    const side = (amount >= 0) === (rule.positive === 'income') ? 'income' : 'expenses';
+    totals[side] += Math.abs(amount);
+  }
+  function docTotals(buckets, rules = new Map()) {
     const totals = zeroTotals();
     const balances = new Map();
     BUCKETS.forEach(([bucket]) => (buckets?.[bucket] || []).forEach(group => {
@@ -236,13 +246,13 @@
       }
       (group.entries || []).forEach(entry => {
         const key = entry.section || '';
-        balances.set(key, (balances.get(key) || 0) + noteTotal(entry.amount, entry.notes || []));
+        const rule = rules.get(key) || netRule();
+        const amount = noteTotal(entry.amount, entry.notes || []);
+        if (rule.count === 'split') addSigned(totals, amount, rule);
+        else if (rule.count === 'balance') balances.set(key, (balances.get(key) || 0) + amount);
       });
     }));
-    balances.forEach(balance => {
-      if (balance >= 0) totals.income += balance;
-      else totals.expenses -= balance;
-    });
+    balances.forEach((balance, key) => addSigned(totals, balance, rules.get(key) || netRule()));
     return totals;
   }
 
@@ -459,7 +469,7 @@
         const doc = this.synced.has(id) ? JSON.parse(this.synced.get(id)) : null;
         const metadata = { entries: 0 };
         active.forEach(key => {
-          const own = this.synced.has(id) ? docTotals(doc?.[key]) : rawFromStored(node.months[id]?.metadata?.[key]);
+          const own = this.synced.has(id) ? docTotals(doc?.[key], this.netRules(year, monthIndex, key)) : rawFromStored(node.months[id]?.metadata?.[key]);
           const fromEvents = this.eventMonthTotals(year, monthIndex, key);
           const raw = { income: own.income + fromEvents.income, expenses: own.expenses + fromEvents.expenses, entries: own.entries + fromEvents.entries };
           const first = !(key in running);
@@ -536,6 +546,10 @@
       });
       if (!Object.keys(update).length) return;
       await this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the event sections.', error));
+    }
+    // Each custom section's counting rule for a month and currency, by section name.
+    netRules(year, monthIndex, currency) {
+      return new Map(this.sections(year, monthIndex, currency).filter(section => section.type === 'net').map(section => [section.name, netRule(section)]));
     }
     // Entries-only totals that included events add to one month and currency.
     eventMonthTotals(year, monthIndex, currency) {
@@ -822,6 +836,7 @@
           sections[section.name] = this.buildSection(section.name, section.type, section.subsections, own);
           // A section added beside Income and Expenses is drawn as its own block, under its own name.
           if (section.block || section.type === 'net') sections[section.name]._meta.block = true;
+          if (section.type === 'net') sections[section.name]._meta.rule = netRule(section);
         });
       ['income', 'expense', 'net'].forEach(type => {
         const leftover = items.filter(item => item.type === type && !claimed.has(item));
@@ -856,6 +871,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
+  Object.assign(ExpenseStore, { netRule, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
