@@ -223,17 +223,87 @@
     };
   }
 
-  // How a custom (balance) section counts in its month, chosen per section:
-  //   count 'split'   each amount on its own: positive ones to one side, negative ones to the other;
-  //         'balance' only the section's total for the month, to one side or the other by its sign;
-  //         'none'    shown but not counted.
-  //   positive 'income' | 'expense': which side positive amounts (or a positive balance) go to; negatives go to the other.
-  // Sections made before the choice existed keep their old behaviour: balance only, positive as income.
-  const netRule = section => ({ count: ['split', 'balance', 'none'].includes(section?.count) ? section.count : 'balance', positive: section?.positive === 'expense' ? 'expense' : 'income' });
-  // Adds signed amounts to { income, expenses } by a section's rule.
-  function addSigned(totals, amount, rule) {
-    const side = (amount >= 0) === (rule.positive === 'income') ? 'income' : 'expenses';
-    totals[side] += Math.abs(amount);
+  // A custom section (L1, beside Income and Expenses) counts in its month by one equation over its subsections (L2), each
+  // standing for the sum of its entries (an entry counts as the sum of its notes), in major units:
+  //   formula  e.g. "Uday + Sairam" (the default: all of them added), "Uday/2 - Sairam/2", "[Gold loan] * 0.3";
+  //            a name is written as it is (any case) or in [brackets]; empty means the default.
+  //   to       'expense' | 'income': the result goes to that side (below zero, it takes from that side);
+  //            'sign': positive to one side and negative to the other, as `positive` says; 'none': shown, not counted.
+  //   positive 'income' | 'expense': for 'sign', which side a positive result goes to.
+  // Sections made before the equation count as the default sum, by sign (count 'none' meant not counted).
+  const netRule = section => ({
+    to: ['expense', 'income', 'sign', 'none'].includes(section?.to) ? section.to : section?.count === 'none' ? 'none' : 'sign',
+    positive: section?.positive === 'expense' ? 'expense' : 'income',
+    formula: String(section?.formula ?? '').trim()
+  });
+  const defaultFormula = names => names.map(name => (/^[\p{L}\p{M}_][\p{L}\p{M}\p{N}_]*$/u.test(name) ? name : `[${name}]`)).join(' + ') || '0';
+  const isNameChar = char => /[\p{L}\p{M}\p{N}_]/u.test(char || '');
+  // Splits an equation into subsection names and plain arithmetic; { error } names the first word it does not know.
+  function readFormula(formula, names) {
+    const byLength = [...names].sort((a, b) => b.length - a.length);
+    const parts = [];
+    const text = String(formula ?? '');
+    for (let at = 0; at < text.length;) {
+      if (text[at] === '[') {
+        const end = text.indexOf(']', at);
+        const inside = end < 0 ? '' : text.slice(at + 1, end).trim();
+        const name = names.find(item => item.toLowerCase() === inside.toLowerCase());
+        if (!name) return { error: end < 0 ? 'a [ without its ]' : `“${inside}”` };
+        parts.push({ name, raw: text.slice(at, end + 1) });
+        at = end + 1;
+        continue;
+      }
+      const name = !isNameChar(text[at - 1]) && byLength.find(item => text.slice(at, at + item.length).toLowerCase() === item.toLowerCase() && !isNameChar(text[at + item.length]));
+      if (name) {
+        parts.push({ name, raw: text.slice(at, at + name.length) });
+        at += name.length;
+      } else if (/[0-9+\-*/().\s]/.test(text[at])) {
+        parts.push(text[at++]);
+      } else {
+        const word = text.slice(at).match(/^[\p{L}\p{M}\p{N}_ ]+/u)?.[0].trim() || text[at];
+        return { error: `“${word}”` };
+      }
+    }
+    return { parts };
+  }
+  // Works out a section's equation on its subsections' sums (minor units); null if it does not read or work out.
+  function evalFormula(formula, sums) {
+    const read = readFormula(formula, Object.keys(sums));
+    if (read.error) return null;
+    const parsed = readAmount(`=${read.parts.map(part => (typeof part === 'string' ? part : `(${sums[part.name] / 100})`)).join('')}`);
+    return parsed.error || !Number.isFinite(parsed.value) ? null : Math.round(parsed.value * 100);
+  }
+  // Why an equation cannot be used, or '' if it can.
+  function formulaProblem(formula, names) {
+    if (!String(formula ?? '').trim()) return '';
+    const read = readFormula(formula, names);
+    if (read.error) return `${read.error} is not a subsection here. Use the names as shown, or put them in [ ].`;
+    return evalFormula(formula, Object.fromEntries(names.map(name => [name, 100]))) === null ? 'The equation does not work out. Use + − * / ( ) and numbers.' : '';
+  }
+  // The equation with one subsection renamed (names written as they are, or in brackets when they need them).
+  function renameInFormula(formula, names, from, to) {
+    const read = readFormula(formula, names);
+    if (read.error) return formula;
+    return read.parts.map(part => (typeof part === 'string' ? part : part.name === from ? defaultFormula([to]) : part.raw)).join('');
+  }
+  // One custom section's month, from its entries' amounts by subsection ({ name → [amount…] }) and its subsection list:
+  // each subsection's sum, the equation's result, and what it adds to income and expenses.
+  function netSectionSummary(section, amountsBySub) {
+    const rule = netRule(section);
+    const names = [...new Set([...(section?.subsections || []), ...Object.keys(amountsBySub)])];
+    const sums = Object.fromEntries(names.map(name => [name, (amountsBySub[name] || []).reduce((sum, amount) => sum + amount, 0)]));
+    const formula = rule.formula || defaultFormula(names);
+    const worked = evalFormula(formula, sums);
+    // An equation that no longer reads (a subsection removed, say) counts as the default sum until it is fixed.
+    const result = worked ?? Object.values(sums).reduce((sum, amount) => sum + amount, 0);
+    const label = section?.name || 'Section';
+    const side = rule.to === 'sign' ? ((result >= 0) === (rule.positive === 'income') ? 'income' : 'expense') : rule.to;
+    const amount = rule.to === 'sign' ? Math.abs(result) : result;
+    const lines = side !== 'none' && amount ? [{ type: side, label, amount }] : [];
+    return {
+      rule, sums, formula, result, broken: worked === null,
+      adds: { income: side === 'income' ? amount : 0, expenses: side === 'expense' ? amount : 0, side, amount, lines }
+    };
   }
   function docTotals(buckets, rules = new Map()) {
     const totals = zeroTotals();
@@ -245,14 +315,15 @@
         return;
       }
       (group.entries || []).forEach(entry => {
-        const key = entry.section || '';
-        const rule = rules.get(key) || netRule();
-        const amount = noteTotal(entry.amount, entry.notes || []);
-        if (rule.count === 'split') addSigned(totals, amount, rule);
-        else if (rule.count === 'balance') balances.set(key, (balances.get(key) || 0) + amount);
+        const bySub = (balances.get(entry.section || '') || balances.set(entry.section || '', {}).get(entry.section || ''));
+        (bySub[group.category] ||= []).push(noteTotal(entry.amount, entry.notes || []));
       });
     }));
-    balances.forEach((balance, key) => addSigned(totals, balance, rules.get(key) || netRule()));
+    balances.forEach((amountsBySub, key) => {
+      const { adds } = netSectionSummary(rules.get(key), amountsBySub);
+      totals.income += adds.income;
+      totals.expenses += adds.expenses;
+    });
     return totals;
   }
 
@@ -547,9 +618,9 @@
       if (!Object.keys(update).length) return;
       await this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the event sections.', error));
     }
-    // Each custom section's counting rule for a month and currency, by section name.
+    // Each custom section of a month and currency (with its rules), by name.
     netRules(year, monthIndex, currency) {
-      return new Map(this.sections(year, monthIndex, currency).filter(section => section.type === 'net').map(section => [section.name, netRule(section)]));
+      return new Map(this.sections(year, monthIndex, currency).filter(section => section.type === 'net').map(section => [section.name, section]));
     }
     // Entries-only totals that included events add to one month and currency.
     eventMonthTotals(year, monthIndex, currency) {
@@ -836,7 +907,14 @@
           sections[section.name] = this.buildSection(section.name, section.type, section.subsections, own);
           // A section added beside Income and Expenses is drawn as its own block, under its own name.
           if (section.block || section.type === 'net') sections[section.name]._meta.block = true;
-          if (section.type === 'net') sections[section.name]._meta.rule = netRule(section);
+          if (section.type === 'net') {
+            // What each subsection counts as and what the section adds to the month, by its rules (as stored totals count it).
+            const built = sections[section.name];
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => entry._meta.total)]));
+            const summary = netSectionSummary(section, amountsBySub);
+            built._meta.rule = summary.rule;
+            built._meta.adds = summary.adds;
+                      }
         });
       ['income', 'expense', 'net'].forEach(type => {
         const leftover = items.filter(item => item.type === type && !claimed.has(item));
@@ -871,6 +949,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { netRule, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
+  Object.assign(ExpenseStore, { netRule, defaultFormula, readFormula, evalFormula, formulaProblem, renameInFormula, netSectionSummary, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

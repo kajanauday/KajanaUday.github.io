@@ -9,15 +9,15 @@
     try { if (localStorage.getItem('family-budget-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../family-budget.css?v=20261023b">
+  <link rel="stylesheet" href="../family-budget.css?v=20261024c">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261021k" defer></script>
   <script src="../offline-store.js?v=20261026c" defer></script>
-  <script src="../data-layer.js?v=20261023b" defer></script>
+  <script src="../data-layer.js?v=20261024b" defer></script>
   <script src="../ledger-search.js?v=20261023a" defer></script>
-  <script src="../component-blueprints.js?v=20261023c" defer></script>
+  <script src="../component-blueprints.js?v=20261024b" defer></script>
   <script src="../renderer-engine.js?v=20261025b" defer></script>
-  <script src="../family-budget.js?v=20261023b" defer></script>
+  <script src="../family-budget.js?v=20261024b" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -105,6 +105,17 @@
     </form>
   </dialog>
 
+  <dialog class="modal month-dialog setup-dialog" id="section-setup-dialog" aria-labelledby="section-setup-title">
+    <form id="section-setup-form" novalidate>
+      <div class="modal-header"><div><p id="section-setup-where">Section setup</p><h2 id="section-setup-title">Section</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="setup-names" id="setup-names" aria-label="Subsections: click to put one in the equation"></div>
+      <label class="setup-formula"><span>Equation <button type="button" class="link-button" data-reset-formula title="Back to all subsections added">all added</button></span><input id="setup-formula" autocomplete="off" spellcheck="false" placeholder="Uday + Sairam" aria-describedby="setup-preview"></label>
+      <p class="setup-preview" id="setup-preview" aria-live="polite"></p>
+      <div class="setup-sign" id="setup-section-rule"></div>
+      <p class="settings-error" id="section-setup-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
   <dialog class="modal month-dialog" id="month-settings-dialog" aria-labelledby="month-settings-title">
     <form id="month-settings-form" novalidate>
       <div class="modal-header"><div><p>Month settings</p><h2 id="month-settings-title">Month</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>

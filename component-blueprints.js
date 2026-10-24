@@ -45,10 +45,10 @@
     `<form class="ledger-form sub-form" data-ledger-form="subsection" novalidate><input name="name" placeholder="New subsection in ${ctx.esc(sectionName)}" maxlength="40" aria-label="New subsection name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add subsection" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
   // A new balance section beside Income and Expenses: just its name. Its entries may be negative.
-  // How a custom section counts in its month (see ExpenseStore.netRule): the same two choices when it is made and in
-  // Month settings later.
-  const SectionRuleFields = (rule = { count: 'split', positive: 'income' }, ctx) =>
-    `<div class="section-rule"><label><span>Counts in the month as</span><select name="count" data-section-count aria-label="How this section counts in the month">${[['split', 'Each amount: + and − to income or expenses'], ['balance', 'Its balance only'], ['none', 'Not counted, just shown']].map(([value, label]) => `<option value="${value}"${rule.count === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label><label><span>Positive amounts are</span><select name="positive" data-section-positive aria-label="What positive amounts count as">${[['income', 'Income (negatives are expenses)'], ['expense', 'Expenses (negatives are income)']].map(([value, label]) => `<option value="${value}"${rule.positive === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label></div>`;
+  // Where a custom section's result goes in its month (see ExpenseStore.netRule): asked when it is made, and in Month
+  // settings and Section setup later. "Positive is" matters only when it goes by sign.
+  const SectionRuleFields = (rule = { to: 'expense', positive: 'income' }, ctx) =>
+    `<div class="section-rule"><label><span>Result goes to</span><select name="to" data-section-to aria-label="Where this section's result goes">${[['expense', 'Expenses'], ['income', 'Income'], ['sign', 'By its sign'], ['none', 'Nowhere, just shown']].map(([value, label]) => `<option value="${value}"${rule.to === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label><label${rule.to === 'sign' ? '' : ' hidden'}><span>Positive is</span><select name="positive" data-section-positive aria-label="What a positive result counts as">${[['income', 'Income, negative is expense'], ['expense', 'Expense, negative is income']].map(([value, label]) => `<option value="${value}"${rule.positive === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label></div>`;
   const SectionForm = ({ code }, ctx) =>
     `<form class="ledger-form sub-form section-form" data-ledger-form="section" novalidate><input name="name" placeholder="New ${ctx.esc(code)} section (amounts may be negative)" maxlength="40" aria-label="New section name" autocomplete="off"><button type="submit" class="mini-btn is-save" aria-label="Add section" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button>${SectionRuleFields(undefined, ctx)}<p class="ledger-form-hint" aria-live="polite"></p></form>`;
 
@@ -138,6 +138,14 @@
   // an event's panel draws each of its sections this way. With `heading.bare` the block has no title row at all: an
   // event's own section is the panel itself, so its subsections sit straight under the currency header.
   // `balances` ([{ label, amount }]) are what the month's custom sections add to this block, one line each.
+  // Beside a custom section's name: what its equation adds to the month ("→ Expenses 67,000"), or that it is not counted.
+  const SectionResult = (meta, property, ctx) => {
+    const adds = meta?.adds;
+    if (!adds) return '';
+    if (adds.side === 'none') return '<small class="section-result is-off">not counted</small>';
+    const label = `${adds.side === 'income' ? 'Income' : 'Expenses'} ${adds.amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(adds.amount), property)}`;
+    return `<small class="section-result ${adds.side}" title="Adds to the month by its equation">→ ${ctx.esc(label)}</small>`;
+  };
   const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null, heading = null, balances = []) => {
     if (!sections.length && !carry && !balances.length) return '';
     const categories = [];
@@ -169,7 +177,7 @@
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong><span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span></summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${type === 'net' && heading ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>${SectionResult(sections[0]?._meta, property, ctx)}` : ''}<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span></summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -185,26 +193,9 @@
     // An event's own section (the first expense section) fills the panel untitled, other expense sections are open blocks
     // under their own names, and an Income block follows for money the event brought in (gifts, refunds…).
     const isEvent = isEventKey(mKey);
-    // What each custom section adds to Income and Expenses this month, by its own rule (as the stored totals count it):
-    // each amount separately (positive ones to one side, negative to the other), its balance only, or nothing.
-    const lines = [];
-    blocks.filter(section => section._meta.type === 'net').forEach(section => {
-      const rule = section._meta.rule || { count: 'balance', positive: 'income' };
-      if (rule.count === 'none') return;
-      const amounts = Object.values(section.categories).flatMap(category => category.entries.map(entry => entry._meta.total));
-      if (!amounts.length) return;
-      const sideOf = amount => ((amount >= 0) === (rule.positive === 'income') ? 'income' : 'expense');
-      const name = section._meta.id;
-      if (rule.count === 'balance') {
-        const net = amounts.reduce((sum, amount) => sum + amount, 0);
-        lines.push({ type: sideOf(net), label: `${name} balance`, amount: Math.abs(net) });
-        return;
-      }
-      const plus = amounts.filter(amount => amount >= 0).reduce((sum, amount) => sum + amount, 0);
-      const minus = amounts.filter(amount => amount < 0).reduce((sum, amount) => sum - amount, 0);
-      if (plus) lines.push({ type: sideOf(1), label: `${name}: positive amounts`, amount: plus });
-      if (minus) lines.push({ type: sideOf(-1), label: `${name}: negative amounts`, amount: minus });
-    });
+    // What each custom section adds to Income and Expenses this month, as its rules work it out (see
+    // ExpenseStore.netSectionSummary): subsections sent to a side, and its by-sign amounts one by one or as a balance.
+    const lines = blocks.filter(section => section._meta.type === 'net' && section._meta.adds).flatMap(section => section._meta.adds.lines);
     const balancesFor = type => lines.filter(line => line.type === type);
     const sections = isEvent
       ? byType.expense.map((section, index) => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id, bare: index === 0, panel: m.name })).join('')

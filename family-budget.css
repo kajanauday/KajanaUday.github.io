@@ -1006,6 +1006,7 @@
 .section-rule { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 4px 0 2px; }
 .section-rule label { min-width: 0; display: grid; flex: 1 1 210px; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .section-rule select { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font-size: 12.5px; }
+.section-rule label[hidden] { display: none; }
 .section-rule select:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
 .month-block:not(.is-event) .ledger-panel-head { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* Balance sections: amounts take the income colour at zero or more and the expense colour below; their balance shows as a
@@ -1022,3 +1023,31 @@
 .conflict-paths { margin: 0 0 10px; padding-left: 18px; color: var(--ink); font-size: 13.5px; }
 .conflict-what { margin: 0 0 8px; color: var(--ink); font-size: 14px; }
 .conflict-when { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+/* Section setup: how a custom section and each of its subsections count. */
+.setup-dialog { width: min(560px, calc(100% - 20px)); }
+.setup-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.setup-name { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); color: var(--ink); cursor: pointer; font-size: 12.5px; }
+.setup-name:hover, .setup-name.is-focus { border-color: var(--brand); }
+.setup-name b { font-weight: 600; }
+.setup-name span { font: 400 11.5px var(--mono); }
+.setup-name .income, .setup-preview .income { color: var(--income); }
+.setup-name .expense, .setup-preview .expense { color: var(--expense); }
+.setup-formula { display: grid; gap: 4px; margin-top: 10px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.setup-formula > span { display: flex; justify-content: space-between; }
+.setup-formula button { padding: 0; border: 0; background: none; color: var(--brand); cursor: pointer; font-size: 11px; font-weight: 600; }
+.setup-formula input { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: 400 14px var(--mono); }
+.setup-formula input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.setup-formula input[aria-invalid] { border-color: var(--expense); background: var(--expense-soft); }
+.setup-preview { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+.setup-preview strong { font-family: var(--mono); font-weight: 500; }
+.setup-preview small { font-size: 11.5px; }
+.setup-sign { margin-top: 10px; }
+.setup-sign .section-rule { padding: 0; }
+.setup-sign .section-rule label { flex-basis: 200px; }
+.setup-sign .section-rule label[hidden] { display: none; }
+.section-setup-btn { width: 24px; height: 24px; margin-left: 6px; color: var(--brand); font-size: 14px; }
+.ledger-type-section > summary .section-setup-btn { flex: none; }
+.section-result { margin-left: 8px; font: 400 11.5px var(--mono); letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.section-result.income { color: var(--income); }
+.section-result.expense { color: var(--expense); }
+.section-result.is-off { color: var(--muted); }
