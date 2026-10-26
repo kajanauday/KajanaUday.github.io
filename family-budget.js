@@ -212,6 +212,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
+      sectionNote: (mKey, property, key) => store.sectionNote(...yearMonthOf(mKey), property, key),
       today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; },
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
     };
@@ -1950,6 +1951,118 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         showToast(`Saved how “${name}” counts.`);
       });
     }
+    // ---- Notes for a month, or for one section block of it: hover the note button to read them, click it to write; the
+    // box grows with the text ----
+    function setupMonthNotes() {
+      const ledger = document.querySelector('#ledger');
+      const pop = document.createElement('div');
+      pop.className = 'month-note-pop';
+      pop.hidden = true;
+      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" wrap="off" spellcheck="false" aria-label="Month notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
+      document.body.append(pop);
+      const view = pop.querySelector('.month-note-view');
+      const text = pop.querySelector('.month-note-text');
+      let button = null;
+      let editing = false;
+      // Clicking the button while writing saves and closes (its blur comes first; the click must not reopen it).
+      let closedBy = null;
+      const place = () => {
+        const r = button.getBoundingClientRect();
+        pop.style.top = `${r.bottom + 6}px`;
+        pop.style.left = `${Math.max(8, Math.min(r.left - 8, innerWidth - pop.offsetWidth - 8))}px`;
+      };
+      // As wide as the longest line and as tall as all of them, within the window.
+      const fit = () => {
+        text.style.width = '0';
+        text.style.height = '0';
+        // scrollWidth leaves out the right padding and the caret; the borders come on top of both.
+        const width = text.scrollWidth + 24;
+        const fits = width <= innerWidth - 40;
+        text.style.width = `${Math.max(Math.min(width, innerWidth - 40), 220)}px`;
+        const height = text.scrollHeight + 4;
+        text.style.height = `${Math.min(height, innerHeight * 0.7)}px`;
+        // Scroll only once the text outgrows the window.
+        text.style.overflowX = fits ? 'hidden' : 'auto';
+        text.style.overflowY = height <= innerHeight * 0.7 ? 'hidden' : 'auto';
+        place();
+      };
+      // A button stands for a month's notes, or with data-note-property / data-note-section for one section block's.
+      const noteOf = target => {
+        const [year, monthIndex] = yearMonthOf(target.dataset.monthNote);
+        const { noteProperty: property, noteSection: key } = target.dataset;
+        return key
+          ? { text: store.sectionNote(year, monthIndex, property, key), save: value => store.saveSectionNote(year, monthIndex, property, key, value) }
+          : { text: store.monthNote(year, monthIndex), save: value => store.saveMonthNote(year, monthIndex, value) };
+      };
+      const show = target => {
+        button = target;
+        const note = noteOf(button).text;
+        view.textContent = note || (isViewer ? 'No notes' : 'No notes · click to write');
+        view.classList.toggle('is-empty', !note);
+        pop.classList.remove('is-editing');
+        pop.hidden = false;
+        place();
+      };
+      const hide = () => {
+        if (editing) return;
+        pop.hidden = true;
+        button = null;
+      };
+      const edit = target => {
+        if (isViewer) return viewOnly();
+        show(target);
+        editing = true;
+        pop.classList.add('is-editing');
+        text.value = noteOf(button).text;
+        fit();
+        text.focus();
+        text.setSelectionRange(text.value.length, text.value.length);
+      };
+      const finish = save => {
+        if (!editing) return;
+        editing = false;
+        closedBy = { button, at: Date.now() };
+        const note = noteOf(button);
+        const value = text.value.replace(/\s+$/, '');
+        if (save && value !== note.text) {
+          note.save(value).catch(() => showToast('Could not save the notes. Try again.'));
+          button.classList.toggle('has-note', Boolean(value));
+          button.querySelector('i').className = `ti ti-${value ? 'notes' : 'note'}`;
+          showToast(value ? 'Notes saved.' : 'Notes removed.');
+        }
+        hide();
+      };
+      ledger.addEventListener('mouseover', event => {
+        const target = event.target.closest('[data-month-note]');
+        if (target && !editing && target !== button) show(target);
+      });
+      ledger.addEventListener('mouseout', event => {
+        const target = event.target.closest('[data-month-note]');
+        if (target && !target.contains(event.relatedTarget)) hide();
+      });
+      ledger.addEventListener('click', event => {
+        const target = event.target.closest('[data-month-note]');
+        if (!target) return;
+        // A section's button sits in its heading: the click must not open or close the block.
+        event.preventDefault();
+        event.stopPropagation();
+        if (closedBy?.button === target && Date.now() - closedBy.at < 400) return;
+        if (editing) finish(true);
+        else edit(target);
+      }, true);
+      text.addEventListener('input', fit);
+      text.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(false);
+        } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          finish(true);
+        }
+      });
+      text.addEventListener('blur', () => finish(true));
+      addEventListener('scroll', () => { if (button && !pop.hidden) place(); }, true);
+    }
     function setupMonthSettings() {
       const dialog = document.querySelector('#month-settings-dialog');
       const form = document.querySelector('#month-settings-form');
@@ -2016,6 +2129,13 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           list.forEach(section => {
             const name = section.name.trim();
             if (!section.originalName || section.originalName === name) return;
+            // A custom section's notes for this month follow its new name.
+            const from = ExpenseStore.sectionNoteKey(section.type, section.originalName);
+            const note = section.type === 'net' && store.sectionNote(year, month, key, from);
+            if (note) {
+              trackSave(store.saveSectionNote(year, month, key, ExpenseStore.sectionNoteKey(section.type, name), note));
+              trackSave(store.saveSectionNote(year, month, key, from, ''));
+            }
             transactions.forEach(item => {
               if (item.property === key && item.date.startsWith(keyOf(year, month)) && item.section === section.originalName) {
                 item.section = name;
@@ -2782,6 +2902,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     setupYearConfig();
     setupMonthSettings();
     setupSectionSetup();
+    setupMonthNotes();
     setupEntryDialog();
     setupLedger();
     setupSearch();

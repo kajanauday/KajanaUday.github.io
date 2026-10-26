@@ -104,7 +104,7 @@
     const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
     const subEntryForm = showingSubEntryForm ? SubEntryForm({ mKey, parentId: entry.id }, ctx) : '';
     // Notes are always in the DOM and only shown or hidden, so opening an entry needs no re-render.
-    const notes = (hasSubItems || subEntryForm) ? `<div class="ledger-notes"${isExpanded || subEntryForm ? '' : ' hidden'}>${subEntriesHtml}${subEntryForm}</div>` : '';
+    const notes = (hasSubItems || subEntryForm) ? `<div class="ledger-notes"${isExpanded || subEntryForm ? '' : ' hidden'}>${subEntryForm}${subEntriesHtml}</div>` : '';
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
@@ -132,7 +132,7 @@
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${entries}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -179,7 +179,7 @@
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${type === 'net' && heading ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>` : ''}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${isEventKey(mKey) ? '' : SectionNoteButton(mKey, property, ExpenseStore.sectionNoteKey(type, heading?.section), heading ? heading.title : title, ctx)}${type === 'net' && heading ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>` : ''}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -320,10 +320,17 @@
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
-  const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, isEvent, summaryHtml, panelsHtml, single }) =>
+  // A month's notes: a small button beside its name, filled when it has some; hovering shows them, a click edits them.
+  // The same for a section block of a month (Expenses, Income, a custom section), in one currency.
+  const NoteButton = (attrs, note, what) =>
+    `<button type="button" class="month-note-btn${note ? ' has-note' : ''}" ${attrs} aria-label="${note ? `${what} notes` : `Add ${what.toLowerCase()} notes`}"><i class="ti ti-${note ? 'notes' : 'note'}" aria-hidden="true"></i></button>`;
+  const MonthNoteButton = (mKey, note) => NoteButton(`data-month-note="${mKey}"`, note, 'Month');
+  const SectionNoteButton = (mKey, property, key, title, ctx) =>
+    NoteButton(`data-month-note="${mKey}" data-note-property="${property}" data-note-section="${ctx.esc(key)}"`, ctx.sectionNote(mKey, property, key), title);
+  const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, isEvent, summaryHtml, panelsHtml, single, note }) =>
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}${isEvent ? ' is-event' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${name}</button></h2>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${name}</button>${isEvent ? '' : MonthNoteButton(mKey, note)}</h2>
           ${summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}

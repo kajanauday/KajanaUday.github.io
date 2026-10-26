@@ -805,10 +805,10 @@
       .month-tag.ms-cur.is-placeholder { display: none; }
     }
     /* Tighter columns, sized from measurements: a 60px slot fits −13.135K (58px), the code takes 30px, the month-name
-       column is the longest name (September, 121px) plus a little, and the INR and JPY groups sit 14px apart. Every
+       column is the longest name (September, 121px) and its notes button (22px) plus a little, and the INR and JPY groups sit 14px apart. Every
        month's summary still starts on the same vertical line. */
     @media (min-width: 701px) {
-      .month-ledger-head h2 { min-width: 124px; }
+      .month-ledger-head h2 { min-width: 146px; }
       .month-summary:has(.ms-cur) { gap: 4px 14px; }
       .month-tag.ms-cur .ms-code { width: 30px; }
       .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: 60px; min-width: 60px; }
@@ -1079,3 +1079,15 @@
 .ledger-type-section > summary > .section-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; }
 .ledger-type-section > summary .section-totals span { font: 500 13.5px var(--mono); }
 .ledger-type-section > summary .section-totals span.balance { color: var(--ink); }
+/* Month notes: a small button beside the month's name (about the size of the save dot), and the popover it opens. */
+.month-ledger-head h2 { display: flex; align-items: center; gap: 2px; }
+.month-note-btn { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; font-size: 13px; opacity: .45; transition: opacity .15s, color .15s; }
+.month-note-btn:hover, .month-note-btn:focus-visible { opacity: 1; color: var(--brand); }
+.month-note-btn.has-note { color: var(--brand); opacity: .9; }
+.month-note-pop { position: fixed; z-index: 60; max-width: calc(100vw - 16px); padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+.month-note-view { max-width: min(520px, calc(100vw - 40px)); margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.month-note-view.is-empty { color: var(--muted); font-size: 12px; }
+.month-note-text, .month-note-hint { display: none; }
+.month-note-pop.is-editing .month-note-view { display: none; }
+.month-note-pop.is-editing .month-note-text { display: block; min-height: 40px; padding: 6px 8px; overflow: auto; border: 1px solid var(--brand); border-radius: 6px; outline: 0; background: var(--surface-soft); color: var(--ink); font: 400 13px/1.5 var(--display); resize: none; white-space: pre; }
+.month-note-pop.is-editing .month-note-hint { display: block; margin: 5px 0 0; color: var(--muted); font-size: 10.5px; }
