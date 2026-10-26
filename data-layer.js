@@ -223,22 +223,121 @@
     };
   }
 
-  // A custom section (L1, beside Income and Expenses) counts in its month by one equation over its subsections (L2), each
-  // standing for the sum of its entries (an entry counts as the sum of its notes), in major units:
-  //   formula  e.g. "Uday + Sairam" (the default: all of them added), "Uday/2 - Sairam/2", "[Gold loan] * 0.3";
-  //            a name is written as it is (any case) or in [brackets]; empty means the default.
-  //   to       'expense' | 'income': the result goes to that side (below zero, it takes from that side);
-  //            'sign': positive to one side and negative to the other, as `positive` says; 'none': shown, not counted.
-  //   positive 'income' | 'expense': for 'sign', which side a positive result goes to.
-  // Sections made before the equation count as the default sum, by sign (count 'none' meant not counted).
-  const netRule = section => ({
-    to: ['expense', 'income', 'sign', 'none'].includes(section?.to) ? section.to : section?.count === 'none' ? 'none' : 'sign',
-    positive: section?.positive === 'expense' ? 'expense' : 'income',
-    formula: String(section?.formula ?? '').trim()
-  });
-  const defaultFormula = names => names.map(name => (/^[\p{L}\p{M}_][\p{L}\p{M}\p{N}_]*$/u.test(name) ? name : `[${name}]`)).join(' + ') || '0';
+  // A custom section (L1, beside Income and Expenses) is worked out like a small sheet, kept on the section as `calc`:
+  //   vars     [{ id: 'E1', name }]: each subsection (L2) has a fixed id, standing for the sum of its entries (an entry
+  //            counts as the sum of its notes). Ids follow renames and are never reused, so equations stay right.
+  //   lines    ['Share = (E1 - E2) / 2', 'GI = TI', 'GB = GI - GE', …]: calculations, in any order. GI, GE and GB are
+  //            the section's income, expenses and balance as shown in its heading: each only when a line sets it.
+  //            TI and TE are its entries' own totals, positive ones and negative ones (as a positive sum), to use anywhere.
+  //            Names are not case sensitive.
+  //   income / expense  { mode, formula }: what goes to the month's actual income and expenses.
+  //            mode 'count' shown there and added to its total; 'show' shown only; 'off' not used. Empty sends nothing.
+  //   v        2 since GI / GE / GB are set by hand; before, they were always the entries' totals and an empty formula was GB.
+  // Equations use numbers, + − * / ( ), and abs(), min(), max(), round(); amounts are in major units.
+  const SIDE_MODES = ['count', 'show', 'off'];
+  const CALC_FUNCTIONS = { ABS: Math.abs, MIN: Math.min, MAX: Math.max, ROUND: Math.round };
+  const GRAND = ['GI', 'GE', 'GB'];
+  const ENTRY_TOTALS = ['TI', 'TE'];
+  const SUB_ID = /^E\d+$/;
+  // Reads an expression into { refs, run(get) } or { error }; names are upper-cased.
+  function parseCalc(text) {
+    const tokens = String(text ?? '').match(/[A-Za-z_][A-Za-z0-9_]*|\d+\.?\d*|\.\d+|\S/g) || [];
+    let at = 0;
+    const refs = new Set();
+    const fail = message => { throw new Error(message); };
+    const peek = () => tokens[at];
+    const sum = () => {
+      let node = product();
+      while (peek() === '+' || peek() === '-') {
+        const op = tokens[at++];
+        const left = node;
+        const right = product();
+        node = get => (op === '+' ? left(get) + right(get) : left(get) - right(get));
+      }
+      return node;
+    };
+    const product = () => {
+      let node = unary();
+      while (peek() === '*' || peek() === '/') {
+        const op = tokens[at++];
+        const left = node;
+        const right = unary();
+        node = get => (op === '*' ? left(get) * right(get) : left(get) / right(get));
+      }
+      return node;
+    };
+    const unary = () => {
+      if (peek() === '-') { at++; const inner = unary(); return get => -inner(get); }
+      if (peek() === '+') { at++; return unary(); }
+      return primary();
+    };
+    const primary = () => {
+      const token = tokens[at++];
+      if (token === undefined) fail('It ends too early.');
+      if (token === '(') {
+        const inner = sum();
+        if (tokens[at++] !== ')') fail('A ( is not closed.');
+        return inner;
+      }
+      if (/^[\d.]/.test(token)) {
+        const value = Number(token);
+        return () => value;
+      }
+      if (/^[A-Za-z_]/.test(token)) {
+        const name = token.toUpperCase();
+        if (CALC_FUNCTIONS[name]) {
+          if (tokens[at++] !== '(') fail(`${token} needs ( ), like ${token.toLowerCase()}(GB).`);
+          const args = [sum()];
+          while (peek() === ',') { at++; args.push(sum()); }
+          if (tokens[at++] !== ')') fail(`${token}( is not closed.`);
+          return get => CALC_FUNCTIONS[name](...args.map(arg => arg(get)));
+        }
+        refs.add(name);
+        return get => get(name);
+      }
+      return fail(`“${token}” is not allowed here.`);
+    };
+    try {
+      if (!tokens.length) fail('It is empty.');
+      const run = sum();
+      if (at < tokens.length) fail(`“${tokens[at]}” is not expected there.`);
+      return { refs, run };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+  // One calculation line: "Name = expression".
+  function parseLine(text) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(String(text ?? ''));
+    if (!match) return { error: 'Write it as Name = …, e.g. Share = E1 / 2.' };
+    const name = match[1].toUpperCase();
+    if (SUB_ID.test(name)) return { name: match[1], key: name, reserved: true, error: `${match[1]} is a subsection; give the result another name.` };
+    if (CALC_FUNCTIONS[name]) return { name: match[1], key: name, reserved: true, error: `${match[1]} is a function name.` };
+    if (ENTRY_TOTALS.includes(name)) return { name: match[1], key: name, reserved: true, error: `${match[1]} is the entries' own total and cannot be set.` };
+    return { name: match[1], key: name, ...parseCalc(match[2]) };
+  }
+  const listOf = value => (Array.isArray(value) ? value : value && typeof value === 'object' ? Object.values(value) : []);
+  // Ids for the subsections, keeping those already given and giving the next free number to new ones.
+  function calcVars(vars, names) {
+    const kept = listOf(vars).filter(item => item && SUB_ID.test(item.id) && typeof item.name === 'string').map(({ id, name }) => ({ id, name }));
+    let next = kept.reduce((top, item) => Math.max(top, Number(item.id.slice(1))), 0);
+    names.filter(name => !kept.some(item => item.name === name)).forEach(name => kept.push({ id: `E${++next}`, name }));
+    return kept;
+  }
+  // The older ways a section counted: { expense, income } with equations on subsection names, before that { to, positive,
+  // formula } with one equation; read here only to turn them into a calc.
+  const sideRule = side => ({ mode: SIDE_MODES.includes(side?.mode) ? side.mode : 'off', formula: String(side?.formula ?? '').trim() });
+  function legacyRule(section) {
+    if (section?.expense || section?.income) return { expense: sideRule(section.expense), income: sideRule(section.income), sign: null };
+    const to = ['expense', 'income', 'sign', 'none'].includes(section?.to) ? section.to : section?.count === 'none' ? 'none' : 'sign';
+    const formula = String(section?.formula ?? '').trim();
+    const one = mode => ({ mode, formula });
+    const off = { mode: 'off', formula: '' };
+    if (to === 'sign') return { expense: one('count'), income: one('count'), sign: section?.positive === 'expense' ? 'expense' : 'income' };
+    return { expense: to === 'income' ? off : one(to === 'none' ? 'show' : 'count'), income: to === 'income' ? one('count') : off, sign: null };
+  }
   const isNameChar = char => /[\p{L}\p{M}\p{N}_]/u.test(char || '');
-  // Splits an equation into subsection names and plain arithmetic; { error } names the first word it does not know.
+  // Splits an old equation into subsection names (as written, or in [brackets]) and plain arithmetic.
   function readFormula(formula, names) {
     const byLength = [...names].sort((a, b) => b.length - a.length);
     const parts = [];
@@ -248,62 +347,158 @@
         const end = text.indexOf(']', at);
         const inside = end < 0 ? '' : text.slice(at + 1, end).trim();
         const name = names.find(item => item.toLowerCase() === inside.toLowerCase());
-        if (!name) return { error: end < 0 ? 'a [ without its ]' : `“${inside}”` };
-        parts.push({ name, raw: text.slice(at, end + 1) });
+        if (!name) return { error: true };
+        parts.push({ name });
         at = end + 1;
         continue;
       }
       const name = !isNameChar(text[at - 1]) && byLength.find(item => text.slice(at, at + item.length).toLowerCase() === item.toLowerCase() && !isNameChar(text[at + item.length]));
       if (name) {
-        parts.push({ name, raw: text.slice(at, at + name.length) });
+        parts.push({ name });
         at += name.length;
       } else if (/[0-9+\-*/().\s]/.test(text[at])) {
         parts.push(text[at++]);
       } else {
-        const word = text.slice(at).match(/^[\p{L}\p{M}\p{N}_ ]+/u)?.[0].trim() || text[at];
-        return { error: `“${word}”` };
+        return { error: true };
       }
     }
     return { parts };
   }
-  // Works out a section's equation on its subsections' sums (minor units); null if it does not read or work out.
-  function evalFormula(formula, sums) {
-    const read = readFormula(formula, Object.keys(sums));
-    if (read.error) return null;
-    const parsed = readAmount(`=${read.parts.map(part => (typeof part === 'string' ? part : `(${sums[part.name] / 100})`)).join('')}`);
-    return parsed.error || !Number.isFinite(parsed.value) ? null : Math.round(parsed.value * 100);
-  }
-  // Why an equation cannot be used, or '' if it can.
-  function formulaProblem(formula, names) {
-    if (!String(formula ?? '').trim()) return '';
-    const read = readFormula(formula, names);
-    if (read.error) return `${read.error} is not a subsection here. Use the names as shown, or put them in [ ].`;
-    return evalFormula(formula, Object.fromEntries(names.map(name => [name, 100]))) === null ? 'The equation does not work out. Use + − * / ( ) and numbers.' : '';
-  }
-  // The equation with one subsection renamed (names written as they are, or in brackets when they need them).
-  function renameInFormula(formula, names, from, to) {
-    const read = readFormula(formula, names);
-    if (read.error) return formula;
-    return read.parts.map(part => (typeof part === 'string' ? part : part.name === from ? defaultFormula([to]) : part.raw)).join('');
-  }
-  // One custom section's month, from its entries' amounts by subsection ({ name → [amount…] }) and its subsection list:
-  // each subsection's sum, the equation's result, and what it adds to income and expenses.
-  function netSectionSummary(section, amountsBySub) {
-    const rule = netRule(section);
-    const names = [...new Set([...(section?.subsections || []), ...Object.keys(amountsBySub)])];
-    const sums = Object.fromEntries(names.map(name => [name, (amountsBySub[name] || []).reduce((sum, amount) => sum + amount, 0)]));
-    const formula = rule.formula || defaultFormula(names);
-    const worked = evalFormula(formula, sums);
-    // An equation that no longer reads (a subsection removed, say) counts as the default sum until it is fixed.
-    const result = worked ?? Object.values(sums).reduce((sum, amount) => sum + amount, 0);
-    const label = section?.name || 'Section';
-    const side = rule.to === 'sign' ? ((result >= 0) === (rule.positive === 'income') ? 'income' : 'expense') : rule.to;
-    const amount = rule.to === 'sign' ? Math.abs(result) : result;
-    const lines = side !== 'none' && amount ? [{ type: side, label, amount }] : [];
-    return {
-      rule, sums, formula, result, broken: worked === null,
-      adds: { income: side === 'income' ? amount : 0, expenses: side === 'expense' ? amount : 0, side, amount, lines }
+  // A section's calc: its own, or one made from an older rule (same results).
+  function sectionCalc(section) {
+    const names = section?.subsections || [];
+    if (section?.calc) {
+      const { calc } = section;
+      return handSetGrand({
+        vars: calcVars(calc.vars, names),
+        lines: listOf(calc.lines).map(String),
+        income: sideRule(calc.income),
+        expense: sideRule(calc.expense),
+        v: calc.v
+      });
+    }
+    const vars = calcVars([], names);
+    const rule = legacyRule(section);
+    const totals = { Income: 'GI', Expenses: 'GE', Balance: 'GB' };
+    const known = [...names, ...Object.keys(totals).filter(name => !names.some(sub => sub.toLowerCase() === name.toLowerCase()))];
+    const convert = formula => {
+      const read = formula && readFormula(formula, known);
+      if (!read || read.error) return 'GB';
+      return read.parts.map(part => (typeof part === 'string' ? part : vars.find(item => item.name === part.name)?.id || totals[part.name])).join('').replace(/\s+/g, ' ').trim();
     };
+    const side = ({ mode, formula }) => ({ mode, formula: convert(formula) === 'GB' ? '' : convert(formula) });
+    if (rule.sign) {
+      // Oldest: the result went to one side by its sign.
+      const formula = convert(rule.income.formula);
+      const wrap = text => (/^[A-Za-z0-9_]+$/.test(text) ? text : `(${text})`);
+      const positive = { mode: 'count', formula: `max(${formula}, 0)` };
+      const negative = { mode: 'count', formula: `max(-${wrap(formula)}, 0)` };
+      return handSetGrand({ vars, lines: [], income: rule.sign === 'income' ? positive : negative, expense: rule.sign === 'income' ? negative : positive });
+    }
+    return handSetGrand({ vars, lines: [], income: side(rule.income), expense: side(rule.expense) });
+  }
+  // An older calc used GI / GE / GB as the entries' totals without setting them, and sent GB for an empty formula: it gets
+  // the lines that set the ones it uses, so it works out as before (and shows just those in its heading).
+  function handSetGrand(calc) {
+    if (calc.v === 2) return calc;
+    ['income', 'expense'].forEach(type => {
+      if (calc[type].mode !== 'off' && !calc[type].formula) calc[type].formula = 'GB';
+    });
+    const defined = new Set(calc.lines.map(line => parseLine(line).key).filter(Boolean));
+    const used = [...calc.lines, calc.income.formula, calc.expense.formula].join(' ').toUpperCase();
+    const sets = { GI: 'GI = TI', GE: 'GE = TE', GB: 'GB = TI - TE' };
+    const added = GRAND.filter(name => !defined.has(name) && new RegExp(`\\b${name}\\b`).test(used)).map(name => sets[name]);
+    return { ...calc, lines: [...added, ...calc.lines], v: 2 };
+  }
+  // Works a calc out on a section's entries ({ subsection → [amount…] }, minor units): each subsection's id and sum, each
+  // line's value or problem, the section's GI / GE / GB, and what goes to the month's income and expenses.
+  // A problem that stops an equation being used is `fatal` (it does not read, names something unknown, loops…); one
+  // that only these amounts cause (dividing by zero) is not.
+  function runCalc(section, amountsBySub, calc = sectionCalc(section)) {
+    const names = [...new Set([...(section?.subsections || []), ...Object.keys(amountsBySub)])];
+    const vars = calcVars(calc.vars, names);
+    const major = minor => minor / 100;
+    const all = names.flatMap(name => amountsBySub[name] || []);
+    const income = all.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
+    const expenses = -all.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
+    const base = { TI: major(income), TE: major(expenses) };
+    const subs = vars.filter(item => names.includes(item.name)).map(item => {
+      const sum = (amountsBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
+      base[item.id] = major(sum);
+      return { ...item, sum };
+    });
+    const lines = calc.lines.map(text => (String(text).trim() ? { text, ...parseLine(text) } : { text, blank: true }));
+    const defs = new Map();
+    lines.forEach(line => {
+      if (line.key && defs.has(line.key)) Object.assign(line, { error: `${line.name} is set twice.` });
+      else if (line.key && !line.reserved) defs.set(line.key, line);
+      if (line.error) line.fatal = true;
+    });
+    const values = new Map();
+    const busy = [];
+    const problem = (message, fatal = true) => Object.assign(new Error(message), { fatal });
+    const get = name => {
+      if (values.has(name)) return values.get(name);
+      const def = defs.get(name);
+      if (!def) {
+        if (name in base) return base[name];
+        // A removed subsection's id counts as nothing.
+        if (SUB_ID.test(name) && vars.some(item => item.id === name)) return 0;
+        throw problem(GRAND.includes(name) ? `${name} is not set: add a line ${name} = …` : `${name} is not known here.`);
+      }
+      if (def.error) throw problem(`${def.name} has a problem.`, def.fatal);
+      if (busy.includes(name)) throw problem(`It loops: ${[...busy.slice(busy.indexOf(name)), name].map(key => defs.get(key).name).join(' → ')}.`);
+      busy.push(name);
+      try {
+        const value = def.run(get);
+        if (!Number.isFinite(value)) throw problem(`${def.name} does not work out (dividing by zero?).`, false);
+        values.set(name, value);
+        return value;
+      } finally {
+        busy.pop();
+      }
+    };
+    const work = run => {
+      try {
+        const value = run(get);
+        return Number.isFinite(value) ? { value } : { error: 'It does not work out (dividing by zero?).', fatal: false };
+      } catch (error) {
+        return { error: error.message, fatal: error.fatal !== false };
+      }
+    };
+    const results = lines.map(line => (line.error || line.blank ? null : work(() => get(line.key))));
+    lines.forEach((line, index) => {
+      const result = results[index];
+      if (result) Object.assign(line, result.error ? { error: result.error, fatal: result.fatal } : { value: Math.round(result.value * 100) });
+    });
+    // Only the ones a line sets (and that work out) are shown.
+    const grand = Object.fromEntries(GRAND.map(name => [name, defs.has(name) ? work(() => get(name)).value : undefined]));
+    const minor = value => (value === undefined ? undefined : Math.round(value * 100));
+    const stats = { income: minor(grand.GI), expenses: minor(grand.GE), balance: minor(grand.GB) };
+    const label = section?.name || 'Section';
+    const sides = {};
+    const out = [];
+    const adds = { income: 0, expenses: 0, lines: out };
+    ['income', 'expense'].forEach(type => {
+      const { mode, formula } = calc[type];
+      const parsed = parseCalc(formula);
+      const result = mode === 'off' || !formula.trim() ? { value: 0 } : parsed.error ? { error: parsed.error, fatal: true } : work(parsed.run);
+      const amount = result.error ? 0 : Math.round(result.value * 100);
+      sides[type] = { mode, formula, result: amount, error: result.error, fatal: result.fatal, empty: !formula.trim() };
+      if (mode === 'off' || !formula.trim()) return;
+      out.push({ type, label, amount, counted: mode === 'count' });
+      if (mode === 'count') adds[type === 'income' ? 'income' : 'expenses'] += amount;
+    });
+    return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds };
+  }
+  const netSectionSummary = (section, amountsBySub) => runCalc(section, amountsBySub);
+  const CALC_NAMES = { functions: Object.keys(CALC_FUNCTIONS), grand: GRAND, totals: ENTRY_TOTALS };
+  // Gives a section its calc (turning an older rule into one) and returns it, for changes made to it.
+  function ensureCalc(section) {
+    const calc = sectionCalc(section);
+    ['to', 'positive', 'count', 'formula', 'subRules', 'expense', 'income'].forEach(key => delete section[key]);
+    section.calc = calc;
+    return calc;
   }
   function docTotals(buckets, rules = new Map()) {
     const totals = zeroTotals();
@@ -912,8 +1107,8 @@
             const built = sections[section.name];
             const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => entry._meta.total)]));
             const summary = netSectionSummary(section, amountsBySub);
-            built._meta.rule = summary.rule;
             built._meta.adds = summary.adds;
+            built._meta.stats = summary.stats;
                       }
         });
       ['income', 'expense', 'net'].forEach(type => {
@@ -949,6 +1144,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { netRule, defaultFormula, readFormula, evalFormula, formulaProblem, renameInFormula, netSectionSummary, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, netSectionSummary, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -1006,7 +1006,6 @@
 .section-rule { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 4px 0 2px; }
 .section-rule label { min-width: 0; display: grid; flex: 1 1 210px; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .section-rule select { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font-size: 12.5px; }
-.section-rule label[hidden] { display: none; }
 .section-rule select:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
 .month-block:not(.is-event) .ledger-panel-head { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* Balance sections: amounts take the income colour at zero or more and the expense colour below; their balance shows as a
@@ -1024,30 +1023,59 @@
 .conflict-what { margin: 0 0 8px; color: var(--ink); font-size: 14px; }
 .conflict-when { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
 /* Section setup: how a custom section and each of its subsections count. */
-.setup-dialog { width: min(560px, calc(100% - 20px)); }
-.setup-names { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.setup-name { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); color: var(--ink); cursor: pointer; font-size: 12.5px; }
-.setup-name:hover, .setup-name.is-focus { border-color: var(--brand); }
-.setup-name b { font-weight: 600; }
-.setup-name span { font: 400 11.5px var(--mono); }
-.setup-name .income, .setup-preview .income { color: var(--income); }
-.setup-name .expense, .setup-preview .expense { color: var(--expense); }
-.setup-formula { display: grid; gap: 4px; margin-top: 10px; color: var(--muted); font-size: 11px; font-weight: 600; }
-.setup-formula > span { display: flex; justify-content: space-between; }
-.setup-formula button { padding: 0; border: 0; background: none; color: var(--brand); cursor: pointer; font-size: 11px; font-weight: 600; }
-.setup-formula input { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: 400 14px var(--mono); }
-.setup-formula input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
-.setup-formula input[aria-invalid] { border-color: var(--expense); background: var(--expense-soft); }
-.setup-preview { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
-.setup-preview strong { font-family: var(--mono); font-weight: 500; }
-.setup-preview small { font-size: 11.5px; }
-.setup-sign { margin-top: 10px; }
-.setup-sign .section-rule { padding: 0; }
-.setup-sign .section-rule label { flex-basis: 200px; }
-.setup-sign .section-rule label[hidden] { display: none; }
+.setup-dialog { width: min(600px, calc(100% - 20px)); }
+/* Colours for subsection ids (E1, E2…) in chips and equations, and for the section's GI / GE / GB. */
+.setup-dialog { --v0: #5b9dff; --v1: #b18cff; --v2: #ff9f5a; --v3: #3cc7b8; --v4: #ff7eb6; --v5: #9bd35a; --v6: #56c8f0; --v7: #d9b46c; }
+:root[data-theme="light"] .setup-dialog { --v0: #2563c9; --v1: #7a4fd6; --v2: #c2601a; --v3: #0f8a7e; --v4: #c23a7a; --v5: #4f8a1c; --v6: #1a7fa8; --v7: #8a6a1f; }
+.setup-dialog .v0 { --tone: var(--v0); } .setup-dialog .v1 { --tone: var(--v1); } .setup-dialog .v2 { --tone: var(--v2); } .setup-dialog .v3 { --tone: var(--v3); }
+.setup-dialog .v4 { --tone: var(--v4); } .setup-dialog .v5 { --tone: var(--v5); } .setup-dialog .v6 { --tone: var(--v6); } .setup-dialog .v7 { --tone: var(--v7); }
+.setup-dialog .is-total { --tone: var(--muted); }
+.setup-dialog .g-i { --tone: var(--income); } .setup-dialog .g-e { --tone: var(--expense); } .setup-dialog .g-b { --tone: var(--brand); }
+.calc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.calc-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 9px 4px 4px; border: 1px solid var(--line); border-left: 3px solid var(--tone); border-radius: 7px; background: var(--surface-soft); color: var(--ink); cursor: pointer; font-size: 12.5px; }
+.calc-chip:hover, .calc-chip.is-focus { border-color: var(--tone); }
+.calc-chip b { padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--tone) 18%, transparent); color: var(--tone); font: 600 11.5px var(--mono); }
+.calc-chip em { font: 400 11.5px var(--mono); font-style: normal; }
+.calc-chip em.is-unset { color: var(--muted); font-family: inherit; font-size: 11px; }
+.calc-chip.g-i b, .calc-chip.g-e b, .calc-chip.g-b b { margin-right: 0; }
+.calc-head { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 4px; }
+.calc-head h3 { margin: 0; color: var(--muted); font: 600 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.calc-add { height: 26px; padding: 0 8px; font-size: 12px; }
+.calc-lines, .calc-out { display: grid; gap: 5px; }
+.calc-none { margin: 0; font-size: 12px; }
+.calc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(70px, auto) 26px; align-items: center; gap: 6px; }
+.calc-row.is-out { grid-template-columns: 64px 116px minmax(0, 1fr) minmax(70px, auto); }
+.calc-row.is-out > b { font-size: 12.5px; font-weight: 600; }
+.calc-row.is-out.income > b { color: var(--income); }
+.calc-row.is-out.expense > b { color: var(--expense); }
+.calc-row.is-out select { height: 30px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
+.calc-row[data-off] .calc-field { opacity: .4; pointer-events: none; }
+.calc-remove { width: 26px; height: 26px; font-size: 13px; }
+.calc-value { color: var(--muted); font: 400 12.5px var(--mono); text-align: right; white-space: nowrap; }
+.calc-value .income { color: var(--income); } .calc-value .expense { color: var(--expense); }
+.calc-error { grid-column: 1 / -1; margin: -2px 0 2px; color: var(--expense); font-size: 11.5px; }
+.calc-error.is-soft { color: var(--muted); }
+/* The input's own text is see-through; the coloured copy behind it shows instead, scrolled with it. */
+.calc-field { position: relative; display: block; min-width: 0; }
+.calc-field input, .calc-hl { box-sizing: border-box; width: 100%; height: 32px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; font: 400 13.5px var(--mono); letter-spacing: 0; }
+.calc-field input { position: relative; border-color: var(--line); background: transparent; color: transparent; caret-color: var(--ink); }
+.calc-field input::placeholder { color: var(--muted); opacity: .6; }
+.calc-field input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.calc-field input[aria-invalid] { border-color: var(--expense); }
+.calc-hl { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; background: var(--surface); color: var(--ink); white-space: pre; pointer-events: none; }
+.calc-hl span { color: var(--tone, var(--ink)); }
+.calc-hl .is-fn { color: var(--muted); }
+.calc-hl .is-var { color: var(--ink); font-style: italic; }
+.calc-hl .is-unknown { text-decoration: underline wavy var(--expense); text-underline-offset: 3px; }
+.calc-hint { margin: 10px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+@media (max-width: 560px) {
+  .calc-row.is-out { grid-template-columns: 64px minmax(0, 1fr) auto; }
+  .calc-row.is-out .calc-field { grid-column: 1 / -1; grid-row: 2; }
+}
 .section-setup-btn { width: 24px; height: 24px; margin-left: 6px; color: var(--brand); font-size: 14px; }
 .ledger-type-section > summary .section-setup-btn { flex: none; }
-.section-result { margin-left: 8px; font: 400 11.5px var(--mono); letter-spacing: 0; text-transform: none; white-space: nowrap; }
-.section-result.income { color: var(--income); }
-.section-result.expense { color: var(--expense); }
-.section-result.is-off { color: var(--muted); }
+.ledger-carry.is-shown-only { opacity: .6; }
+/* A custom section's own Income · Expenses · Balance in its heading, like a month's. */
+.ledger-type-section > summary > .section-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; }
+.ledger-type-section > summary .section-totals span { font: 500 13.5px var(--mono); }
+.ledger-type-section > summary .section-totals span.balance { color: var(--ink); }

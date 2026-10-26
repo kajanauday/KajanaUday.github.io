@@ -455,6 +455,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const category = existing || name;
       const holder = existing ? sections.find(item => item.type === section.type && item.subsections.includes(existing)) : section;
       if (!existing) section.subsections.push(name);
+      // A new subsection in a custom section gets its id (E1, E2…) for the section's equations now, so it keeps it.
+      if (!existing && section.type === 'net') ExpenseStore.ensureCalc(section);
       scope.save();
       // Go straight to the first entry for the subsection.
       ledgerDraft = null;
@@ -462,8 +464,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       revealKey = catKey(month, property, section.type, category);
       renderLedger();
       showToast(existing ? `Add an entry to "${category}".` : `Added "${name}" to ${section.name}${scope.isEvent ? '' : ' for this month'}.`);
-      // A custom section with its own equation does not count a new subsection until it is put in, so ask straight away.
-      if (!existing && section.type === 'net' && section.formula) openSectionSetup(month, property, section.name, name);
+      // A custom section whose equations name subsections by id does not count a new one until it is put in, so ask.
+      if (!existing && section.type === 'net' && usesSubsectionIds(section)) openSectionSetup(month, property, section.name, name);
     }
     // Adds a balance section beside Income and Expenses to this month and currency, then asks for its first subsection.
     // Its entries may be negative; its balance counts as income when zero or more, else as an expense.
@@ -481,8 +483,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      const { to, positive } = ExpenseStore.netRule({ to: form.elements.to?.value, positive: form.elements.positive?.value });
-      scope.own().push({ name, type: 'net', subsections: [], block: true, to, positive });
+      const mode = (type, fallback) => ({ mode: ['count', 'show', 'off'].includes(form.elements[type]?.value) ? form.elements[type].value : fallback, formula: '' });
+      scope.own().push({ name, type: 'net', subsections: [], block: true, calc: { v: 2, vars: [], lines: [], expense: mode('expense', 'count'), income: mode('income', 'off') } });
       scope.save();
       ledgerDraft = { month, property, section: name };
       renderLedger();
@@ -803,8 +805,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       sections.forEach(section => {
         const index = section.subsections.indexOf(category);
         if (index < 0) return;
-        // A custom section's equation follows the subsection to its new name.
-        if (section.formula) section.formula = ExpenseStore.renameInFormula(section.formula, section.subsections, category, finalName);
+        // A custom section's subsection keeps its id (E1, E2…) under its new name, so its equations stay right.
+        if (section.type === 'net' && !target) {
+          const item = ExpenseStore.ensureCalc(section).vars.find(entry => entry.name === category);
+          if (item) item.name = finalName;
+        }
         if (target) section.subsections.splice(index, 1);
         else section.subsections[index] = name;
       });
@@ -1721,7 +1726,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
               <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
               <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
             </div>
-            ${section.type === 'net' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.netRule(section), { esc: escapeHtml }) : ''}
+            ${section.type === 'net' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.sectionCalc(section), { esc: escapeHtml }) : ''}
             <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
           box.querySelector('.kv-row').append(chipInput({
             values: section.subsections,
@@ -1771,109 +1776,174 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         .forEach(item => (amounts[item.category] ||= []).push(store.entryTotal(item.id)));
       return amounts;
     }
-    function renderSectionSetup() {
-      const { month, property, name, draft, focus } = setupState;
-      const scope = panelScope(month, property);
-      document.querySelector('#section-setup-title').textContent = name;
-      document.querySelector('#section-setup-where').textContent = `Section setup · ${regions[property].code} · ${scope.label}`;
-      document.querySelector('#setup-section-rule').innerHTML = window.LedgerBlueprints.SectionRuleFields(ExpenseStore.netRule(draft), { esc: escapeHtml });
-      const amounts = setupAmounts();
-      const input = document.querySelector('#setup-formula');
-      input.value = draft.formula || ExpenseStore.defaultFormula(Object.keys(amounts));
-      // Each subsection as a chip with its sum; a click puts its name into the equation.
-      document.querySelector('#setup-names').innerHTML = Object.entries(amounts).map(([sub, list]) => {
-        const sum = list.reduce((total, amount) => total + amount, 0);
-        return `<button type="button" class="setup-name${sub === focus ? ' is-focus' : ''}" data-insert-name="${escapeHtml(ExpenseStore.defaultFormula([sub]))}" title="Put ${escapeHtml(sub)} into the equation"><b>${escapeHtml(sub)}</b><span class="${sum < 0 ? 'expense' : 'income'}">${sum < 0 ? '−' : ''}${formatMoney(Math.abs(sum), property)}</span></button>`;
-      }).join('') || '<span class="config-muted">No subsections yet. Press and hold the section name to add one.</span>';
-      updateSetupPreview();
-      if (focus) input.focus();
+    const SIDES = [['income', 'Income'], ['expense', 'Expenses']];
+    const CALC_COLORS = 8;
+    const colorOf = id => (Number(id.slice(1)) - 1) % CALC_COLORS;
+    // Whether a custom section's equations name any subsection by id (a new subsection is then left out until put in).
+    function usesSubsectionIds(section) {
+      const calc = ExpenseStore.sectionCalc(section);
+      return [...calc.lines, calc.income.mode !== 'off' ? calc.income.formula : '', calc.expense.mode !== 'off' ? calc.expense.formula : ''].some(text => /\bE\d+\b/i.test(text));
     }
-    // Live: whether the equation reads, what it works out to and what it adds to the month.
+    // An equation field: the input over a copy of its text, coloured by what each name stands for.
+    const calcField = (attrs, value, placeholder) => `<span class="calc-field"><span class="calc-hl" aria-hidden="true"></span><input ${attrs} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" autocapitalize="off" spellcheck="false"></span>`;
+    function paintField(input) {
+      const { draft } = setupState;
+      const ids = new Map(draft.vars.map(item => [item.id, colorOf(item.id)]));
+      const defined = new Set(draft.lines.map(line => /^\s*([A-Za-z_]\w*)\s*=/.exec(line)?.[1].toUpperCase()).filter(Boolean));
+      const { functions, grand, totals } = ExpenseStore.CALC_NAMES;
+      const hl = input.previousElementSibling;
+      hl.innerHTML = input.value.replace(/([A-Za-z_]\w*)|[^A-Za-z_]+/g, (text, word) => {
+        if (!word) return escapeHtml(text);
+        const key = word.toUpperCase();
+        const tone = ids.has(key) ? `v${ids.get(key)}` : grand.includes(key) ? `g-${key[1].toLowerCase()}` : totals.includes(key) ? 'is-total' : functions.includes(key) ? 'is-fn' : defined.has(key) ? 'is-var' : 'is-unknown';
+        return `<span class="${tone}">${escapeHtml(word)}</span>`;
+      });
+      hl.scrollLeft = input.scrollLeft;
+    }
+    function renderSectionSetup() {
+      const { month, property, name, draft } = setupState;
+      document.querySelector('#section-setup-title').textContent = name;
+      document.querySelector('#section-setup-where').textContent = `Section setup · ${regions[property].code} · ${panelScope(month, property).label}`;
+      document.querySelector('#calc-lines').innerHTML = draft.lines.map((line, index) => `<div class="calc-row" data-line="${index}">
+          ${calcField(`data-calc-line="${index}" aria-label="Calculation ${index + 1}"`, line, 'Name = E1 / 2')}
+          <output class="calc-value"></output>
+          <button type="button" class="icon-button calc-remove" data-calc-remove="${index}" aria-label="Remove this line" title="Remove"><i class="ti ti-x" aria-hidden="true"></i></button>
+          <p class="calc-error" hidden></p>
+        </div>`).join('') || '<p class="config-muted calc-none">No calculations. Add a line to work things out step by step, or write the result straight below.</p>';
+      const options = mode => [['count', 'Add to total'], ['show', 'Show only'], ['off', 'Off']].map(([value, label]) => `<option value="${value}"${value === mode ? ' selected' : ''}>${label}</option>`).join('');
+      document.querySelector('#calc-out').innerHTML = SIDES.map(([type, label]) => `<div class="calc-row is-out ${type}" data-side="${type}">
+          <b>${label}</b>
+          <select data-side-mode="${type}" aria-label="${label}: add to the month">${options(draft[type].mode)}</select>
+          ${calcField(`data-calc-out="${type}" aria-label="${label} for the month"`, draft[type].formula, type === 'income' ? 'e.g. GI (empty: nothing)' : 'e.g. GE (empty: nothing)')}
+          <output class="calc-value"></output>
+          <p class="calc-error" hidden></p>
+        </div>`).join('');
+      updateSetupPreview();
+    }
+    // Live: chips with their values, each line's and each side's result or problem, and the colours in every field.
     function updateSetupPreview() {
-      const { property, draft, month } = setupState;
+      const { property, name, draft } = setupState;
       const amounts = setupAmounts();
-      const names = Object.keys(amounts);
-      const input = document.querySelector('#setup-formula');
-      const problem = ExpenseStore.formulaProblem(input.value, names);
-      input.toggleAttribute('aria-invalid', Boolean(problem));
-      const left = names.filter(sub => !problem && input.value.trim() && !ExpenseStore.readFormula(input.value, names).parts.some(part => part.name === sub));
-      const summary = ExpenseStore.netSectionSummary({ ...draft, subsections: names, formula: problem ? '' : input.value }, amounts);
+      const summary = ExpenseStore.runCalc({ name, subsections: Object.keys(amounts), calc: draft }, amounts);
+      setupState.summary = summary;
       const money = minor => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
-      const { side, amount } = summary.adds;
-      document.querySelector('#setup-preview').innerHTML = problem
-        ? `<span class="expense">${escapeHtml(problem)}</span>`
-        : `= <strong class="${summary.result < 0 ? 'expense' : 'income'}">${money(summary.result)}</strong> → ${side === 'none' ? 'not counted in' : `<strong class="${side}">${side === 'income' ? 'Income' : 'Expenses'} ${money(amount)}</strong> of`} ${escapeHtml(panelScope(month, property).label)}${left.length ? `<br><small>Not in the equation: ${left.map(escapeHtml).join(', ')}</small>` : ''}`;
+      const chip = (id, label, minor, tone, title = `Put ${id} in the equation`) => `<button type="button" class="calc-chip ${tone}" data-insert="${id}" title="${escapeHtml(title)}"><b>${id}</b>${label ? `<span>${escapeHtml(label)}</span>` : ''}${minor === undefined ? '<em class="is-unset">not set</em>' : `<em class="${minor < 0 ? 'expense' : 'income'}">${money(minor)}</em>`}</button>`;
+      // Subsections; the entries' own totals; then GI / GE / GB, shown in the heading only once a line sets them.
+      document.querySelector('#calc-chips').innerHTML = summary.subs.map(sub => chip(sub.id, sub.name, sub.sum, `v${colorOf(sub.id)}`)).join('')
+        + chip('TI', '', Math.round(summary.base.TI * 100), 'is-total', 'All positive entries') + chip('TE', '', Math.round(summary.base.TE * 100), 'is-total', 'All negative entries, as a positive sum')
+        + chip('GI', '', summary.stats.income, 'g-i', 'Income in the heading: set it with a line GI = …')
+        + chip('GE', '', summary.stats.expenses, 'g-e', 'Expenses in the heading: set it with a line GE = …')
+        + chip('GB', '', summary.stats.balance, 'g-b', 'Balance in the heading: set it with a line GB = …');
+      const show = (row, result, mode) => {
+        // A result for the month takes its side's colour; a line's value, its sign's.
+        const tone = row.dataset.side || (result.value < 0 ? 'expense' : 'income');
+        row.querySelector('.calc-value').innerHTML = result.error || result.blank || result.empty || mode === 'off' ? '' : `= <span class="${tone}">${money(result.value)}</span>`;
+        const error = row.querySelector('.calc-error');
+        error.textContent = result.error || '';
+        error.hidden = !result.error;
+        error.classList.toggle('is-soft', result.fatal === false);
+        row.querySelector('input').toggleAttribute('aria-invalid', Boolean(result.error && result.fatal !== false));
+      };
+      document.querySelectorAll('#calc-lines .calc-row').forEach(row => show(row, summary.lines[Number(row.dataset.line)] || {}));
+      SIDES.forEach(([type]) => {
+        const side = summary.sides[type];
+        const row = document.querySelector(`#calc-out [data-side="${type}"]`);
+        row.toggleAttribute('data-off', side.mode === 'off');
+        show(row, side.mode === 'off' ? {} : { value: side.result, error: side.error, fatal: side.fatal, empty: side.empty }, side.mode);
+      });
+      document.querySelectorAll('#section-setup-form .calc-field input').forEach(paintField);
     }
     function openSectionSetup(month, property, name, focus = null) {
       if (isViewer) return showToast('This account can view the ledger but not change it.');
       const section = panelScope(month, property).sections().find(item => item.name === name);
       if (!section) return showToast('That section is no longer set up here.');
-      const { to, positive, formula } = ExpenseStore.netRule(section);
-      Object.assign(setupState, { month, property, name, focus, draft: { name, to, positive, formula } });
+      Object.assign(setupState, { month, property, name, focus, target: null, draft: JSON.parse(JSON.stringify(ExpenseStore.sectionCalc(section))) });
       document.querySelector('#section-setup-error').hidden = true;
       renderSectionSetup();
       document.querySelector('#section-setup-dialog').showModal();
+      // A new subsection: show its chip and start a line with it.
+      const id = focus && setupState.draft.vars.find(item => item.name === focus)?.id;
+      if (id) {
+        document.querySelector(`#calc-chips [data-insert="${id}"]`)?.classList.add('is-focus');
+        document.querySelector('#calc-out [data-calc-out="expense"]')?.focus();
+      }
     }
     function setupSectionSetup() {
       const dialog = document.querySelector('#section-setup-dialog');
       const form = document.querySelector('#section-setup-form');
-      const input = document.querySelector('#setup-formula');
+      const addLine = (at, text = '') => {
+        setupState.draft.lines.splice(at, 0, text);
+        renderSectionSetup();
+        const input = form.querySelector(`[data-calc-line="${at}"]`);
+        input?.focus();
+        input?.setSelectionRange(text.length, text.length);
+      };
       form.addEventListener('change', event => {
-        const to = event.target.closest('[data-section-to]');
-        const positive = event.target.closest('[data-section-positive]');
-        if (to) {
-          setupState.draft.to = to.value;
-          form.querySelector('[data-section-positive]').closest('label').hidden = to.value !== 'sign';
-        }
-        if (positive) setupState.draft.positive = positive.value;
+        const mode = event.target.closest('[data-side-mode]');
+        if (!mode) return;
+        setupState.draft[mode.dataset.sideMode].mode = mode.value;
         updateSetupPreview();
       });
-      input.addEventListener('input', () => {
+      form.addEventListener('focusin', event => {
+        if (event.target.closest('.calc-field input')) setupState.target = event.target;
+      });
+      form.addEventListener('input', event => {
+        const input = event.target;
+        if (input.dataset.calcLine !== undefined) setupState.draft.lines[Number(input.dataset.calcLine)] = input.value;
+        else if (input.dataset.calcOut) setupState.draft[input.dataset.calcOut].formula = input.value;
+        else return;
         document.querySelector('#section-setup-error').hidden = true;
         updateSetupPreview();
       });
+      form.addEventListener('scroll', event => {
+        if (event.target.closest?.('.calc-field input')) paintField(event.target);
+      }, true);
       form.addEventListener('click', event => {
-        const chip = event.target.closest('[data-insert-name]');
+        const chip = event.target.closest('[data-insert]');
         if (chip) {
-          // Puts the name at the cursor, with a + before it when something is already there.
+          // Puts the id at the cursor of the field last worked on (else the Expenses result), with a + after a value.
+          const input = setupState.target && form.contains(setupState.target) ? setupState.target : form.querySelector('[data-calc-out="expense"]');
           const start = input.selectionStart ?? input.value.length;
           const before = input.value.slice(0, start);
-          const join = before.trim() && !/[+\-*/(]\s*$/.test(before) ? ' + ' : '';
-          input.setRangeText(`${join}${chip.dataset.insertName}`, start, input.selectionEnd ?? start, 'end');
+          const join = before.trim() && !/[-+*/(=,]\s*$/.test(before) ? ' + ' : before && !/\s$/.test(before) ? ' ' : '';
+          input.setRangeText(`${join}${chip.dataset.insert}`, start, input.selectionEnd ?? start, 'end');
           input.focus();
-          updateSetupPreview();
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          return;
         }
-        if (event.target.closest('[data-reset-formula]')) {
-          input.value = ExpenseStore.defaultFormula(Object.keys(setupAmounts()));
-          input.focus();
-          updateSetupPreview();
+        if (event.target.closest('[data-calc-add]')) return addLine(setupState.draft.lines.length);
+        const remove = event.target.closest('[data-calc-remove]');
+        if (remove) {
+          setupState.draft.lines.splice(Number(remove.dataset.calcRemove), 1);
+          setupState.target = null;
+          renderSectionSetup();
         }
       });
       form.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && event.target === input) {
-          event.preventDefault();
-          form.requestSubmit();
-        }
+        if (event.key !== 'Enter' || !event.target.closest('.calc-field input')) return;
+        event.preventDefault();
+        // Enter in a line starts the next one; in a result, it saves.
+        if (event.target.dataset.calcLine !== undefined) addLine(Number(event.target.dataset.calcLine) + 1);
+        else form.requestSubmit();
       });
       form.addEventListener('submit', event => {
         event.preventDefault();
-        const names = Object.keys(setupAmounts());
-        const problem = ExpenseStore.formulaProblem(input.value, names);
+        updateSetupPreview();
+        const { month, property, name, draft, summary } = setupState;
         const error = document.querySelector('#section-setup-error');
-        if (problem) {
-          error.textContent = problem;
+        const lineIndex = summary.lines.findIndex(line => line.error && line.fatal !== false);
+        const side = SIDES.find(([type]) => summary.sides[type].mode !== 'off' && summary.sides[type].error && summary.sides[type].fatal !== false);
+        if (lineIndex >= 0 || side) {
+          error.textContent = lineIndex >= 0 ? `Line ${lineIndex + 1}: ${summary.lines[lineIndex].error}` : `${side[1]}: ${summary.sides[side[0]].error}`;
           error.hidden = false;
-          return input.focus();
+          return (lineIndex >= 0 ? form.querySelector(`[data-calc-line="${lineIndex}"]`) : form.querySelector(`[data-calc-out="${side[0]}"]`)).focus();
         }
-        const { month, property, name, draft } = setupState;
         const scope = panelScope(month, property);
         const section = scope.own().find(item => item.name === name);
         if (!section) return dialog.close();
-        // The default equation (all subsections added) is not stored, so new subsections join it by themselves.
-        const text = input.value.trim().replace(/\s+/g, ' ');
-        const formula = !text || text === ExpenseStore.defaultFormula(names) ? '' : text;
-        ['count', 'subRules', 'formula'].forEach(key => delete section[key]);
-        Object.assign(section, { to: draft.to, positive: draft.positive }, formula ? { formula } : {});
+        ExpenseStore.ensureCalc(section);
+        const result = type => ({ mode: draft[type].mode, formula: draft[type].formula.trim() });
+        section.calc = { v: 2, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
         scope.save();
         dialog.close();
         renderLedger();
@@ -1890,13 +1960,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         if (carry) monthState.setup[carry.dataset.monthCarry].carry = carry.checked;
         if (active) renderMonthSettings();
         // A custom section's counting rule: how it counts in the month, and which side positive amounts go to.
-        const rule = event.target.closest('[data-section-to], [data-section-positive]');
+        const rule = event.target.closest('[data-side-mode]');
         const block = rule?.closest('[data-currency]');
         if (rule && block) {
           const section = monthSectionsFor(block.dataset.currency)[Number(rule.closest('.config-section').dataset.sectionIndex)];
-          section[rule.matches('[data-section-to]') ? 'to' : 'positive'] = rule.value;
-          delete section.count;
-          if (rule.matches('[data-section-to]')) rule.closest('.section-rule').querySelector('[data-section-positive]').closest('label').hidden = rule.value !== 'sign';
+          ExpenseStore.ensureCalc(section)[rule.dataset.sideMode].mode = rule.value;
           monthState.dirty.add(block.dataset.currency);
         }
       });
