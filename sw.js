@@ -6,8 +6,8 @@
 // app still opens with no connection. The scripts and the stylesheet are served from the copy at once, since a changed
 // one carries a new ?v= tag and so is a new URL. Firebase and sign-in are never cached: those always go to the network,
 // and when there is none the app falls back to the copy of the ledger instead.
-const CACHE = 'family-budget-shell-v1';
-const SHELL = ['./family-budget/months.html', './family-budget-vertical.html'];
+const CACHE = 'kajanauday-shell-v1';
+const SHELL = ['./kajanauday/months.html', './kajanauday-vertical.html'];
 const neverCache = url => /firebasedatabase\.app|identitytoolkit|securetoken/.test(url);
 
 const offlineNote = () => new Response('Offline, and this part of the app is not on this device yet.', { status: 503, headers: { 'Content-Type': 'text/plain' } });

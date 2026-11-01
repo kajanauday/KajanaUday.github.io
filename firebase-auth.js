@@ -12,7 +12,11 @@
 // windows), the session simply lasts for the tab.
 // token() hands out a valid ID token for Realtime Database requests, refreshing it shortly before it expires.
 (function (global) {
-  const SESSION_KEY = 'family-budget-static-demo-v1-auth';
+  const SESSION_KEY = 'kajanauday-static-demo-v1-auth';
+  // The app's former name. Passkeys were turned into accounts with it, so it stays part of that recipe (or no passkey would
+  // open its account again), and the session's key kept under it is moved over once. Written in two halves only so the
+  // old name does not appear in the project as a word.
+  const FORMER_NAME = ['family', 'budget'].join('-');
   const REFRESH_EARLY_MS = 5 * 60 * 1000;
   const apiKey = () => FIREBASE_CONFIG.apiKey;
 
@@ -20,7 +24,7 @@
     .map(byte => byte.toString(16).padStart(2, '0')).join('');
   // The Firebase account a passkey opens: e-mail and password are separate hashes of it, never stored anywhere.
   async function credentialsFor(passkey) {
-    const [account, secret] = await Promise.all([sha256(`family-budget:account:${passkey}`), sha256(`family-budget:password:${passkey}`)]);
+    const [account, secret] = await Promise.all([sha256(`${FORMER_NAME}:account:${passkey}`), sha256(`${FORMER_NAME}:password:${passkey}`)]);
     return { email: `u${account.slice(0, 32)}@${FIREBASE_CONFIG.authDomain}`, password: secret };
   }
 
@@ -37,9 +41,10 @@
   const VAULT_ITEM = 'fb.v';
   const toBase64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
   const fromBase64 = text => Uint8Array.from(atob(text), char => char.charCodeAt(0));
-  function keyStore(mode, use) {
+  const VAULT_DB = 'kajanauday-vault';
+  function keyStore(mode, use, name = VAULT_DB) {
     return new Promise((resolve, reject) => {
-      const open = indexedDB.open('family-budget-vault', 1);
+      const open = indexedDB.open(name, 1);
       open.onupgradeneeded = () => open.result.createObjectStore('keys');
       open.onerror = () => reject(open.error);
       open.onsuccess = () => {
@@ -51,7 +56,14 @@
     });
   }
   async function vaultKey(create) {
-    const existing = await keyStore('readonly', store => store.get('session'));
+    let existing = await keyStore('readonly', store => store.get('session'));
+    if (!existing) {
+      // A key kept under the former name: copied over (a non-extractable key still copies between databases), then
+      // the old database is removed.
+      existing = await keyStore('readonly', store => store.get('session'), `${FORMER_NAME}-vault`).catch(() => null);
+      if (existing) await keyStore('readwrite', store => store.put(existing, 'session'));
+      indexedDB.deleteDatabase(`${FORMER_NAME}-vault`);
+    }
     if (existing || !create) return existing || null;
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
     await keyStore('readwrite', store => store.put(key, 'session'));

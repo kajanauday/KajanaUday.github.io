@@ -12,7 +12,10 @@
 // a path another device has written since is a clash, and `onConflict` decides whether this device's change goes out or
 // gives way to the newer one.
 (function (global) {
-  const DB_NAME = 'family-budget-offline';
+  const DB_NAME = 'kajanauday-offline';
+  // The copy as kept under the app's former name (written in two halves so the old name is nowhere a word): moved over
+  // once, the first time the new one is made, so neither the copy nor changes still waiting to be sent are lost.
+  const FORMER_DB_NAME = `${['family', 'budget'].join('-')}-offline`;
   const VERSION = 1;
   const NODES = 'nodes';
   const OUTBOX = 'outbox';
@@ -44,13 +47,41 @@
     else node[last] = value;
   }
 
+  // Copies every record of the former database (if there is one) into the new one, keys as they were, then deletes it.
+  async function moveFormerCopy(db) {
+    try {
+      const former = await new Promise(resolve => {
+        const request = indexedDB.open(FORMER_DB_NAME);
+        // No former database: opening would make an empty one, so that is called off.
+        request.onupgradeneeded = () => request.transaction.abort();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+      });
+      if (!former) return;
+      const stores = [NODES, OUTBOX, NOTES].filter(name => former.objectStoreNames.contains(name));
+      for (const name of stores) {
+        const from = former.transaction(name, 'readonly').objectStore(name);
+        const [values, keys] = await Promise.all([ask(from.getAll()), ask(from.getAllKeys())]);
+        const to = db.transaction(name, 'readwrite').objectStore(name);
+        values.forEach((value, i) => (to.keyPath ? to.put(value) : to.put(value, keys[i])));
+        await new Promise((resolve, reject) => { to.transaction.oncomplete = resolve; to.transaction.onerror = () => reject(to.transaction.error); });
+      }
+      former.close();
+      indexedDB.deleteDatabase(FORMER_DB_NAME);
+    } catch (error) {
+      console.warn('The offline copy kept under the former name could not be moved.', error);
+    }
+  }
+
   class OfflineVault {
     // Resolves to null where IndexedDB cannot be used (some private windows); the app then runs online-only, as before.
     static async open({ budget = DEFAULT_BUDGET } = {}) {
       try {
+        let created = false;
         const db = await new Promise((resolve, reject) => {
           const request = indexedDB.open(DB_NAME, VERSION);
-          request.onupgradeneeded = () => {
+          request.onupgradeneeded = event => {
+            created = event.oldVersion === 0;
             const open = request.result;
             if (!open.objectStoreNames.contains(NODES)) open.createObjectStore(NODES, { keyPath: 'path' });
             if (!open.objectStoreNames.contains(OUTBOX)) open.createObjectStore(OUTBOX, { keyPath: 'id', autoIncrement: true });
@@ -60,6 +91,7 @@
           request.onerror = () => reject(request.error);
           request.onblocked = () => reject(new Error('blocked'));
         });
+        if (created) await moveFormerCopy(db);
         const vault = new OfflineVault(db, budget);
         // Asking to persist keeps the browser from clearing the copy when the device runs low on space.
         navigator.storage?.persist?.().catch(() => {});

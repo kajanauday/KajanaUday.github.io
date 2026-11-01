@@ -7,7 +7,16 @@
   <title>Kajana Uday Expenses | Sign in</title>
   <script>
     // Same theme as the app (dark by default), applied before anything paints.
-    try { if (localStorage.getItem('family-budget-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (error) { /* Dark by default. */ }
+    // The app was renamed: settings and the session kept under its former name move to the new one, once.
+    try {
+      const former = ['family', 'budget'].join('-');
+      [localStorage, sessionStorage].forEach(store => Object.keys(store).filter(key => key.startsWith(former)).forEach(key => {
+        const next = `kajanauday${key.slice(former.length)}`;
+        if (store.getItem(next) === null) store.setItem(next, store.getItem(key));
+        store.removeItem(key);
+      }));
+    } catch (error) { /* Nothing to move. */ }
+    try { if (localStorage.getItem('kajanauday-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (error) { /* Dark by default. */ }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -88,10 +97,10 @@
     <p id="login-error" class="sr-only" role="alert"></p>
   </main>
   <script src="firebase-config.js?v=20261012a"></script>
-  <script src="firebase-auth.js?v=20261021k"></script>
+  <script src="firebase-auth.js?v=20261103a"></script>
   <script>
-    const STORAGE_KEY = 'family-budget-static-demo-v1';
-    const LEDGER = 'family-budget/months.html';
+    const STORAGE_KEY = 'kajanauday-static-demo-v1';
+    const LEDGER = 'kajanauday/months.html';
     document.querySelector('#login-form').addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;

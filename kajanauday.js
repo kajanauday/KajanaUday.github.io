@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'family-budget-static-demo-v1';
+const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // How much of the ledger this device may keep offline.
     const OFFLINE_BUDGET = 200 * 1024 * 1024;
     // The app's own files are kept on the device too (sw.js), so it opens with no connection; the ledger's data is kept
@@ -10,7 +10,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     try { [STORAGE_KEY, `${STORAGE_KEY}-year-settings`, `${STORAGE_KEY}-view`].forEach(key => localStorage.removeItem(key)); } catch (error) { /* Nothing to clean up. */ }
     // Signed in means a Firebase Auth session (see firebase-auth.js), for this tab or kept on this device; without one,
     // back to the sign-in page.
-    const LOGIN_PAGE = '../family-budget-vertical.html';
+    const LOGIN_PAGE = '../kajanauday-vertical.html';
     (async () => {
     const authSession = window.FamilyAuth ? await FamilyAuth.restore() : null;
     if (!authSession) return window.location.replace(LOGIN_PAGE);
@@ -835,6 +835,9 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       let lastClick = { key: null, time: 0 };
       let lastMonthClick = { key: null, time: 0 };
       const DOUBLE_CLICK_MS = 400;
+      // Whether the last press was a mouse or a finger: a double-tap opens the row menu, a double-click edits.
+      let lastPointerType = 'mouse';
+      ledger.addEventListener('pointerdown', event => { lastPointerType = event.pointerType || 'mouse'; }, true);
       const rowKeyFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
@@ -904,8 +907,26 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
           lastClick = isDouble ? { key: null, time: 0 } : { key: rowKey, time: Date.now() };
           if (isDouble) {
             event.preventDefault();
+            // A double-tap on a phone opens the row menu; the first tap's opening or closing is undone first.
+            const target = lastPointerType !== 'mouse' && !rowKey.startsWith('kb:') ? menuTargetFor(event.target) : null;
+            if (target) {
+              if (target.kind === 'entry') {
+                const toggle = target.row.querySelector('[data-toggle-entry]');
+                if (toggle) setEntryOpen(toggle, !expandedEntries.has(target.id));
+              } else if (['section', 'subsection'].includes(target.kind)) target.row.parentElement.open = !target.row.parentElement.open;
+              return openRowMenu(target, null, true, { triggerLongPress });
+            }
             return rowKey.startsWith('kb:') ? startSummaryRename(event.target) : triggerEdit(event.target, rowKey);
           }
+        }
+        // A currency panel's header has no edit of its own: on a phone, its double-tap opens the row menu too.
+        const panelHead = lastPointerType !== 'mouse' && !event.target.closest('button, input') ? event.target.closest('.ledger-panel-head') : null;
+        if (panelHead) {
+          const key = `head:${panelHead.closest('.month-block')?.dataset.monthKey}|${panelHead.closest('.ledger-panel')?.dataset.property}`;
+          const isDouble = lastClick.key === key && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
+          lastClick = isDouble ? { key: null, time: 0 } : { key, time: Date.now() };
+          const target = isDouble ? menuTargetFor(event.target) : null;
+          if (target) return openRowMenu(target, null, true, { triggerLongPress });
         }
         // A year tab switches years; the year already shown opens its settings.
         // The ★ Special tab shows every special event; a year tab goes back to that year's months (and, when that
@@ -1474,10 +1495,11 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
       ledger.addEventListener('contextmenu', (e) => {
         if (longPressTimer || longPressFired || lift || Date.now() < suppressClickUntil) return e.preventDefault();
-        // A mouse right-click on an entry or note row tags it.
-        if (Date.now() - lastTouchEnd > 500 && (!e.pointerType || e.pointerType === 'mouse') && taggableRow(e.target)) {
+        // A mouse right-click opens the row menu for whatever it is on (its Tags… item tags an entry or a note).
+        const target = Date.now() - lastTouchEnd > 500 && (!e.pointerType || e.pointerType === 'mouse') ? menuTargetFor(e.target) : null;
+        if (target) {
           e.preventDefault();
-          openTagPicker(e.target);
+          openRowMenu(target, { x: e.clientX, y: e.clientY }, false, { triggerLongPress });
         }
       });
 
@@ -2724,6 +2746,335 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       });
       return [...sums].sort(([a], [b]) => store.currencyKeys().indexOf(a) - store.currencyKeys().indexOf(b));
     }
+    // ---- Copy and paste: a section (or all of Income or Expenses), a subsection or an entry, from any month or special
+    // event into another. A paste copies the names only, or the entries too ("with entries"); copied entries keep their
+    // amounts, signs, formulas, notes and tags, take the target's month (same day, within it) or keep their date in an event,
+    // and are new rows: the source is never changed. Entries are copied only within one currency.
+    let clipboard = null; // { kind: 'sections' | 'subsection' | 'entry', mKey, property, label, ... }
+    let copySeq = 0;
+    const newRowId = () => `new-${Date.now()}-${++copySeq}`;
+    const scopeName = (mKey, property) => `${mKey.startsWith('ev:') ? `★ ${store.eventName(mKey.slice(3))}` : panelScope(mKey, property).label} ${regions[property]?.code || property}`;
+    // The date a copied row takes in the target: the same day in the target month, or its own full date in an event.
+    function dateIn(mKey, date) {
+      if (mKey.startsWith('ev:')) return date;
+      const [year, monthIndex] = yearMonthOf(mKey);
+      const last = new Date(year, monthIndex + 1, 0).getDate();
+      return `${mKey}-${String(Math.min(Number(date.slice(8, 10)) || 1, last)).padStart(2, '0')}`;
+    }
+    // Copies one entry (and its notes) into a target panel, under the given section and subsection.
+    function cloneEntry(item, mKey, property, section, category) {
+      const scope = panelScope(mKey, property);
+      const copy = { ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields };
+      if (!scope.isEvent) delete copy.eventId;
+      if (Array.isArray(item.tags)) copy.tags = [...item.tags];
+      const notes = transactions.filter(note => note.parentId === item.id).map(note => ({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }));
+      notes.forEach(note => { if (!scope.isEvent) delete note.eventId; });
+      transactions.push(copy, ...notes);
+      return 1;
+    }
+    // The entries of a section (by its name, or listed subsections for older rows without one) in a panel.
+    const entriesOf = (mKey, property, type, section, category = null) => {
+      const scope = panelScope(mKey, property);
+      const own = scope.sections().find(item => item.type === type && item.name === section);
+      return transactions.filter(item => !item.parentId && scope.match(item) && item.type === type
+        && (category === null || item.category === category)
+        && (item.section === section || (!item.section && own?.subsections.includes(item.category))));
+    };
+    function copySections(mKey, property, type, sectionName) {
+      const list = panelScope(mKey, property).sections().filter(item => item.type === type && (!sectionName || item.name === sectionName));
+      if (!list.length) return showToast('Nothing to copy here yet.');
+      clipboard = { kind: 'sections', mKey, property, type, sections: JSON.parse(JSON.stringify(list)), label: sectionName || (type === 'income' ? 'Income' : 'Expenses') };
+      showToast(`Copied “${clipboard.label}” (${list.reduce((sum, item) => sum + item.subsections.length, 0)} subsections). Right-click or double-tap where it should go, then Paste.`);
+    }
+    function copySubsection(mKey, property, type, section, name) {
+      clipboard = { kind: 'subsection', mKey, property, type, section, name, label: name };
+      showToast(`Copied the subsection “${name}”. Paste it on a section in any month or event.`);
+    }
+    function copyEntry(id) {
+      const item = transactions.find(row => row.id === id);
+      if (!item) return;
+      clipboard = { kind: 'entry', id, property: item.property, type: item.type, label: item.description };
+      showToast(`Copied the entry “${item.description}”. Paste it on a subsection.`);
+    }
+    // Whether the clipboard can go to a target ({ kind: 'panel' | 'section' | 'subsection', mKey, property, type, ... }), and
+    // whether it may bring its entries along there.
+    function pasteFits(target) {
+      if (!clipboard || isViewer) return null;
+      const sameMoney = clipboard.property === target.property;
+      const isEvent = target.mKey.startsWith('ev:');
+      if (clipboard.kind === 'sections' && ['panel', 'section'].includes(target.kind)) {
+        if (isEvent && clipboard.type === 'net') return null;
+        return { entries: sameMoney };
+      }
+      if (clipboard.kind === 'subsection' && ['section', 'subsection'].includes(target.kind)) return { entries: sameMoney && clipboard.type === target.type };
+      if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney && clipboard.type === target.type ? { entries: true, only: true } : null;
+      return null;
+    }
+    function paste(target, withEntries) {
+      if (isViewer) return viewOnly();
+      if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+      const { mKey, property } = target;
+      const scope = panelScope(mKey, property);
+      const own = scope.own();
+      let added = 0;
+      let copied = 0;
+      // The section a subsection or entry goes into: the one clicked, else the first of its type here.
+      const sectionFor = (type, name) => own.find(item => item.type === type && item.name === name) || own.find(item => item.type === type);
+      if (clipboard.kind === 'sections') {
+        clipboard.sections.forEach(source => {
+          // Income and Expenses go into the section of their kind already there (adding only what is missing); a custom
+          // section matches by name.
+          let into = own.find(item => item.type === source.type && item.name === source.name)
+            || (source.type === 'net' ? null : own.find(item => item.type === source.type));
+          if (!into) {
+            into = { ...JSON.parse(JSON.stringify(source)), subsections: [] };
+            own.push(into);
+            added += 1;
+          }
+          source.subsections.forEach(sub => { if (!into.subsections.includes(sub)) { into.subsections.push(sub); added += 1; } });
+          if (withEntries) entriesOf(clipboard.mKey, clipboard.property, source.type, source.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, item.category); });
+        });
+      } else if (clipboard.kind === 'subsection') {
+        const into = sectionFor(target.type, target.section);
+        if (!into) return showToast(`${scope.label} has no ${target.type === 'income' ? 'income' : 'expense'} section yet: add one first.`);
+        if (!into.subsections.includes(clipboard.name)) { into.subsections.push(clipboard.name); added += 1; }
+        if (withEntries) entriesOf(clipboard.mKey, clipboard.property, clipboard.type, clipboard.section, clipboard.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, clipboard.name); });
+      } else if (clipboard.kind === 'entry') {
+        const item = transactions.find(row => row.id === clipboard.id);
+        const into = sectionFor(target.type, target.section);
+        if (!item || !into) return showToast('Could not paste that entry here.');
+        copied += cloneEntry(item, mKey, property, into.name, target.category);
+      }
+      if (added) scope.save();
+      if (copied) saveTransactions();
+      renderLedger();
+      const what = [added && `${added} ${added === 1 ? 'name' : 'names'}`, copied && `${copied} ${copied === 1 ? 'entry' : 'entries'}`].filter(Boolean).join(' and ');
+      showToast(what ? `Pasted ${what} into ${scopeName(mKey, property)}.` : 'Already there: nothing new to paste.');
+    }
+
+    // ---- Row menu: a right-click (computer) or a double-tap (phone) on a month, a currency panel, a section, a subsection,
+    // an entry or a note lists what can be done there. On a computer it opens at the pointer; on a phone it is a sheet at
+    // the bottom of the screen (tap outside or swipe it down to close). Holding and double-clicking still work as before.
+    const rowMenu = { el: null, open: false, actions: [], target: null };
+    // What a ledger element stands for, or null.
+    function menuTargetFor(element) {
+      const el = element?.nodeType === Node.TEXT_NODE ? element.parentElement : element;
+      if (!el || el.closest('form') || el.closest('.ledger-cat[data-event-id]')) return null;
+      const block = el.closest('.month-block');
+      if (!block) return null;
+      const mKey = block.dataset.monthKey;
+      const panel = el.closest('.ledger-panel');
+      const property = panel?.dataset.property;
+      const note = el.closest('.ledger-sub-entry[data-note-id]');
+      if (note) return { kind: 'note', mKey, property, id: note.dataset.noteId, row: note, label: note.querySelector('.ledger-entry-desc')?.textContent.trim() || 'Note' };
+      const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
+      const toggle = cell?.querySelector(':scope > .ledger-entry-line [data-toggle-entry]');
+      if (toggle) return { kind: 'entry', mKey, property, id: toggle.dataset.entryId, row: cell, label: toggle.querySelector('.ledger-entry-desc')?.textContent.trim() || 'Entry' };
+      const catSummary = el.closest('.ledger-cat > summary');
+      const typeBlock = el.closest('.ledger-type-section');
+      const blockType = ['income', 'net'].includes(typeBlock?.dataset.type) ? typeBlock.dataset.type : 'expense';
+      if (catSummary) {
+        const cat = catSummary.parentElement;
+        return { kind: 'subsection', mKey, property, type: blockType, section: cat.dataset.section || null, category: cat.querySelector('.ledger-cat-name').textContent.trim(), row: catSummary, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
+      }
+      const typeSummary = el.closest('.ledger-type-section > summary');
+      if (typeSummary) return { kind: 'section', mKey, property, type: blockType, section: typeBlock.dataset.section || null, row: typeSummary, label: typeSummary.querySelector('strong')?.textContent.trim() || '' };
+      if (el.closest('.ledger-panel-head') && panel) return { kind: 'panel', mKey, property, row: el.closest('.ledger-panel-head'), label: regions[property]?.code || property };
+      if (el.closest('.month-ledger-head')) return { kind: 'month', mKey, row: el.closest('.month-ledger-head'), label: block.querySelector('.month-name')?.textContent.trim() || '' };
+      return null;
+    }
+    // The actions for a target; `helpers` are the ledger's own (add a child as a hold does, toggle an entry's notes).
+    function menuActions(target, helpers) {
+      const { kind, mKey, property } = target;
+      const isEvent = mKey.startsWith('ev:');
+      const settings = () => (isEvent ? openYearSettings(store.events[mKey.slice(3)]?.year || currentMonth.getFullYear()) : openMonthSettings(...yearMonthOf(mKey)));
+      const settingsLabel = isEvent ? 'Event settings…' : 'Month settings…';
+      const edit = draft => () => {
+        if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+        editDraft = draft;
+        renderLedger();
+      };
+      const add = () => helpers.triggerLongPress(target.row);
+      const noteButton = target.row?.querySelector?.('[data-month-note]');
+      const fits = pasteFits(target);
+      const pasteAction = fits ? [{ icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
+      const write = list => (isViewer ? list.filter(item => item.read) : list);
+      if (kind === 'month') {
+        const panels = [...document.querySelectorAll(`.month-block[data-month-key="${CSS.escape(mKey)}"] .ledger-panel`)].map(panel => panel.dataset.property);
+        const pastes = clipboard ? panels.map(cur => ({ cur, fits: pasteFits({ kind: 'panel', mKey, property: cur }) })).filter(item => item.fits)
+          .map(({ cur, fits: fit }) => ({ icon: 'clipboard', label: `Paste “${clipboard.label}” into ${regions[cur]?.code || cur}`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fit, target: { kind: 'panel', mKey, property: cur } })) : [];
+        return write([
+          ...pastes,
+          { icon: 'settings', label: settingsLabel, run: settings },
+          ...(noteButton ? [{ icon: 'notes', label: 'Month notes', read: true, run: () => noteButton.click() }] : [])
+        ]);
+      }
+      if (kind === 'panel') {
+        return write([
+          { icon: 'plus', label: isEvent ? 'Add subsection' : 'Add section', hint: 'beside Income and Expenses', run: add },
+          ...pasteAction,
+          { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.querySelector('[data-panel-expand]')?.click() },
+          { icon: 'settings', label: settingsLabel, run: settings }
+        ]);
+      }
+      if (kind === 'section') {
+        const custom = target.section && target.type === 'net';
+        return write([
+          { icon: 'plus', label: 'Add subsection', run: add },
+          { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
+          ...pasteAction,
+          ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
+          ...(noteButton ? [{ icon: 'notes', label: 'Notes', read: true, run: () => noteButton.click() }] : []),
+          ...(target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
+          ...(custom ? [{ icon: 'trash', label: 'Delete section', danger: true, run: () => deleteSection(target) }] : [])
+        ]);
+      }
+      if (kind === 'subsection') {
+        return write([
+          { icon: 'plus', label: 'Add entry', run: add },
+          { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
+          { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name, target.category) },
+          ...pasteAction,
+          { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, category: target.category }) }
+        ]);
+      }
+      if (kind === 'entry') {
+        return write([
+          { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
+          { icon: 'corner-down-right', label: 'Add note', run: add },
+          { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
+          { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
+          ...(isEvent ? [] : [{ icon: 'arrows-move', label: 'Move…', hint: 'another month, year or event', run: () => openMoveDialog(target.id) }]),
+          { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
+        ]);
+      }
+      return write([
+        { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
+        { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
+        { icon: 'trash', label: 'Delete note', danger: true, run: () => deleteRow({ deleteRow: 'note', entryId: target.id }) }
+      ]);
+    }
+    // A custom section goes only when it is empty here (its entries would otherwise lose their place).
+    function deleteSection(target) {
+      const scope = panelScope(target.mKey, target.property);
+      const own = scope.own();
+      const index = own.findIndex(item => item.type === target.type && item.name === target.section);
+      if (index < 0) return;
+      if (entriesOf(target.mKey, target.property, target.type, target.section).length) return showToast('Move or delete its entries first.');
+      if (!window.confirm(`Delete the section “${target.section}” from ${scope.label}?`)) return;
+      own.splice(index, 1);
+      scope.save();
+      renderLedger();
+      showToast(`Deleted “${target.section}”.`);
+    }
+    function drawRowMenu(list, title, subtitle) {
+      const { el } = rowMenu;
+      rowMenu.actions = list;
+      el.querySelector('.row-menu-title').innerHTML = `<b>${escapeHtml(title)}</b>${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ''}`;
+      el.querySelector('.row-menu-list').innerHTML = list.map((item, index) => `<button type="button" role="menuitem" class="row-menu-item${item.danger ? ' is-danger' : ''}" data-menu-index="${index}"><i class="ti ti-${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}${item.hint ? `<small>${escapeHtml(item.hint)}</small>` : ''}</span></button>`).join('')
+        || '<p class="row-menu-empty">Nothing to do here.</p>';
+    }
+    const KIND_NAMES = { month: 'Month', panel: 'Currency', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
+    function openRowMenu(target, point, touch, helpers) {
+      const { el } = rowMenu;
+      rowMenu.target = target;
+      rowMenu.helpers = helpers;
+      el.classList.toggle('is-sheet', touch);
+      el.style.left = el.style.top = '';
+      const where = target.kind === 'month' ? '' : `${scopeName(target.mKey, target.property)}`;
+      drawRowMenu(menuActions(target, helpers), `${KIND_NAMES[target.kind]} · ${target.label}`, where);
+      el.hidden = false;
+      rowMenu.open = true;
+      document.querySelector('.row-menu-backdrop').hidden = !touch;
+      target.row?.classList.add('is-menu-target');
+      if (!touch) {
+        // At the pointer, kept inside the window.
+        const width = el.offsetWidth;
+        const height = el.offsetHeight;
+        el.style.left = `${Math.max(8, Math.min(point.x, innerWidth - width - 8))}px`;
+        el.style.top = `${Math.max(8, Math.min(point.y, innerHeight - height - 8))}px`;
+      }
+      requestAnimationFrame(() => el.classList.add('is-shown'));
+      el.querySelector('.row-menu-item')?.focus({ preventScroll: true });
+    }
+    function closeRowMenu() {
+      if (!rowMenu.open) return;
+      rowMenu.open = false;
+      rowMenu.target?.row?.classList.remove('is-menu-target');
+      rowMenu.el.classList.remove('is-shown');
+      document.querySelector('.row-menu-backdrop').hidden = true;
+      rowMenu.el.hidden = true;
+    }
+    function setupRowMenu() {
+      const el = document.createElement('div');
+      el.className = 'row-menu';
+      el.setAttribute('role', 'menu');
+      el.hidden = true;
+      el.innerHTML = '<span class="row-menu-grip" aria-hidden="true"></span><p class="row-menu-title"></p><div class="row-menu-list"></div>';
+      const backdrop = document.createElement('div');
+      backdrop.className = 'row-menu-backdrop';
+      backdrop.hidden = true;
+      document.body.append(backdrop, el);
+      rowMenu.el = el;
+      el.addEventListener('click', event => {
+        const item = event.target.closest('[data-menu-index]');
+        if (!item) return;
+        const action = rowMenu.actions[Number(item.dataset.menuIndex)];
+        if (action.back) return drawRowMenu(menuActions(rowMenu.target, rowMenu.helpers), `${KIND_NAMES[rowMenu.target.kind]} · ${rowMenu.target.label}`, rowMenu.target.kind === 'month' ? '' : scopeName(rowMenu.target.mKey, rowMenu.target.property));
+        if (action.paste) {
+          const target = action.target || rowMenu.target;
+          // Entries can come along only where they fit (same currency, same kind); then ask which.
+          if (action.paste.only) { closeRowMenu(); return paste(target, true); }
+          if (!action.paste.entries) { closeRowMenu(); return paste(target, false); }
+          rowMenu.pasteTarget = target;
+          return drawRowMenu([
+            { icon: 'list', label: 'Names only', hint: 'no entries; no totals change', pasteMode: false },
+            { icon: 'list-details', label: 'With entries', hint: 'copies the entries too; the target\'s totals grow', pasteMode: true },
+            { icon: 'arrow-left', label: 'Back', back: true }
+          ], `Paste “${clipboard.label}”`, `into ${scopeName(target.mKey, target.property)}`);
+        }
+        if (action.pasteMode !== undefined) {
+          const target = rowMenu.pasteTarget;
+          closeRowMenu();
+          return paste(target, action.pasteMode);
+        }
+        closeRowMenu();
+        action.run?.();
+      });
+      el.addEventListener('keydown', event => {
+        const items = [...el.querySelectorAll('.row-menu-item')];
+        const at = items.indexOf(document.activeElement);
+        if (event.key === 'Escape') { event.preventDefault(); closeRowMenu(); }
+        else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+        }
+      });
+      backdrop.addEventListener('click', closeRowMenu);
+      document.addEventListener('pointerdown', event => {
+        if (rowMenu.open && !el.contains(event.target) && !el.classList.contains('is-sheet')) closeRowMenu();
+      }, true);
+      addEventListener('scroll', () => { if (rowMenu.open && !el.classList.contains('is-sheet')) closeRowMenu(); }, true);
+      addEventListener('resize', closeRowMenu);
+      // On a phone, the sheet follows a finger dragging it down, and closes past a short distance.
+      let drag = null;
+      el.addEventListener('touchstart', event => {
+        if (!el.classList.contains('is-sheet') || el.querySelector('.row-menu-list').scrollTop > 0) return;
+        drag = { y: event.touches[0].clientY, moved: 0 };
+      }, { passive: true });
+      el.addEventListener('touchmove', event => {
+        if (!drag) return;
+        drag.moved = Math.max(0, event.touches[0].clientY - drag.y);
+        el.style.transform = `translateY(${drag.moved}px)`;
+      }, { passive: true });
+      el.addEventListener('touchend', () => {
+        if (!drag) return;
+        el.style.transform = '';
+        if (drag.moved > 70) closeRowMenu();
+        drag = null;
+      });
+    }
+
     let openHashtagSummary = () => {};
     // ---- Tag picker: a click on a row's day, a right-click or a two-finger tap on an entry or note row; tags are kept on
     // the row itself ----
@@ -3174,6 +3525,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     setupMonthNotes();
     setupHashtags();
     setupTagPicker();
+    setupRowMenu();
     setupEntryDialog();
     setupLedger();
     setupSearch();
@@ -3192,7 +3544,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       const light = document.documentElement.dataset.theme !== 'light';
       if (light) document.documentElement.dataset.theme = 'light';
       else delete document.documentElement.dataset.theme;
-      try { localStorage.setItem('family-budget-theme', light ? 'light' : 'dark'); } catch (error) { /* Not remembered this time. */ }
+      try { localStorage.setItem('kajanauday-theme', light ? 'light' : 'dark'); } catch (error) { /* Not remembered this time. */ }
       showTheme();
     });
     showTheme();
