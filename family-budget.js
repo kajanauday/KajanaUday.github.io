@@ -1434,8 +1434,15 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       };
 
       ledger.addEventListener('touchstart', (e) => {
+        // A second finger on a row: tag it, instead of the hold the first finger started (or a pinch).
+        if (e.touches.length === 2 && !lift && taggableRow(e.target)) {
+          endLongPress();
+          e.preventDefault();
+          openTagPicker(e.target);
+          return;
+        }
         startLongPress(e.target, e);
-      });
+      }, { passive: false });
 
       // After a touch the browser replays mousedown/mouseup/click; ignore that replay so it neither starts a
       // second hold nor clears the click suppression. Touch end events go to the element first touched, which a
@@ -1466,7 +1473,12 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       ledger.addEventListener('mouseup', endLongPress);
       // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
       ledger.addEventListener('contextmenu', (e) => {
-        if (longPressTimer || longPressFired || lift || Date.now() < suppressClickUntil) e.preventDefault();
+        if (longPressTimer || longPressFired || lift || Date.now() < suppressClickUntil) return e.preventDefault();
+        // A mouse right-click on an entry or note row tags it.
+        if (Date.now() - lastTouchEnd > 500 && (!e.pointerType || e.pointerType === 'mouse') && taggableRow(e.target)) {
+          e.preventDefault();
+          openTagPicker(e.target);
+        }
       });
 
     }
@@ -2634,7 +2646,7 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
         const section = head.eventId ? (head.section || eventName) : store.summarySection(head, store.sections(headYear, monthIndex, head.property)).name;
         const mKey = head.eventId ? `ev:${head.eventId}` : keyOf(headYear, monthIndex);
         rows.push({
-          id: item.id, parentId: item.parentId || null, year: rowYear, date: item.date, kind: item.parentId ? 'note' : 'entry',
+          id: item.id, parentId: item.parentId || null, year: rowYear, date: item.date, kind: item.parentId ? 'note' : 'entry', tags: item.tags || [],
           description: item.description, comment: item.place || '', parent: parent?.description || '',
           type: head.type, amount: item.parentId ? Number(item.amount) : store.entryTotal(item.id), property: item.property,
           where: head.eventId ? `★ ${eventName}` : monthLabel(new Date(headYear, monthIndex, 1)), crumbs: `${section} › ${head.category}`,
@@ -2677,6 +2689,263 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
       void target.offsetWidth; // restart the glow when the same row is opened twice
       target.classList.add('is-search-hit');
       target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    // ---- Hashtags: a tag given by gesture (right-click or two-finger tap on a row), or #word in an entry's description or
+    // comment, or in its subsection's or section's name, groups entries
+    // across every month, year and event; a note can carry its own. Its page (months.html#tags, #tags/<tag>) lists every
+    // tag and sums up the chosen one.
+    function hashtagIndex() {
+      const tags = new Map();
+      searchRows(null).forEach(row => {
+        const own = LedgerSearch.rowTags(row, `${row.description} ${row.comment}`);
+        const fromNames = row.kind === 'entry' ? LedgerSearch.hashtags(`${row.category} ${row.section}`) : [];
+        new Set([...own, ...fromNames]).forEach(tag => {
+          const entry = tags.get(tag) || { tag, rows: [], latest: '' };
+          entry.rows.push(row);
+          if (row.date > entry.latest) entry.latest = row.date;
+          tags.set(tag, entry);
+        });
+      });
+      // A tagged note inside a tagged entry is already in the entry's amount.
+      tags.forEach(entry => {
+        const ids = new Set(entry.rows.map(row => row.id));
+        entry.rows = entry.rows.filter(row => !(row.kind === 'note' && ids.has(row.parentId)));
+      });
+      return [...tags.values()].sort((a, b) => b.latest.localeCompare(a.latest) || a.tag.localeCompare(b.tag));
+    }
+    // Income and expenses per currency: income entries and positive custom-section amounts in, the rest out.
+    function hashtagSums(rows) {
+      const sums = new Map();
+      rows.forEach(row => {
+        const sum = sums.get(row.property) || { in: 0, out: 0 };
+        const incoming = row.type === 'income' || (row.type === 'net' && row.amount > 0);
+        sum[incoming ? 'in' : 'out'] += Math.abs(row.amount);
+        sums.set(row.property, sum);
+      });
+      return [...sums].sort(([a], [b]) => store.currencyKeys().indexOf(a) - store.currencyKeys().indexOf(b));
+    }
+    let openHashtagSummary = () => {};
+    // ---- Tag picker: a click on a row's day, a right-click or a two-finger tap on an entry or note row; tags are kept on
+    // the row itself ----
+    const tagPicker = { pop: null, id: null, row: null };
+    // The entry or note a ledger element belongs to (not an open form).
+    function taggableRow(element) {
+      const cell = element?.closest?.('.ledger-entry-cell');
+      if (!cell || element.closest('form')) return null;
+      const id = cell.dataset.noteId || cell.querySelector(':scope > .ledger-entry-line [data-entry-id]')?.dataset.entryId;
+      return id ? { id, cell } : null;
+    }
+    function drawTagPicker() {
+      const { pop, id } = tagPicker;
+      const item = transactions.find(row => row.id === id);
+      if (!item) return closeTagPicker();
+      const own = LedgerSearch.rowTags({ tags: item.tags });
+      const written = LedgerSearch.hashtags(`${item.description} ${item.place || ''}`);
+      // Tags in use anywhere (by gesture or in text), most used first, then this row's.
+      const counts = new Map();
+      transactions.forEach(row => LedgerSearch.rowTags(row, `${row.description} ${row.place || ''}`).forEach(tag => counts.set(tag, (counts.get(tag) || 0) + 1)));
+      const all = [...new Set([...own, ...written, ...[...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag]) => tag)])];
+      pop.querySelector('.tag-pop-title').textContent = item.description;
+      pop.querySelector('.tag-pop-list').innerHTML = all.map(tag => {
+        const fromText = written.includes(tag);
+        const on = own.includes(tag);
+        // A tag on the row shows × to take it off; others add with a click.
+        return `<button type="button" class="hashtag-chip tag-c${LedgerSearch.tagColour(tag)}" data-pick-tag="${escapeHtml(tag)}" aria-pressed="${on || fromText}"${fromText ? ' disabled title="Written in the text; edit the text to remove it"' : ` title="${on ? 'Remove' : 'Add'} #${escapeHtml(tag)}"`}>#${escapeHtml(tag)}${on ? '<i class="ti ti-x" aria-hidden="true"></i>' : ''}</button>`;
+      }).join('') || '<span class="config-muted">No tags yet. Type one below.</span>';
+    }
+    function placeTagPicker() {
+      const { pop, row } = tagPicker;
+      if (!row?.isConnected) return;
+      const r = row.getBoundingClientRect();
+      const below = innerHeight - r.bottom > pop.offsetHeight + 12 || r.top < pop.offsetHeight + 12;
+      pop.style.top = `${below ? r.bottom + 4 : r.top - pop.offsetHeight - 4}px`;
+      pop.style.left = `${Math.max(8, Math.min(r.left + 24, innerWidth - pop.offsetWidth - 8))}px`;
+    }
+    function openTagPicker(element) {
+      const found = taggableRow(element);
+      if (!found) return false;
+      if (isViewer) { viewOnly(); return true; }
+      Object.assign(tagPicker, { id: found.id, row: found.cell });
+      tagPicker.pop.hidden = false;
+      drawTagPicker();
+      placeTagPicker();
+      const input = tagPicker.pop.querySelector('input');
+      input.value = '';
+      input.focus();
+      return true;
+    }
+    function closeTagPicker() {
+      if (!tagPicker.pop || tagPicker.pop.hidden) return;
+      tagPicker.pop.hidden = true;
+      tagPicker.id = null;
+      tagPicker.row = null;
+    }
+    // Adds or removes a tag on the row, saves, and redraws the ledger (its line) and the picker.
+    function toggleRowTag(tag, on) {
+      const item = transactions.find(row => row.id === tagPicker.id);
+      const clean = String(tag).trim().replace(/^#+/, '').toLocaleLowerCase();
+      if (!item || !LedgerSearch.hashtags(`#${clean}`).includes(clean)) return showToast('A tag is letters, digits, _ and -, like gold or trip-2026.');
+      const tags = new Set(LedgerSearch.rowTags({ tags: item.tags }));
+      if (on) tags.add(clean); else tags.delete(clean);
+      if (tags.size) item.tags = [...tags]; else delete item.tags;
+      saveTransactions();
+      const id = item.id;
+      renderLedger();
+      // The row was drawn again: follow it.
+      tagPicker.row = document.querySelector(`[data-note-id="${CSS.escape(id)}"]`) || document.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(id)}"]`)?.closest('.ledger-entry-cell') || null;
+      drawTagPicker();
+      placeTagPicker();
+    }
+    function setupTagPicker() {
+      const pop = document.createElement('div');
+      pop.className = 'tag-pop';
+      pop.hidden = true;
+      pop.innerHTML = '<p class="tag-pop-title"></p><div class="tag-pop-list"></div><input type="text" placeholder="New tag, then Enter" aria-label="New tag" autocomplete="off" spellcheck="false" enterkeyhint="done"><p class="tag-pop-hint">Click a tag to add it · × to remove · Esc to close</p>';
+      document.body.append(pop);
+      tagPicker.pop = pop;
+      const input = pop.querySelector('input');
+      pop.addEventListener('click', event => {
+        const chip = event.target.closest('[data-pick-tag]');
+        if (chip) toggleRowTag(chip.dataset.pickTag, chip.getAttribute('aria-pressed') !== 'true');
+      });
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && input.value.trim()) {
+          event.preventDefault();
+          toggleRowTag(input.value, true);
+          input.value = '';
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          closeTagPicker();
+        }
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!pop.hidden && !pop.contains(event.target) && !event.target.closest?.('.ledger-entry-line time')) closeTagPicker();
+      }, true);
+      // A click on a row's day (an entry or a note, once added) opens its tags, without opening or editing the row.
+      document.querySelector('#ledger').addEventListener('click', event => {
+        const day = event.target.closest('.ledger-entry-line time');
+        if (!day || !taggableRow(day)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!pop.hidden && tagPicker.row === day.closest('.ledger-entry-cell')) return closeTagPicker();
+        openTagPicker(day);
+      }, true);
+      addEventListener('scroll', () => { if (!pop.hidden) placeTagPicker(); }, true);
+    }
+    function setupHashtags() {
+      const page = document.querySelector('#tags-page');
+      const ledgerMain = document.querySelector('#ledger');
+      const filter = document.querySelector('#hashtag-filter');
+      const list = document.querySelector('#hashtag-list');
+      const results = document.querySelector('#hashtag-results');
+      let chosen = null;
+      let loading = false;
+      const money = (minor, property) => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
+      const sumsHtml = rows => hashtagSums(rows).map(([property, sum]) => `<span class="hashtag-sum"><b>${escapeHtml(regions[property]?.code || property)}</b><span class="income">${money(sum.in, property)}</span><span class="expense">${money(sum.out, property)}</span><span class="balance">${money(sum.in - sum.out, property)}</span></span>`).join('');
+      const draw = () => {
+        const index = hashtagIndex();
+        const typed = filter.value.trim().replace(/^#/, '').toLocaleLowerCase();
+        const shown = index.filter(entry => !typed || entry.tag.includes(typed));
+        if (chosen && !index.some(entry => entry.tag === chosen)) chosen = null;
+        list.innerHTML = shown.map(entry => `<button type="button" class="hashtag-chip tag-c${LedgerSearch.tagColour(entry.tag)}" data-hashtag="${escapeHtml(entry.tag)}" aria-pressed="${entry.tag === chosen}">#${escapeHtml(entry.tag)}<small>${entry.rows.length}</small></button>`).join('')
+          || `<p class="search-empty">${loading ? '' : typed ? 'No hashtag like that.' : 'No hashtags yet. Add one like #gold to an entry\'s description or comment, or to a subsection\'s name.'}</p>`;
+        const spinner = loading ? '<p class="search-empty"><i class="ti ti-loader-2 search-spin" aria-hidden="true"></i> Loading every month…</p>' : '';
+        const entry = index.find(item => item.tag === chosen);
+        if (!entry) {
+          results.innerHTML = spinner + (index.length ? '<p class="search-empty">Choose a hashtag to see its entries from every month and year.</p>' : '');
+          return;
+        }
+        // Newest place first; within it, newest entry first.
+        const rows = [...entry.rows].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+        const places = [...new Set(rows.map(row => row.where))];
+        const dates = rows.map(row => row.date).sort();
+        const span = dates.length ? [dates[0], dates[dates.length - 1]].map(date => monthLabel(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1))) : [];
+        const jumpAttr = jump => `data-search-jump='${escapeHtml(JSON.stringify(jump))}'`;
+        results.innerHTML = spinner + `<header class="hashtag-head"><h2>#${escapeHtml(entry.tag)}</h2><p>${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} in ${places.length} ${places.length === 1 ? 'place' : 'places'}${span.length ? ` · ${span[0] === span[1] ? span[0] : `${span[0]} – ${span[1]}`}` : ''}</p><div class="hashtag-sums">${sumsHtml(rows)}</div></header>`
+          + places.map(place => {
+            const own = rows.filter(row => row.where === place);
+            return `<section class="search-group"><h3 class="search-group-head"><span>${escapeHtml(place)}</span><small>${own.length}</small><span class="search-sums">${sumsHtml(own)}</span></h3>${own.map(row =>
+              `<button type="button" class="search-row${row.kind === 'note' ? ' is-note' : ''}" ${jumpAttr(row.jump)}><span class="search-when">${escapeHtml(dayLabel(row.date))}</span><span class="search-main"><span class="search-desc">${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}${row.comment ? `<span class="search-comment">${LedgerSearch.markTags(escapeHtml(row.comment))}</span>` : ''}</span><span class="search-crumbs">${LedgerSearch.markTags(escapeHtml(row.crumbs))}${row.kind === 'note' && row.parent ? ` · in ${escapeHtml(row.parent)}` : ''}</span></span><strong class="search-amount ${row.type === 'net' ? (row.amount < 0 ? 'expense' : 'income') : row.type}">${money(row.type === 'net' ? Math.abs(row.amount) : row.amount, row.property)}<small>${escapeHtml(regions[row.property]?.code || '')}</small></strong></button>`).join('')}</section>`;
+          }).join('');
+      };
+      // Every year's months are loaded once (reads only), so a tag shows all of its entries.
+      const ensureAll = async () => {
+        const missing = store.yearIds().map(Number).filter(year => store.year(year) && !store.isYearLoaded(year));
+        if (!missing.length) return;
+        loading = true;
+        draw();
+        try { await Promise.all(missing.map(year => store.ensureYear(year))); } catch (error) { showToast('Could not load every month from Firebase.'); }
+        loading = false;
+        draw();
+      };
+      // The page stands in for the ledger; its address keeps the chosen tag, so Back and a reload come back to it.
+      const hashFor = tag => (tag ? `#tags/${encodeURIComponent(tag)}` : '#tags');
+      const tagInHash = () => (/^#tags(\/|$)/.test(location.hash) ? decodeURIComponent(location.hash.slice(6)) || null : undefined);
+      const show = tag => {
+        chosen = tag ?? chosen;
+        const wasHidden = page.hidden;
+        page.hidden = false;
+        ledgerMain.hidden = true;
+        document.title = `${chosen ? `#${chosen} · ` : ''}Hashtags | Kajana Uday Expenses`;
+        if (wasHidden) {
+          filter.value = '';
+          scrollTo(0, 0);
+        }
+        draw();
+        ensureAll();
+      };
+      const hide = () => {
+        if (page.hidden) return;
+        page.hidden = true;
+        ledgerMain.hidden = false;
+        document.title = 'Kajana Uday Expenses | Monthly ledger';
+      };
+      // Opening from the ledger is a step Back can undo; choosing another tag on the page only changes the address.
+      const open = (tag = null) => {
+        const next = tag ?? chosen;
+        if (page.hidden) history.pushState({ tags: true }, '', hashFor(next));
+        else history.replaceState({ tags: true }, '', hashFor(next));
+        show(next);
+        if (!tag) filter.focus();
+      };
+      const leave = () => {
+        if (history.state?.tags && history.length > 1) return history.back();
+        history.replaceState(null, '', location.pathname + location.search);
+        hide();
+      };
+      const route = () => {
+        const tag = tagInHash();
+        if (tag === undefined) hide();
+        else show(tag);
+      };
+      addEventListener('popstate', route);
+      route();
+      document.querySelector('#hashtag-button')?.addEventListener('click', () => open());
+      page.querySelector('[data-tags-back]').addEventListener('click', leave);
+      openHashtagSummary = open;
+      filter.addEventListener('input', draw);
+      page.addEventListener('click', event => {
+        const tag = event.target.closest('[data-hashtag]');
+        if (tag) {
+          event.preventDefault();
+          return open(tag.dataset.hashtag);
+        }
+        const row = event.target.closest('[data-search-jump]');
+        if (row) {
+          // To the ledger, as a new step: Back returns to this tag.
+          history.pushState(null, '', location.pathname + location.search);
+          hide();
+          openSearchResult(JSON.parse(row.dataset.searchJump));
+        }
+      });
+      // A tag in a ledger row opens its page (and does not open or close the row).
+      ledgerMain.addEventListener('click', event => {
+        const tag = event.target.closest('[data-hashtag]');
+        if (!tag) return;
+        event.preventDefault();
+        event.stopPropagation();
+        open(tag.dataset.hashtag);
+      }, true);
     }
     // ---- Move an entry (with its notes) to any month of any year, or into or out of a special event ----
     // The destination month is loaded first, so saving writes it whole; a subsection missing there is added to its list.
@@ -2903,6 +3172,8 @@ const STORAGE_KEY = 'family-budget-static-demo-v1';
     setupMonthSettings();
     setupSectionSetup();
     setupMonthNotes();
+    setupHashtags();
+    setupTagPicker();
     setupEntryDialog();
     setupLedger();
     setupSearch();

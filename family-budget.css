@@ -1091,3 +1091,53 @@
 .month-note-pop.is-editing .month-note-view { display: none; }
 .month-note-pop.is-editing .month-note-text { display: block; min-height: 40px; padding: 6px 8px; overflow: auto; border: 1px solid var(--brand); border-radius: 6px; outline: 0; background: var(--surface-soft); color: var(--ink); font: 400 13px/1.5 var(--display); resize: none; white-space: pre; }
 .month-note-pop.is-editing .month-note-hint { display: block; margin: 5px 0 0; color: var(--muted); font-size: 10.5px; }
+/* Hashtags: a #tag in a row (click for its summary), and the window listing every tag with the chosen one's entries. */
+.hashtag { color: var(--brand); cursor: pointer; }
+.hashtag:hover { text-decoration: underline; text-underline-offset: 2px; }
+.hashtag-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; padding: 8px 16px; border-bottom: 1px solid var(--line-soft); }
+.hashtag-list .search-empty { margin: 0; padding: 4px 0; }
+.hashtag-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); color: var(--brand); cursor: pointer; font: 500 12.5px var(--display); }
+.hashtag-chip small { color: var(--muted); font: 400 11px var(--mono); }
+.hashtag-chip:hover, .hashtag-chip[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
+.hashtag-head { padding: 12px 16px 8px; }
+.hashtag-head h2 { margin: 0; color: var(--brand); font: 700 18px var(--display); }
+.hashtag-head p { margin: 2px 0 8px; color: var(--muted); font-size: 12px; }
+.hashtag-sums, .search-group-head .search-sums { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.hashtag-sum { display: inline-flex; align-items: baseline; gap: 8px; font: 500 12.5px var(--mono); }
+.hashtag-sum b { color: var(--muted); font: 600 10px var(--mono); }
+.hashtag-sum .income { color: var(--income); } .hashtag-sum .expense { color: var(--expense); } .hashtag-sum .balance { color: var(--ink); }
+.hashtag-head .hashtag-sum { font-size: 14px; }
+.search-group-head .hashtag-sum { font-size: 11px; }
+/* Tag colours (one per tag, picked from its name), a tagged row's 1px line at its left, and the tag picker. */
+:root { --tag0: #5b9dff; --tag1: #b18cff; --tag2: #ff9f5a; --tag3: #3cc7b8; --tag4: #ff7eb6; --tag5: #9bd35a; --tag6: #56c8f0; --tag7: #e0b34e; }
+:root[data-theme="light"] { --tag0: #2563c9; --tag1: #7a4fd6; --tag2: #c2601a; --tag3: #0f8a7e; --tag4: #c23a7a; --tag5: #4f8a1c; --tag6: #1a7fa8; --tag7: #9a7414; }
+.ledger-entry-cell[data-tags] > .ledger-entry-line { position: relative; }
+.ledger-entry-cell[data-tags] > .ledger-entry-line::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: -9px; width: 1px; background: var(--tag-line); pointer-events: none; }
+.tag-c0 { --tone: var(--tag0); } .tag-c1 { --tone: var(--tag1); } .tag-c2 { --tone: var(--tag2); } .tag-c3 { --tone: var(--tag3); }
+.tag-c4 { --tone: var(--tag4); } .tag-c5 { --tone: var(--tag5); } .tag-c6 { --tone: var(--tag6); } .tag-c7 { --tone: var(--tag7); }
+.hashtag-chip[class*="tag-c"] { color: var(--tone); }
+.hashtag-chip[class*="tag-c"]:hover, .hashtag-chip[class*="tag-c"][aria-pressed="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent); }
+.hashtag-chip:disabled { cursor: default; opacity: .75; }
+.tag-pop { position: fixed; z-index: 60; width: min(320px, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+.tag-pop-title { margin: 0 0 8px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tag-pop-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow-y: auto; }
+.tag-pop input { box-sizing: border-box; width: 100%; height: 30px; margin-top: 8px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: 400 13px var(--display); }
+.tag-pop input:focus { border-color: var(--brand); outline: 0; }
+.tag-pop-hint { margin: 6px 0 0; color: var(--muted); font-size: 10.5px; }
+.ledger-entry-line time { cursor: pointer; }
+.ledger-entry-line time:hover { color: var(--brand); text-decoration: underline dotted; text-underline-offset: 3px; }
+.tag-pop .hashtag-chip i { margin-left: 2px; font-size: 11px; opacity: .8; }
+/* The Hashtags page: in place of the ledger, the same width, its tags and the chosen one's entries. */
+.tags-page { width: min(1100px, 100%); margin: 0 auto; padding: 14px clamp(14px, 2vw, 24px) 40px; }
+.tags-page[hidden], .ledger[hidden] { display: none; }
+.tags-page-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 4px 0 10px; }
+.tags-page-head h1 { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--brand); font: 700 18px var(--display); }
+.tags-page-head input { flex: 1 1 200px; max-width: 320px; height: 32px; margin-left: auto; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: 400 13px var(--display); }
+.tags-page-head input:focus { border-color: var(--brand); outline: 0; }
+.tags-page .hashtag-list { max-height: none; padding: 4px 0 12px; border-bottom: 1px solid var(--line); }
+.tags-page-body { margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.tags-page-body:not(:has(.hashtag-head)) { border: 0; background: none; }
+.tags-page .hashtag-head { padding: 16px 16px 10px; }
+.tags-page .hashtag-head h2 { font-size: 22px; }
+.tags-page .search-group-head { top: 52px; }
+@media (max-width: 700px) { .tags-page { padding: 10px 12px 24px; } .tags-page .search-group-head { top: 56px; } .tags-page-head input { max-width: none; margin-left: 0; } }

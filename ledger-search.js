@@ -242,5 +242,20 @@
     return subsHtml + entriesHtml + more;
   }
 
-  global.LedgerSearch = { isTelugu, romanize, toTeluguScript, looseKey, expand, matcher, results, termsHtml, resultsHtml, totals };
+  // ---- hashtags: #word in a description, comment or name groups entries across months and sections ----
+  // A tag starts after a space or punctuation (not inside a word, and not an HTML entity like &#39;) with a letter, digit or
+  // _, and runs over those, marks (Telugu vowel signs) and inner -. Tags are matched without regard to case.
+  const TAG = /(^|[^\p{L}\p{M}\p{N}_&#])#([\p{L}\p{N}_](?:[\p{L}\p{M}\p{N}_-]*[\p{L}\p{M}\p{N}_])?)/gu;
+  const hashtags = text => [...new Set([...String(text || '').matchAll(TAG)].map(match => match[2].toLocaleLowerCase()))];
+  // Escaped text with its tags made clickable.
+  const markTags = html => String(html).replace(TAG, (all, before, tag) => `${before}<span class="hashtag" data-hashtag="${tag.toLocaleLowerCase()}">#${tag}</span>`);
+
+  // Each tag keeps one of eight colours (--tag0…--tag7), picked from its name, so it looks the same everywhere.
+  const TAG_COLOURS = 8;
+  const tagColour = tag => [...String(tag)].reduce((hash, char) => (hash * 31 + char.codePointAt(0)) >>> 0, 7) % TAG_COLOURS;
+  // A row's tags: those given by gesture (stored lower case, without #) and those written in its text.
+  const listOf = value => (Array.isArray(value) ? value : value && typeof value === 'object' ? Object.values(value) : []);
+  const rowTags = (row, text = '') => [...new Set([...listOf(row?.tags).map(tag => String(tag).toLocaleLowerCase()), ...hashtags(text)])];
+
+  global.LedgerSearch = { isTelugu, romanize, toTeluguScript, looseKey, expand, matcher, results, termsHtml, resultsHtml, totals, hashtags, markTags, tagColour, rowTags };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

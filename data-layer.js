@@ -175,8 +175,10 @@
       let group = groups.find(g => g.category === item.category);
       if (!group) groups.push(group = { category: item.category, total: 0, count: 0, entries: [] });
       const when = row => (dated ? { date: row.date } : { day: Number(row.date.slice(8, 10)) });
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount) };
+      // Hashtags given by gesture (lower case, without #), on entries and notes alike.
+      const tagsOf = row => (row.tags?.length ? { tags: [...row.tags] } : {});
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -1162,10 +1164,10 @@
     buildEntry(item) {
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
-        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null,
+        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [],
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
-        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null }))
+        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [] }))
       };
     }
   }

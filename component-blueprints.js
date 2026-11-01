@@ -84,14 +84,25 @@
 
   // A row's description and comment (stored as `place`). Without a comment, the description also takes the comment's
   // column, so long descriptions show in full far more often, on phones above all.
+  // A tagged row has a 1px line at its left in its tags' colours (split evenly between them, top to bottom).
+  const tagLine = (row, ctx) => {
+    const search = global.LedgerSearch;
+    const tags = search ? search.rowTags(row, `${row.description} ${row.place || ''}`) : [];
+    if (!tags.length) return '';
+    const step = 100 / tags.length;
+    const stops = tags.map((tag, i) => `var(--tag${search.tagColour(tag)}) ${(i * step).toFixed(2)}% ${((i + 1) * step).toFixed(2)}%`).join(', ');
+    return ` data-tags="${ctx.esc(tags.map(tag => `#${tag}`).join(' '))}" style="--tag-line: linear-gradient(${stops})"`;
+  };
+  // #hashtags in a description or comment show as tags; a click opens that tag's summary.
+  const tagged = (text, ctx) => (global.LedgerSearch ? global.LedgerSearch.markTags(ctx.esc(text)) : ctx.esc(text));
   const descAndComment = (description, comment, ctx, lead = '') => (comment
-    ? `<span class="ledger-entry-desc">${lead}${ctx.esc(description)}</span><span class="ledger-entry-place">${ctx.esc(comment)}</span>`
-    : `<span class="ledger-entry-desc is-wide">${lead}${ctx.esc(description)}</span>`);
+    ? `<span class="ledger-entry-desc">${lead}${tagged(description, ctx)}</span><span class="ledger-entry-place">${tagged(comment, ctx)}</span>`
+    : `<span class="ledger-entry-desc is-wide">${lead}${tagged(description, ctx)}</span>`);
 
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
-    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx)}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx)}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
@@ -108,7 +119,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
