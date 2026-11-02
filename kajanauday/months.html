@@ -18,7 +18,7 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261107d">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261108a">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261103a" defer></script>
@@ -26,7 +26,7 @@
   <script src="../ledger-search.js?v=20261101b" defer></script>
   <script src="../component-blueprints.js?v=20261107d" defer></script>
   <script src="../renderer-engine.js?v=20261107d" defer></script>
-  <script src="../kajanauday.js?v=20261107d" defer></script>
+  <script src="../kajanauday.js?v=20261108a" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -36,7 +36,6 @@
       <span class="save-state" role="status" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></span>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
-      <button type="button" class="primary-button add-entry-button" id="add-entry-button" title="Add an expense or income"><i class="ti ti-plus" aria-hidden="true"></i><span>Add</span></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
   </header>
@@ -132,26 +131,6 @@
     </form>
   </dialog>
 
-  <dialog class="modal entry-dialog" id="entry-dialog" aria-labelledby="entry-dialog-title">
-    <form id="entry-form" novalidate>
-      <div class="modal-header"><h2 id="entry-dialog-title">Add an expense</h2><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <div class="entry-grid">
-        <div class="entry-top">
-          <div class="choice-row is-compact" id="entry-type" role="group" aria-label="Type"><button type="button" data-value="income" aria-pressed="false" aria-label="Income" title="Income">I</button><button type="button" data-value="expense" aria-pressed="true" aria-label="Expense" title="Expense">E</button></div>
-          <input name="date" id="entry-date" type="date" required aria-label="Date">
-          <div class="choice-row is-compact" id="entry-currency" role="group" aria-label="Currency"></div>
-        </div>
-        <label class="field">Subsection<select name="category" id="entry-category" required></select></label>
-        <label class="field">Description<input name="description" maxlength="80" autocomplete="off" required></label>
-        <div class="entry-pair">
-          <label class="field"><span>Comment <small>optional</small></span><input name="place" maxlength="60" autocomplete="off"></label>
-          <label class="field"><span>Amount</span><input name="amount" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="450 or =210+178" required><small class="amount-preview" id="entry-amount-preview" aria-live="polite"></small></label>
-        </div>
-      </div>
-      <p class="settings-error" id="entry-error" role="alert" hidden></p>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save entry</button></div>
-    </form>
-  </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

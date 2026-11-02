@@ -120,31 +120,10 @@
     .quiet-button:hover, .icon-button:hover { border-color: var(--line-strong); background: var(--surface-soft); color: var(--ink); }
     .toast { position: fixed; z-index: 20; right: 25px; bottom: 90px; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow); font-size: 12.5px; animation: rise .2s both; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; clip-path: inset(50%); }
-    /* Dialog forms (add entry, month settings) */
-    /* Add entry: one compact top row (I/E, date, currency), then subsection, description, and place + amount. */
-    .entry-dialog { width: min(400px, calc(100% - 20px)); padding: 16px 18px 18px; }
-    .entry-dialog .modal-header { align-items: center; margin-bottom: 14px; }
-    .entry-dialog .modal-header h2 { font-size: 17px; }
-    .entry-grid { display: grid; gap: 10px; }
-    .entry-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-    .entry-top input[type="date"] { min-width: 0; width: 100%; height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font: 500 13px var(--mono); }
-    .choice-row.is-compact { flex-wrap: nowrap; gap: 2px; padding: 2px; }
-    .choice-row.is-compact button { min-width: 34px; min-height: 30px; flex: none; padding: 0 9px; font: 700 13px var(--mono); }
-    .choice-row.is-compact button .cur-dot { width: 6px; height: 6px; }
-    .entry-dialog .field { gap: 4px; font-size: 10.5px; letter-spacing: .03em; }
-    .entry-dialog .field input, .entry-dialog .field select { height: 36px; }
-    .entry-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 8px; }
-    .entry-pair .field > span:first-child { display: block; height: 15px; line-height: 15px; }
-    .entry-dialog .modal-actions { margin-top: 14px; }
+    /* Dialog forms (month settings and the like) */
     .field.wide { grid-column: 1 / -1; }
     .field small { color: var(--faint); font-weight: 500; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-    .choice-row { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
-    .choice-row button { min-height: 30px; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12.5px; font-weight: 700; }
-    .choice-row button:hover { color: var(--ink); }
-    .choice-row button[aria-pressed="true"] { background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow-sm); }
-    .choice-row button[aria-pressed="true"][data-value="expense"] { color: var(--expense); }
-    .choice-row button[aria-pressed="true"][data-value="income"] { color: var(--income); }
     .cur-dot { width: 8px; height: 8px; flex: none; display: inline-block; border-radius: 2px; background: var(--india); }
     .cur-dot.japan { background: var(--japan); }
     .check-field { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); cursor: pointer; font-size: 12.5px; line-height: 1.4; }
@@ -164,8 +143,6 @@
     .config-cur-code { min-width: 46px; display: inline-flex; align-items: center; gap: 6px; font: 700 12px var(--mono); }
     .config-currency .check-field { flex: 1 1 200px; }
     .money-field.is-disabled { opacity: .5; }
-    .add-entry-button { min-height: 32px; padding: 0 12px; font-size: 12.5px; }
-    .add-entry-button:hover { transform: none; }
     .settings-error { margin: 0; color: var(--expense); font-size: 11px; font-weight: 600; }
     /* ---- Year configuration dialog ---- */
     .config-dialog { width: min(760px, calc(100% - 20px)); max-height: min(90vh, 860px); padding: 0; overflow: hidden; }
@@ -450,8 +427,6 @@
     /* The formula itself, drawn above the amount on hover (and while the row has keyboard focus). */
     .has-formula::after { content: attr(data-formula); position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font: 400 12.5px var(--mono); letter-spacing: .02em; white-space: nowrap; box-shadow: var(--shadow-sm); opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity .12s ease, transform .12s ease; }
     .has-formula:hover::after, .ledger-entry-toggle:focus-visible .has-formula::after { opacity: 1; transform: none; }
-    .amount-preview { min-height: 14px; color: var(--income-2); font: 500 11.5px var(--mono); }
-    .amount-preview.is-error { color: var(--muted); }
     .ledger-carry { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 13.5px; font-style: italic; }
     .ledger-carry i { color: var(--faint); font-size: 13px; }
     .ledger-carry strong { font: 400 14px var(--mono); font-style: normal; font-variant-numeric: tabular-nums; }
@@ -576,8 +551,6 @@
     @media (max-width: 700px) {
       .ledger-topbar { height: 52px; padding: 0 12px; }
       .ledger-topbar .brand-word { display: none; }
-      .add-entry-button { width: 34px; padding: 0; }
-      .add-entry-button span { display: none; }
       .ledger-topbar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
       .ms-kv { min-width: 6ch; }
       .ms-kv + .ms-kv { min-width: 8ch; }
@@ -601,7 +574,7 @@
     @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
     /* View-only accounts: nothing to add or configure, and the top bar says so (on phones too, where the save state is hidden). */
-    .is-viewer #add-entry-button, .is-viewer .year-tab[aria-pressed="true"] i { display: none; }
+    .is-viewer .year-tab[aria-pressed="true"] i { display: none; }
     .is-viewer .save-state { display: inline-flex; color: var(--brand); }
     /* Search: a command-palette style dialog near the top; full screen on phones. */
     .search-dialog { width: min(720px, calc(100% - 26px)); max-height: min(82vh, 760px); margin: 9vh auto auto; padding: 0; display: none; overflow: hidden; }

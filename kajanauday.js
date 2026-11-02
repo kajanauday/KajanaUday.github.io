@@ -2278,122 +2278,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
     }
 
-    // ---- Add entry: the "+ Add" button ----
-    // Defaults to the newest open month (else this month) and expense; currency and subsection follow the chosen date.
-    const entryState = { type: 'expense', currency: null };
-    function entryDate() {
-      const value = document.querySelector('#entry-date').value;
-      return value ? new Date(`${value}T12:00:00`) : null;
-    }
-    function renderEntryChoices() {
-      const date = entryDate();
-      const currencies = date ? store.monthCurrencies(date.getFullYear(), date.getMonth()) : [];
-      if (!currencies.includes(entryState.currency)) entryState.currency = currencies[0] || null;
-      document.querySelectorAll('#entry-type [data-value]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.value === entryState.type)));
-      // One letter per currency (I for India, J for Japan); the code is used instead if two names share a letter.
-      const initials = currencies.map(key => regions[key].name.trim().charAt(0).toLocaleUpperCase());
-      const short = (key, index) => (initials.indexOf(initials[index]) === initials.lastIndexOf(initials[index]) ? initials[index] : regions[key].code);
-      document.querySelector('#entry-currency').innerHTML = currencies.map((key, index) => `<button type="button" data-value="${key}" aria-pressed="${key === entryState.currency}" aria-label="${escapeHtml(regions[key].name)}" title="${escapeHtml(`${regions[key].name} · ${regions[key].code}`)}"><span class="cur-dot ${regions[key].color}"></span>${escapeHtml(short(key, index))}</button>`).join('')
-        || `<span class="config-muted">${date && store.year(date.getFullYear()) ? 'No currency' : 'Year not set up'}</span>`;
-      const select = document.querySelector('#entry-category');
-      const previous = select.value;
-      const sections = date ? store.sections(date.getFullYear(), date.getMonth(), entryState.currency).filter(section => section.type === entryState.type) : [];
-      select.innerHTML = sections.map(section => `<optgroup label="${escapeHtml(section.name)}">${section.subsections.map(name => `<option value="${escapeHtml(name)}" data-section="${escapeHtml(section.name)}">${escapeHtml(name)}</option>`).join('')}</optgroup>`).join('');
-      if ([...select.options].some(option => option.value === previous)) select.value = previous;
-      document.querySelector('#entry-dialog-title').textContent = entryState.type === 'income' ? 'Add income' : 'Add an expense';
-    }
-    // Opens on today's date; only if today's month is not set up does it fall back to the newest open month.
-    function openEntryDialog() {
-      if (isViewer) return viewOnly();
-      const today = new Date();
-      const openKey = [...expandedMonths].filter(key => key.startsWith(`${currentMonth.getFullYear()}-`)).sort().pop();
-      const fallback = openKey ? new Date(Number(openKey.slice(0, 4)), Number(openKey.slice(5, 7)) - 1, 1) : new Date(currentMonth.getFullYear(), today.getFullYear() === currentMonth.getFullYear() ? today.getMonth() : 0, 1);
-      const base = store.monthNode(today.getFullYear(), today.getMonth()) ? today : fallback;
-      const day = base.getFullYear() === today.getFullYear() && base.getMonth() === today.getMonth() ? today.getDate() : 1;
-      const form = document.querySelector('#entry-form');
-      form.reset();
-      document.querySelector('#entry-amount-preview').textContent = '';
-      form.querySelectorAll('[aria-invalid]').forEach(input => input.removeAttribute('aria-invalid'));
-      document.querySelector('#entry-error').hidden = true;
-      document.querySelector('#entry-date').value = `${keyOf(base.getFullYear(), base.getMonth())}-${String(day).padStart(2, '0')}`;
-      entryState.type = 'expense';
-      renderEntryChoices();
-      document.querySelector('#entry-dialog').showModal();
-      form.elements.description.focus();
-    }
-    function setupEntryDialog() {
-      const dialog = document.querySelector('#entry-dialog');
-      const form = document.querySelector('#entry-form');
-      document.querySelector('#add-entry-button').addEventListener('click', openEntryDialog);
-      document.querySelector('#entry-date').addEventListener('change', renderEntryChoices);
-      suggest.attach(form.elements.description, {
-        items: () => {
-          const option = form.elements.category.selectedOptions[0];
-          return descriptionChoices('entries', option ? { type: entryState.type, category: option.value } : {});
-        },
-        onPick: pickDescription(form)
-      });
-      form.elements.amount.addEventListener('input', () => {
-        const preview = document.querySelector('#entry-amount-preview');
-        const parsed = ExpenseStore.readAmount(form.elements.amount.value);
-        preview.textContent = parsed.formula ? `= ${formatMoney(Math.round(parsed.value * 100), entryState.currency)}` : parsed.error && form.elements.amount.value.trim().startsWith('=') ? 'Not a valid formula yet' : '';
-        preview.classList.toggle('is-error', Boolean(parsed.error));
-      });
-      document.querySelector('#entry-type').addEventListener('click', event => {
-        const button = event.target.closest('[data-value]');
-        if (!button) return;
-        entryState.type = button.dataset.value;
-        renderEntryChoices();
-      });
-      document.querySelector('#entry-currency').addEventListener('click', event => {
-        const button = event.target.closest('[data-value]');
-        if (!button) return;
-        entryState.currency = button.dataset.value;
-        renderEntryChoices();
-      });
-      form.addEventListener('submit', event => {
-        event.preventDefault();
-        const fields = form.elements;
-        const date = entryDate();
-        const parsed = ExpenseStore.readAmount(fields.amount.value);
-        const amount = parsed.value;
-        const option = fields.category.selectedOptions[0];
-        const checks = [
-          [fields.date, Boolean(date) && Boolean(store.monthNode(date.getFullYear(), date.getMonth()))],
-          [fields.category, Boolean(option)],
-          [fields.description, fields.description.value.trim() !== ''],
-          [fields.amount, !parsed.error && !parsed.empty && amount >= 0] // 0 is allowed: a gift with no money, say
-        ];
-        checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
-        const error = document.querySelector('#entry-error');
-        const invalid = checks.find(([, ok]) => !ok);
-        if (invalid || !entryState.currency) {
-          error.textContent = !date || !store.year(date.getFullYear()) ? 'That year is not set up yet. Add it in Year settings.' : !entryState.currency ? 'No currency is on for that month.' : !fields.category.options.length ? 'That month has no subsections yet. Add one in its month settings (double-click the month name).' : 'Fill in the highlighted fields.';
-          error.hidden = false;
-          return invalid?.[0].focus();
-        }
-        const year = date.getFullYear();
-        const month = date.getMonth();
-        // The month's entries must be loaded first, or saving it would replace what Firebase already holds.
-        store.ensureMonth(year, month).then(() => {
-          transactions.push({ id: `new-${Date.now()}`, property: entryState.currency, date: fields.date.value, section: option.dataset.section, category: option.value, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), ...(parsed.formula && { formula: parsed.formula }), type: entryState.type });
-          saveTransactions();
-          dialog.close();
-          const key = keyOf(year, month);
-          expandedMonths.add(key);
-          saveExpandedMonths();
-          revealKey = catKey(key, entryState.currency, entryState.type, option.value);
-          if (year !== currentMonth.getFullYear()) currentMonth = new Date(year, month, 1);
-          renderLedger();
-          showToast(`Saved to ${option.value}.`);
-        }, loadError => {
-          console.error('Could not load the month from Firebase.', loadError);
-          error.textContent = 'Could not load that month from Firebase. Try again.';
-          error.hidden = false;
-        });
-      });
-    }
-
     // ---- Year configuration (months.html) ----
     // Edits are held as per-year drafts so the user can hop between year boxes; Save validates and writes every touched year.
     // A year's currencies are { <cur>: { from: <month name>, opening, carryIn } }: active from `from` (months can override),
@@ -3952,7 +3836,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupTagPicker();
     setupFlowPicker();
     setupRowMenu();
-    setupEntryDialog();
     setupLedger();
     setupSearch();
     setupMoveDialog();
