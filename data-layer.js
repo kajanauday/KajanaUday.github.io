@@ -27,6 +27,10 @@
 //                                    [{ category, total, count, entries[{ date, …, notes[{ date, … }] }] }] }
 //                                    With `include` on, each entry also counts in the month of its date (totals, balances, the
 //                                    year's totals); a month's metadata keeps that share as `fromEvents` so it can be taken out.
+//   years/<year>/flows/<id>          a flow: { name, colour (0–7), note, created }. A flow follows money that comes back or
+//                                    goes out again (a loan and its repayments, an advance and its refund): any entries
+//                                    and notes, in any month, year or event, that carry `flow: <id>`. Kept with the year
+//                                    it was made in, and shown with every year.
 //
 // The shell (year tabs, month rows, the year card's figures) is drawn from `years` alone. A month's entries are fetched only when it is
 // opened (ensureMonth). Amounts are minor units (paise / sen). An entry with notes counts as the sum of its notes.
@@ -177,8 +181,10 @@
       const when = row => (dated ? { date: row.date } : { day: Number(row.date.slice(8, 10)) });
       // Hashtags given by gesture (lower case, without #), on entries and notes alike.
       const tagsOf = row => (row.tags?.length ? { tags: [...row.tags] } : {});
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item) };
+      // The flow an entry or note belongs to (see years/<year>/flows).
+      const flowOf = row => (row.flow ? { flow: row.flow } : {});
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -914,11 +920,35 @@
       };
     }
 
+    // ---- flows ----
+    // Every flow of every year, newest first.
+    flowList() {
+      return Object.entries(this.years).flatMap(([year, node]) => Object.entries(node.flows || {}).map(([id, flow]) => ({ id, year: Number(year), name: flow.name || 'Flow', colour: Number(flow.colour) || 0, note: flow.note || '', created: flow.created || '' })))
+        .sort((a, b) => b.created.localeCompare(a.created) || a.name.localeCompare(b.name));
+    }
+    flow(id) { return id ? this.flowList().find(flow => flow.id === id) || null : null; }
+    // Creates or changes a flow's own fields; a new one is kept with `year`.
+    saveFlow(id, fields, year) {
+      const at = this.flow(id)?.year ?? Number(year);
+      const node = this.year(at);
+      if (!node) return Promise.reject(new Error(`No year ${at} to keep the flow in.`));
+      const flows = node.flows ||= {};
+      flows[id] = { ...flows[id], ...fields };
+      return this.queue(() => this.db.patch({ [`years/${at}/flows/${id}`]: flows[id] }));
+    }
+    // Deletes a flow; its entries and notes stay as they are, without it (every year must be loaded, so none keeps it).
+    deleteFlow(id) {
+      const at = this.flow(id)?.year;
+      if (at === undefined) return Promise.resolve();
+      delete this.year(at).flows[id];
+      this.transactions.forEach(item => { if (item.flow === id) delete item.flow; });
+      return Promise.all([this.queue(() => this.db.patch({ [`years/${at}/flows/${id}`]: null })), this.saveTransactions()]);
+    }
+
     // ---- year card: a whole year as one ledger ----
     // One currency's year in the same shape as country(), so the month panel draws it: every section, subsection and entry
     // of the year's months, each entry exactly as stored (with its notes), marked with the month it comes from. Only the
-    // totals are added up: Income, Expenses and the closing balance are the year's own (with its net and the balance it
-    // opened on), and each block adds up to them as a month's do (the balance the year opened on, what custom sections and
+    // totals are added up: Income, Expenses and the closing balance are the year's own, and each block adds up to them as a month's do (the balance the year opened on, what custom sections and
     // events shown in months add, then the subsections).
     //   A section is one section across the year, by name (nameKey) and type, spelled as in its latest month: the Income
     //   (Expenses) block holds every income (expense) section, a custom section or an event's ★ section is its own block.
@@ -1020,7 +1050,7 @@
       const first = months.length ? this.monthNode(year, months[0]).metadata[currency] : null;
       const region = this.currencies[currency];
       const book = {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months },
         sections: out
       };
       this.books.set(key, { sig, book });
@@ -1251,10 +1281,10 @@
     buildEntry(item) {
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
-        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [],
+        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [], flow: item.flow || null,
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
-        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [] }))
+        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null }))
       };
     }
   }

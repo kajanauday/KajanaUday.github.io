@@ -11,7 +11,7 @@
   class LedgerRenderer {
     constructor(store, ctx) {
       this.store = store;
-      this.ctx = ctx; // { fmt, compact, signed, netClass, esc, dayLabel, keyOf, catKey, monthLabel, regions }
+      this.ctx = ctx; // { fmt, compact, esc, dayLabel, keyOf, catKey, monthLabel, regions }
     }
 
     // Month indexes the year actually has in Firebase, in calendar order.

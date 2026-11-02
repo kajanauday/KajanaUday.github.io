@@ -150,9 +150,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const digits = suffix === 'L' || suffix === 'Cr' ? 2 : suffix && value / size < 100 ? 1 : 0;
       return `${minor < 0 ? '−' : ''}${new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value / size)}${suffix}`;
     }
-    function signedMoney(minor, property, format = formatMoney) {
-      return `${minor > 0 ? '+' : minor < 0 ? '−' : ''}${format(Math.abs(minor), property)}`;
-    }
     function monthLabel(date = currentMonth) {
       return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
     }
@@ -207,10 +204,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
-      fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
+      fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
       sectionNote: (mKey, property, key) => store.sectionNote(...yearMonthOf(mKey), property, key),
-      today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; },
-      netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
+      flow: id => store.flow(id),
+      today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; }
     };
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
@@ -222,7 +219,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year, specialMode);
       const specialButton = document.querySelector('[data-ledger-special]');
       specialButton.setAttribute('aria-pressed', String(specialMode));
-      specialButton.title = specialMode ? `Back to ${year}` : 'Special cards and #hashtags';
+      specialButton.title = specialMode ? `Back to ${year}` : 'Special cards, flows and #hashtags';
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
@@ -2858,9 +2855,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = panelScope(mKey, property);
       const copy = { ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields };
       if (!scope.isEvent) delete copy.eventId;
+      // A flow follows one movement of money, so a copy is not part of it.
+      delete copy.flow;
       if (Array.isArray(item.tags)) copy.tags = [...item.tags];
       const notes = transactions.filter(note => note.parentId === item.id).map(note => ({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }));
-      notes.forEach(note => { if (!scope.isEvent) delete note.eventId; });
+      notes.forEach(note => {
+        if (!scope.isEvent) delete note.eventId;
+        delete note.flow;
+      });
       transactions.push(copy, ...notes);
       return 1;
     }
@@ -3035,6 +3037,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
           { icon: 'corner-down-right', label: 'Add note', run: add },
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
+          flowAction(target),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
           ...(isEvent ? [] : [{ icon: 'arrows-move', label: 'Move…', hint: 'another month, year or event', run: () => openMoveDialog(target.id) }]),
           { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
@@ -3043,6 +3046,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return write([
         { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
         { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
+        flowAction(target),
         { icon: 'trash', label: 'Delete note', danger: true, run: () => deleteRow({ deleteRow: 'note', entryId: target.id }) }
       ]);
     }
@@ -3274,6 +3278,202 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }, true);
       addEventListener('scroll', () => { if (!pop.hidden) placeTagPicker(); }, true);
     }
+    // ---- Flows: money that goes out and comes back, or comes in and goes back (a loan and its repayments, an advance and
+    // its refund). Any entries and notes, in any month, year or special card, can be put in one flow; the flow adds them up
+    // per currency, income in and expenses out (a custom section's amount by its sign), and shows what is still open:
+    // less in than out is still to receive, more in than out is still to pay back. A note whose entry is in the same flow
+    // is counted with its entry. Flows show on the ★ page, as a statement with a running balance. ----
+    const todayKey = () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; };
+    // Every flow with its rows (oldest first, each with its signed `value` and running balance per currency) and its
+    // totals per currency: { out, in, balance }.
+    function flowIndex() {
+      const flows = store.flowList().map(flow => ({ ...flow, rows: [], sums: new Map() }));
+      const byFlow = new Map(flows.map(flow => [flow.id, flow]));
+      const byId = new Map(transactions.map(item => [item.id, item]));
+      const members = transactions.filter(item => byFlow.has(item.flow) && !(item.parentId && byId.get(item.parentId)?.flow === item.flow));
+      if (!members.length) return flows;
+      const ids = new Set(members.map(item => item.id));
+      searchRows(null).filter(row => ids.has(row.id)).forEach(row => {
+        const flow = byFlow.get(byId.get(row.id).flow);
+        const value = row.type === 'income' ? row.amount : row.type === 'net' ? row.amount : -row.amount;
+        flow.rows.push({ ...row, value });
+      });
+      flows.forEach(flow => {
+        flow.rows.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        flow.rows.forEach(row => {
+          const sum = flow.sums.get(row.property) || { out: 0, in: 0, balance: 0 };
+          if (row.value < 0) sum.out -= row.value; else sum.in += row.value;
+          sum.balance += row.value;
+          row.running = sum.balance;
+          flow.sums.set(row.property, sum);
+        });
+        flow.sums = new Map([...flow.sums].sort(([a], [b]) => store.currencyKeys().indexOf(a) - store.currencyKeys().indexOf(b)));
+      });
+      return flows;
+    }
+    // What is still open in one currency, in words.
+    function flowStatus(balance, property, compact = false) {
+      const money = compact ? compactMoney : formatMoney;
+      if (!balance) return { text: 'Settled', tone: 'is-settled' };
+      return balance < 0 ? { text: `${money(-balance, property)} to receive`, tone: 'is-receive' } : { text: `${money(balance, property)} to pay back`, tone: 'is-pay' };
+    }
+    // The row menu's flow item: which flow the row is in, or an offer to put it in one.
+    function flowAction(target) {
+      const flow = store.flow(transactions.find(item => item.id === target.id)?.flow);
+      return { icon: 'arrows-exchange', label: flow ? `Flow: ${flow.name}…` : 'Add to a flow…', hint: flow ? 'change or remove' : 'a loan and its repayments, a refund…', run: () => openFlowPicker({ mode: 'assign', id: target.id }, target.row) };
+    }
+
+    // The flow picker: puts a row in a flow (an existing one, or a new one named and coloured here) or takes it out; in
+    // 'edit' mode it renames, recolours or deletes a flow.
+    const flowPop = { el: null, state: null, anchor: null, colour: 0 };
+    const FLOW_COLOURS = 8;
+    function drawFlowPicker() {
+      const { el, state } = flowPop;
+      const flows = flowIndex();
+      const editing = state.mode === 'edit' ? flows.find(flow => flow.id === state.flowId) : null;
+      const item = state.mode === 'assign' ? transactions.find(row => row.id === state.id) : null;
+      if (state.mode === 'assign' && !item) return closeFlowPicker();
+      if (state.mode === 'edit' && !editing) return closeFlowPicker();
+      const statusOf = flow => [...flow.sums].map(([property, sum]) => flowStatus(sum.balance, property, true).text).join(' · ') || 'No entries yet';
+      const swatches = `<div class="flow-swatches" role="radiogroup" aria-label="Colour">${Array.from({ length: FLOW_COLOURS }, (_, n) => `<button type="button" class="flow-swatch tag-c${n}" data-flow-colour="${n}" role="radio" aria-checked="${flowPop.colour === n}" aria-label="Colour ${n + 1}"></button>`).join('')}</div>`;
+      if (editing) {
+        el.innerHTML = `<p class="flow-pop-title"><b>Edit flow</b><small>${escapeHtml(statusOf(editing))}</small></p>
+          <form class="flow-pop-new" data-flow-form="edit" novalidate><input name="name" value="${escapeHtml(editing.name)}" maxlength="60" aria-label="Flow name" autocomplete="off" spellcheck="false">${swatches}
+          <p class="flow-pop-hint" aria-live="polite"></p>
+          <div class="flow-pop-actions"><button type="button" class="quiet-button is-danger" data-flow-delete><i class="ti ti-trash" aria-hidden="true"></i> Delete flow</button><button type="submit" class="primary-button">Save</button></div></form>`;
+        return;
+      }
+      const current = item.flow;
+      el.innerHTML = `<p class="flow-pop-title"><b>Flow</b><small>${escapeHtml(item.description)}</small></p>
+        <div class="flow-pop-list">${flows.map(flow => `<button type="button" class="flow-choice tag-c${flow.colour}" data-pick-flow="${escapeHtml(flow.id)}" aria-pressed="${flow.id === current}"><span class="flow-dot" aria-hidden="true"></span><span class="flow-choice-name">${escapeHtml(flow.name)}</span><small>${escapeHtml(statusOf(flow))}</small>${flow.id === current ? '<i class="ti ti-check" aria-hidden="true"></i>' : ''}</button>`).join('') || '<p class="flow-pop-empty">No flows yet: name one below.</p>'}</div>
+        <form class="flow-pop-new" data-flow-form="new" novalidate><input name="name" maxlength="60" placeholder="New flow, e.g. Loan to Ravi" aria-label="New flow name" autocomplete="off" spellcheck="false" enterkeyhint="done">${swatches}
+        <p class="flow-pop-hint" aria-live="polite"></p><div class="flow-pop-actions">${current ? '<button type="button" class="quiet-button" data-flow-remove>Take out of the flow</button>' : ''}<button type="submit" class="primary-button"><i class="ti ti-plus" aria-hidden="true"></i> Create and add</button></div></form>`;
+      // Names already in use (sections and subsections of every kind) as suggestions.
+      const input = el.querySelector('[data-flow-form="new"] input');
+      suggest.attach(input, {
+        items: () => {
+          const seen = new Set();
+          return [...sectionChoices([]), ...['expense', 'income', 'net'].flatMap(type => subsectionChoices(type, []))].filter(choice => !seen.has(nameKey(choice.name)) && seen.add(nameKey(choice.name)));
+        },
+        onPick: choice => { input.value = choice.name; input.focus(); }
+      });
+    }
+    function placeFlowPicker() {
+      const { el, anchor } = flowPop;
+      if (!anchor?.isConnected) return;
+      const r = anchor.getBoundingClientRect();
+      const below = innerHeight - r.bottom > el.offsetHeight + 12 || r.top < el.offsetHeight + 12;
+      el.style.top = `${Math.max(8, below ? r.bottom + 4 : r.top - el.offsetHeight - 4)}px`;
+      el.style.left = `${Math.max(8, Math.min(r.left + 24, innerWidth - el.offsetWidth - 8))}px`;
+    }
+    function openFlowPicker(state, anchor) {
+      if (isViewer) return viewOnly();
+      const flows = store.flowList();
+      const own = state.mode === 'edit' ? flows.find(flow => flow.id === state.flowId) : null;
+      // A new flow takes the first colour no flow has yet.
+      const used = new Set(flows.map(flow => flow.colour));
+      flowPop.colour = own ? own.colour : Array.from({ length: FLOW_COLOURS }, (_, n) => n).find(n => !used.has(n)) ?? flows.length % FLOW_COLOURS;
+      Object.assign(flowPop, { state, anchor });
+      flowPop.el.hidden = false;
+      drawFlowPicker();
+      placeFlowPicker();
+      if (!isPhone()) flowPop.el.querySelector('input')?.focus();
+    }
+    function closeFlowPicker() {
+      if (!flowPop.el || flowPop.el.hidden) return;
+      flowPop.el.hidden = true;
+      flowPop.state = null;
+      flowPop.anchor = null;
+      suggest.close();
+    }
+    function setRowFlow(id, flowId) {
+      const item = transactions.find(row => row.id === id);
+      if (!item) return;
+      if (flowId) item.flow = flowId; else delete item.flow;
+      saveTransactions();
+      closeFlowPicker();
+      renderLedger();
+      const flow = flowId && flowIndex().find(entry => entry.id === flowId);
+      showToast(flow ? `“${item.description}” is in the flow “${flow.name}”: ${[...flow.sums].map(([property, sum]) => flowStatus(sum.balance, property).text).join(' · ') || 'nothing open'}.` : `“${item.description}” is out of its flow.`);
+    }
+    function saveFlowForm(form) {
+      const input = form.elements.name;
+      const hint = form.querySelector('.flow-pop-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const { state } = flowPop;
+      const fail = text => {
+        hint.textContent = text;
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+      };
+      if (!name) return fail('Give the flow a name.');
+      const twin = store.flowList().find(flow => nameKey(flow.name) === nameKey(name) && flow.id !== state.flowId);
+      if (twin) return fail(`“${twin.name}” already exists${state.mode === 'assign' ? ': pick it above' : ''}.`);
+      if (state.mode === 'edit') {
+        trackSave(store.saveFlow(state.flowId, { name, colour: flowPop.colour }));
+        closeFlowPicker();
+        renderLedger();
+        return showToast(`Flow saved as “${name}”.`);
+      }
+      const year = store.year(currentMonth.getFullYear()) ? currentMonth.getFullYear() : Number(store.yearIds().pop());
+      const id = `fl${Date.now().toString(36)}`;
+      trackSave(store.saveFlow(id, { name, colour: flowPop.colour, created: todayKey() }, year));
+      setRowFlow(state.id, id);
+    }
+    async function deleteFlow(flowId) {
+      const flow = flowIndex().find(entry => entry.id === flowId);
+      if (!flow) return;
+      if (!window.confirm(`Delete the flow “${flow.name}”? Its ${flow.rows.length} ${flow.rows.length === 1 ? 'entry stays' : 'entries stay'} as ${flow.rows.length === 1 ? 'it is' : 'they are'}, only out of the flow.`)) return;
+      closeFlowPicker();
+      // Every year is loaded first, so no entry anywhere keeps the deleted flow.
+      try { await Promise.all(store.yearIds().map(year => store.ensureYear(Number(year)))); } catch (error) { return showToast('Could not load every month; the flow was not deleted.'); }
+      trackSave(store.deleteFlow(flowId));
+      renderLedger();
+      showToast(`Deleted the flow “${flow.name}”.`);
+    }
+    function setupFlowPicker() {
+      const el = document.createElement('div');
+      el.className = 'flow-pop';
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', 'Flow');
+      el.hidden = true;
+      document.body.append(el);
+      flowPop.el = el;
+      el.addEventListener('click', event => {
+        const colour = event.target.closest('[data-flow-colour]');
+        if (colour) {
+          flowPop.colour = Number(colour.dataset.flowColour);
+          return el.querySelectorAll('[data-flow-colour]').forEach(button => button.setAttribute('aria-checked', String(button === colour)));
+        }
+        const pick = event.target.closest('[data-pick-flow]');
+        if (pick) return setRowFlow(flowPop.state.id, pick.getAttribute('aria-pressed') === 'true' ? null : pick.dataset.pickFlow);
+        if (event.target.closest('[data-flow-remove]')) return setRowFlow(flowPop.state.id, null);
+        if (event.target.closest('[data-flow-delete]')) return deleteFlow(flowPop.state.flowId);
+      });
+      el.addEventListener('submit', event => {
+        event.preventDefault();
+        saveFlowForm(event.target);
+      });
+      el.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeFlowPicker();
+        }
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!el.hidden && !el.contains(event.target) && !event.target.closest?.('.suggest-box, [data-flow-edit]')) closeFlowPicker();
+      }, true);
+      addEventListener('scroll', () => { if (!el.hidden) placeFlowPicker(); }, true);
+      // A row's flow mark opens its flow on the ★ page (and does not open or close the row).
+      document.querySelector('#ledger').addEventListener('click', event => {
+        const mark = event.target.closest('[data-flow-mark]');
+        if (!mark) return;
+        event.preventDefault();
+        event.stopPropagation();
+        goToFlow(mark.dataset.flowMark);
+      }, true);
+    }
+
     // ---- Special cards and hashtags, on one page (the ★ tab). A legend on the left lists every special card, by year,
     // and every hashtag; the right side holds the cards, grouped by year, then the hashtags. Each group, each card and each
     // tag folds open or closed. The cards are the special events' own ledgers, drawn and edited exactly as before.
@@ -3282,6 +3482,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       try { return JSON.parse(localStorage.getItem(HUB_FOLDS_KEY) || '{}') || {}; } catch (error) { return {}; }
     })();
     const hubOpenTags = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-hub-tags`) || '[]'));
+    const hubOpenFlows = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-hub-flows`) || '[]'));
+    const saveHubFlows = () => sessionStorage.setItem(`${STORAGE_KEY}-hub-flows`, JSON.stringify([...hubOpenFlows]));
     let hubFilter = '';
     let hubLoading = false;
     // A group is open unless folded; the legend's groups start folded on a phone, where they sit above the cards.
@@ -3313,10 +3515,36 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           `<button type="button" class="search-row${row.kind === 'note' ? ' is-note' : ''}" ${jumpAttr(row.jump)}><span class="search-when">${escapeHtml(dayLabel(row.date))}</span><span class="search-main"><span class="search-desc">${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}${row.comment ? `<span class="search-comment">${LedgerSearch.markTags(escapeHtml(row.comment))}</span>` : ''}</span><span class="search-crumbs">${LedgerSearch.markTags(escapeHtml(row.crumbs))}${row.kind === 'note' && row.parent ? ` · in ${escapeHtml(row.parent)}` : ''}</span></span><strong class="search-amount ${row.type === 'net' ? (row.amount < 0 ? 'expense' : 'income') : row.type}">${hubMoney(row.type === 'net' ? Math.abs(row.amount) : row.amount, row.property)}<small>${escapeHtml(regions[row.property]?.code || '')}</small></strong></button>`).join('')}</section>`;
       }).join('');
     }
+    // A flow on the ★ page: its name and what is open per currency; opened, its statement oldest first: day, entry (and
+    // where it is), out, in and the balance after it, then the totals. A row opens where it lives.
+    function hubFlowBlock(flow) {
+      const open = hubOpenFlows.has(flow.id);
+      const dates = flow.rows.map(row => row.date);
+      const span = dates.length ? [dates[0], dates[dates.length - 1]].map(date => monthLabel(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1))) : [];
+      const when = span.length ? ` · ${span[0] === span[1] ? span[0] : `${span[0]} – ${span[1]}`}` : '';
+      const status = [...flow.sums].map(([property, sum]) => {
+        const state = flowStatus(sum.balance, property);
+        return `<span class="flow-status ${state.tone}"><b>${escapeHtml(regions[property]?.code || property)}</b><span class="expense" title="Out">${formatMoney(sum.out, property)}</span><span class="income" title="In">${formatMoney(sum.in, property)}</span><em>${state.tone === 'is-settled' ? '<i class="ti ti-circle-check" aria-hidden="true"></i>' : ''}${escapeHtml(state.text)}</em></span>`;
+      }).join('') || '<span class="flow-status is-empty"><em>No entries yet: right-click an entry, then Add to a flow</em></span>';
+      const jumpAttr = jump => `data-search-jump='${escapeHtml(JSON.stringify(jump))}'`;
+      const sheet = [...flow.sums.keys()].map(property => {
+        const own = flow.rows.filter(row => row.property === property);
+        const sum = flow.sums.get(property);
+        const code = escapeHtml(regions[property]?.code || property);
+        return `<div class="flow-sheet" role="table" aria-label="${escapeHtml(flow.name)} in ${code}">
+          <div class="flow-sheet-row is-head" role="row"><span role="columnheader">Day</span><span role="columnheader">Entry · ${code}</span><span role="columnheader">Out</span><span role="columnheader">In</span><span role="columnheader">Balance</span></div>
+          ${own.map(row => `<button type="button" class="flow-sheet-row" role="row" ${jumpAttr(row.jump)} title="Open it in ${escapeHtml(row.where)}"><span class="flow-day">${escapeHtml(dayLabel(row.date))} <small>${row.date.slice(0, 4)}</small></span><span class="flow-entry"><span>${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}</span><small>${escapeHtml(row.where)} · ${LedgerSearch.markTags(escapeHtml(row.crumbs))}</small></span><span class="expense">${row.value < 0 ? formatMoney(-row.value, property) : ''}</span><span class="income">${row.value > 0 ? formatMoney(row.value, property) : ''}</span><span class="flow-running">${hubMoney(row.running, property)}</span></button>`).join('')}
+          <div class="flow-sheet-row is-total" role="row"><span></span><span>${escapeHtml(flowStatus(sum.balance, property).text)}</span><span class="expense">${formatMoney(sum.out, property)}</span><span class="income">${formatMoney(sum.in, property)}</span><span class="flow-running">${hubMoney(sum.balance, property)}</span></div>
+        </div>`;
+      }).join('');
+      const edit = isViewer ? '' : `<button type="button" class="mini-btn flow-edit" data-flow-edit="${escapeHtml(flow.id)}" aria-label="Edit the flow ${escapeHtml(flow.name)}" title="Rename, recolour or delete"><i class="ti ti-pencil" aria-hidden="true"></i></button>`;
+      return `<details class="hub-flow tag-c${flow.colour}" data-hub-flow="${escapeHtml(flow.id)}"${open ? ' open' : ''}><summary>${chevron}<i class="ti ti-arrows-exchange flow-icon" aria-hidden="true"></i><b>${escapeHtml(flow.name)}</b><small>${flow.rows.length} ${flow.rows.length === 1 ? 'entry' : 'entries'}${when}</small>${edit}<span class="flow-statuses">${status}</span></summary><div class="hub-flow-body">${sheet}</div></details>`;
+    }
     function renderHub() {
       const events = store.eventList();
       const years = [...new Set(events.map(event => event.year))].sort((a, b) => b - a);
       const tags = hashtagIndex();
+      const flows = flowIndex();
       const state = renderState();
       const entriesIn = id => store.eventItems(id).filter(item => !item.parentId).length;
       const plural = (n, word) => `${n} ${n === 1 ? word : `${word}s`}`;
@@ -3324,9 +3552,16 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const cardLinks = years.map(year => `<p class="hub-legend-year">${year}</p>${events.filter(event => event.year === year).map(event =>
         `<button type="button" class="hub-link${expandedMonths.has(`ev:${event.id}`) ? ' is-open' : ''}" data-hub-card="${escapeHtml(event.id)}" title="Go to ${escapeHtml(event.name)}"><i class="ti ti-star-filled hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(event.name)}</span>${event.include ? '<i class="ti ti-calendar-share hub-link-mark" title="Also counts in its months" aria-label="Also counts in its months"></i>' : ''}<small>${entriesIn(event.id)}</small></button>`).join('')}`).join('');
       const tagLinks = tags.map(entry => `<button type="button" class="hub-link tag-c${LedgerSearch.tagColour(entry.tag)}" data-hub-tag-link="${escapeHtml(entry.tag)}" title="Go to #${escapeHtml(entry.tag)}"><i class="ti ti-hash hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(entry.tag)}</span><small>${entry.rows.length}</small></button>`).join('');
+      // Flows: each in its colour, with what is still open in its first currency.
+      const flowLinks = flows.map(flow => {
+        const [property, sum] = [...flow.sums][0] || [];
+        const state = property ? flowStatus(sum.balance, property, true) : { text: 'empty', tone: 'is-empty' };
+        return `<button type="button" class="hub-link tag-c${flow.colour}" data-hub-flow-link="${escapeHtml(flow.id)}" title="Go to the flow ${escapeHtml(flow.name)}"><i class="ti ti-arrows-exchange hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(flow.name)}</span><small class="flow-link-state ${state.tone}">${escapeHtml(state.text)}</small></button>`;
+      }).join('');
       const loading = hubLoading ? '<i class="ti ti-loader-2 search-spin hub-loading" aria-label="Loading every month"></i>' : '';
-      const legend = `<aside class="hub-legend" aria-label="Special cards and hashtags">
+      const legend = `<aside class="hub-legend" aria-label="Special cards, flows and hashtags">
         ${hubFold('legend:cards', 'hub-legend-group', `${chevron}<i class="ti ti-star-filled" aria-hidden="true"></i><span>Special cards</span><small>${events.length}</small>`, `<nav class="hub-links">${cardLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
+        ${hubFold('legend:flows', 'hub-legend-group', `${chevron}<i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>Flows</span><small>${flows.length}</small>`, `<nav class="hub-links">${flowLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
         ${hubFold('legend:tags', 'hub-legend-group', `${chevron}<i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span><small>${tags.length}</small>${loading}`, `<input class="hub-filter" type="search" data-hub-filter placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false" value="${escapeHtml(hubFilter)}"><nav class="hub-links">${tagLinks || `<p class="hub-empty">${hubLoading ? 'Loading…' : 'None yet'}</p>`}</nav>`)}
       </aside>`;
       const tools = events.length ? '<span class="hub-tools"><button type="button" class="quiet-button" data-hub-all="open" title="Open every card">Expand all</button><button type="button" class="quiet-button" data-hub-all="close" title="Close every card">Collapse all</button></span>' : '';
@@ -3341,7 +3576,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }).join('');
       const tagSection = hubFold('tags', 'hub-section', `${chevron}<h2><i class="ti ti-hash" aria-hidden="true"></i>Hashtags</h2><small>${plural(tags.length, 'tag')}</small>${loading}`,
         `<div class="hub-section-body">${tagBlocks || `<p class="ledger-none">${hubLoading ? 'Loading every month…' : 'No hashtags yet. Add one like #gold to an entry’s description or comment, or to a subsection’s name.'}</p>`}</div>`);
-      return `<div class="hub">${legend}<div class="hub-main">${cards}${tagSection}</div></div>`;
+      const flowSection = hubFold('flows', 'hub-section', `${chevron}<h2><i class="ti ti-arrows-exchange" aria-hidden="true"></i>Flows</h2><small>${plural(flows.length, 'flow')}</small>${loading}`,
+        `<div class="hub-section-body">${flows.map(hubFlowBlock).join('') || '<p class="ledger-none">No flows yet. Right-click (or double-tap) an entry or a note, then “Add to a flow…”: a loan and its repayments, an advance and its refund.</p>'}</div>`);
+      return `<div class="hub">${legend}<div class="hub-main">${cards}${flowSection}${tagSection}</div></div>`;
     }
     // The legend's filter hides the tags (in the legend and on the page) that do not match what is typed.
     function applyHubFilter(host) {
@@ -3381,6 +3618,16 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const block = document.querySelector(`.month-block[data-month-key="${CSS.escape(key)}"]`);
       hubReveal(block, block?.querySelector('.month-ledger-head'));
     }
+    function goToFlow(id) {
+      setSpecialMode(true);
+      setHubFold('flows', true);
+      hubOpenFlows.add(id);
+      saveHubFlows();
+      renderLedger();
+      const block = document.querySelector(`.hub-flow[data-hub-flow="${CSS.escape(id)}"]`);
+      if (!block) return showToast('That flow is gone.');
+      hubReveal(block, block.querySelector(':scope > summary'));
+    }
     function goToTag(tag) {
       setSpecialMode(true);
       setHubFold('tags', true);
@@ -3400,6 +3647,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const el = event.target;
         if (!(el instanceof HTMLDetailsElement)) return;
         if (el.dataset.hubFold) return setHubFold(el.dataset.hubFold, el.open);
+        if (el.dataset.hubFlow) {
+          if (el.open) hubOpenFlows.add(el.dataset.hubFlow); else hubOpenFlows.delete(el.dataset.hubFlow);
+          return saveHubFlows();
+        }
         const tag = el.dataset.hubTag;
         if (tag === undefined) return;
         if (el.open) {
@@ -3432,12 +3683,24 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.stopPropagation();
           return goToCard(card.dataset.hubCard);
         }
+        const flowLink = event.target.closest('[data-hub-flow-link]');
+        if (flowLink) {
+          event.stopPropagation();
+          return goToFlow(flowLink.dataset.hubFlowLink);
+        }
+        const flowEdit = event.target.closest('[data-flow-edit]');
+        if (flowEdit) {
+          // In a flow's heading: the button acts, the heading does not fold.
+          event.preventDefault();
+          event.stopPropagation();
+          return openFlowPicker({ mode: 'edit', flowId: flowEdit.dataset.flowEdit }, flowEdit);
+        }
         const tagLink = event.target.closest('[data-hub-tag-link]');
         if (tagLink) {
           event.stopPropagation();
           return goToTag(tagLink.dataset.hubTagLink);
         }
-        const row = event.target.closest('.hub-tag [data-search-jump]');
+        const row = event.target.closest('.hub-tag [data-search-jump], .hub-flow [data-search-jump]');
         if (row) {
           event.stopPropagation();
           openSearchResult(JSON.parse(row.dataset.searchJump));
@@ -3687,6 +3950,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupMonthNotes();
     setupHub();
     setupTagPicker();
+    setupFlowPicker();
     setupRowMenu();
     setupEntryDialog();
     setupLedger();

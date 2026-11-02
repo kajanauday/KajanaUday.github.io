@@ -20,6 +20,9 @@
   const toneOf = (type, amount) => (type === 'net' ? (Number(amount) < 0 ? 'expense' : 'income') : type);
   // A part's share of a whole, in whole percent (sizes compared, so a custom section's negative amounts share too).
   const shareOf = (part, whole) => (whole ? Math.round(Math.abs(part) / Math.abs(whole) * 100) : 0);
+  // In the year card, how many months a subsection (or a section) has entries in: a small grey ×N after its name.
+  const MonthsUsed = count => (!count ? '' : `<small class="ledger-months-used" title="Has entries in ${count} ${count === 1 ? 'month' : 'months'} of the year">×${count}</small>`);
+  const monthsOf = categories => new Set(categories.flatMap(category => (category._meta.months || []).map(item => item.month))).size;
   // A custom section's amounts show without a minus sign: red already says it is negative. Editing still shows the sign.
   const amountText = (type, amount, property, ctx) => ctx.fmt(type === 'net' ? Math.abs(Number(amount)) : amount, property);
 
@@ -100,6 +103,11 @@
     return ` data-tags="${ctx.esc(tags.map(tag => `#${tag}`).join(' '))}" style="--tag-line: linear-gradient(${stops})"`;
   };
   // #hashtags in a description or comment show as tags; a click opens that tag's summary.
+  // A row in a flow carries a small ⇄ in the flow's colour before its description; a click opens the flow.
+  const FlowMark = (id, ctx) => {
+    const flow = id && ctx.flow ? ctx.flow(id) : null;
+    return flow ? `<span class="flow-mark tag-c${flow.colour}" data-flow-mark="${ctx.esc(id)}" title="Flow: ${ctx.esc(flow.name)} · click to open it"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span class="sr-only">Flow ${ctx.esc(flow.name)}</span></span>` : '';
+  };
   const tagged = (text, ctx) => (global.LedgerSearch ? global.LedgerSearch.markTags(ctx.esc(text)) : ctx.esc(text));
   const descAndComment = (description, comment, ctx, lead = '') => (comment
     ? `<span class="ledger-entry-desc">${lead}${tagged(description, ctx)}</span><span class="ledger-entry-place">${tagged(comment, ctx)}</span>`
@@ -108,7 +116,7 @@
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
-    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx)}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx, FlowMark(sub.flow, ctx))}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
@@ -125,7 +133,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx))}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -183,7 +191,7 @@
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-name">${ctx.esc(name)}</span>${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i>${inYear ? `<span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${MonthsUsed(category._meta.months.length)}</span>` : `<span class="ledger-cat-name">${ctx.esc(name)}</span>`}${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${sortable ? SortButtons(key, order, name, ctx) : ''}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -237,7 +245,7 @@
       const rows = categoryRows(own, sectionTotal);
       if (e?.kind === 'year-section' && e.month === mKey && e.property === property && e.type === type && e.group === name) return `<div class="ledger-year-group is-renaming">${YearSectionForm(name)}${rows}</div>`;
       const renamable = !section._meta.event;
-      return `<details class="ledger-year-group" data-key="${ctx.esc(`${typeKey}|${name}`)}" open><summary${renamable ? ` data-year-section="${ctx.esc(name)}"` : ''} title="${ctx.esc(name)}${renamable ? ' · double-click to rename it in every month' : ''}"><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-year-group-name">${ctx.esc(name)}</span><span class="ledger-share" title="Share of ${type === 'income' ? 'Income' : 'Expenses'}">${shareOf(sectionTotal, sumOf(categories))}%</span><strong class="${toneOf(type, sectionTotal)}">${amountText(type, sectionTotal, property, ctx)}</strong></summary><div>${rows}</div></details>`;
+      return `<details class="ledger-year-group" data-key="${ctx.esc(`${typeKey}|${name}`)}" open><summary${renamable ? ` data-year-section="${ctx.esc(name)}"` : ''} title="${ctx.esc(name)}${renamable ? ' · double-click to rename it in every month' : ''}"><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-year-group-name">${ctx.esc(name)}</span>${MonthsUsed(monthsOf(own.map(item => item.category)))}</span><span class="ledger-share" title="Share of ${type === 'income' ? 'Income' : 'Expenses'}">${shareOf(sectionTotal, sumOf(categories))}%</span><strong class="${toneOf(type, sectionTotal)}">${amountText(type, sectionTotal, property, ctx)}</strong></summary><div>${rows}</div></details>`;
     }).join('');
     const l = state.ledgerDraft;
     const subForm = l && l.month === mKey && l.property === property && sections.some(section => section._meta.id === l.section)
@@ -253,13 +261,6 @@
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
     return `<details class="ledger-type-section${heading ? ' is-named' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${isEventKey(mKey) || isYearKey(mKey) ? '' : SectionNoteButton(mKey, property, ExpenseStore.sectionNoteKey(type, heading?.section), heading ? heading.title : title, ctx)}${type === 'net' && heading && !isYearKey(mKey) ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>` : ''}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${heading ? 'Nothing yet. Press and hold the name above to add a subsection.' : 'Nothing recorded'}</p>`)}</div></details>`;
-  };
-
-  // The year card's own figures under its currency header: what the year added (income minus expenses), the share of
-  // income kept, and the balance it opened on.
-  const YearStats = (m, property, ctx) => {
-    const saved = m.income ? `${Math.round(m.net / m.income * 100)}%` : '—';
-    return `<p class="ledger-year-stats"><span title="Income minus expenses">Net <b class="${ctx.netClass(m.net)}">${ctx.signed(m.net, property)}</b></span><span title="Net as a share of income">Saved <b>${saved}</b></span><span title="Balance the year opened on">Opening <b>${ctx.fmt(m.opening, property)}</b></span></p>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -294,7 +295,7 @@
           <h3>${m.code}</h3>
           <div class="ledger-totals">${totals}</div>
         </header>
-        ${isYearKey(mKey) ? YearStats(m, property, ctx) : ''}<div class="ledger-sections">${sections}${sectionForm}</div>
+        <div class="ledger-sections">${sections}${sectionForm}</div>
       </section>`;
   };
 

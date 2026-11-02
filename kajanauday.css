@@ -1152,11 +1152,6 @@
 .month-block.is-year .ledger-entries { --entry-cols: 54px minmax(0, 1.7fr) minmax(0, 0.73fr) 108px; }
 .month-block.is-year .ledger-entry time { white-space: nowrap; }
 @media (max-width: 700px) { .month-block.is-year .ledger-entries { --entry-cols: 50px minmax(0, 1.35fr) minmax(0, 1fr) 88px; } }
-/* The year card's own figures under each currency header: net, share saved, opening balance. */
-.ledger-year-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; padding: 6px 0 2px; color: var(--muted); font-size: 12px; }
-.ledger-year-stats b { margin-left: 4px; color: var(--ink); font: 500 13px var(--mono); font-variant-numeric: tabular-nums; }
-.ledger-year-stats b.income { color: var(--income); }
-.ledger-year-stats b.expense { color: var(--expense); }
 /* A share (of the section, or of Income / Expenses), quiet beside the amount. */
 .ledger-share { color: var(--muted); font: 400 11.5px var(--mono); text-align: right; }
 /* Income or Expenses holding several sections: each section's own heading, with its share and total. */
@@ -1197,3 +1192,89 @@
   .ledger-item { grid-template-columns: minmax(0, 1fr) 36px minmax(64px, auto); }
   .ledger-item .ledger-share-bar, .ledger-item .ledger-item-count { display: none; }
 }
+/* Flows: money that goes out and comes back (or in and back out). A row in a flow carries a small ⇄ in the flow's
+   colour; the ★ page lists each flow with what is still open, and opens into a statement with a running balance. */
+.flow-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; background: color-mix(in srgb, var(--tone) 22%, transparent); color: var(--tone); cursor: pointer; font-size: 11px; vertical-align: -2px; }
+.flow-mark:hover { background: color-mix(in srgb, var(--tone) 40%, transparent); }
+.flow-pop { position: fixed; z-index: 60; width: min(340px, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 34px rgba(0, 0, 0, .38); }
+.flow-pop[hidden] { display: none; }
+.flow-pop-title { display: grid; gap: 1px; margin: 0 0 8px; }
+.flow-pop-title b { color: var(--ink); font: 700 13px var(--display); }
+.flow-pop-title small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.flow-pop-list { display: grid; gap: 2px; max-height: 210px; overflow-y: auto; margin-bottom: 8px; overscroll-behavior: contain; }
+.flow-pop-empty { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.flow-choice { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 14px; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; font: 500 13px var(--display); text-align: left; }
+.flow-choice:hover, .flow-choice:focus-visible { outline: 0; background: var(--hover); }
+.flow-choice[aria-pressed="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 12%, transparent); }
+.flow-choice small { color: var(--muted); font: 400 11px var(--mono); white-space: nowrap; }
+.flow-choice i { color: var(--tone); }
+.flow-choice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tone); }
+.flow-pop-new { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.flow-pop-new input { box-sizing: border-box; width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font: 400 13px var(--display); }
+.flow-pop-new input:focus { border-color: var(--brand); outline: 0; }
+.flow-pop-new input[aria-invalid="true"] { border-color: var(--expense); }
+.flow-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.flow-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: var(--tone); background-clip: content-box; cursor: pointer; }
+.flow-swatch[aria-checked="true"] { border-color: var(--tone); padding: 2px; }
+.flow-swatch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.flow-pop-hint { margin: 0; color: var(--expense); font-size: 11.5px; }
+.flow-pop-hint:empty { display: none; }
+.flow-pop-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.flow-pop-actions .quiet-button, .flow-pop-actions .primary-button { min-height: 30px; padding: 0 12px; font-size: 12.5px; }
+.flow-pop-actions .is-danger { margin-right: auto; color: var(--expense); }
+/* The ★ page: one block per flow, edged in its colour. */
+.hub-flow { border: 1px solid var(--line-soft); border-left: 3px solid var(--tone); border-radius: 8px; background: var(--surface); scroll-margin-top: 64px; }
+.hub-flow + .hub-flow { margin-top: 6px; }
+.hub-flow > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 9px 12px; border-radius: 8px; }
+.hub-flow > summary.is-search-hit { animation: search-hit 2.6s ease-out; }
+.hub-flow > summary b { color: var(--tone); font: 700 14.5px var(--display); }
+.hub-flow > summary small { color: var(--muted); font-size: 11.5px; }
+.hub-flow .flow-icon { color: var(--tone); }
+.flow-edit { width: 26px; height: 26px; margin-left: -4px; opacity: .55; }
+.flow-edit:hover, .flow-edit:focus-visible { opacity: 1; }
+.flow-statuses { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-left: auto; }
+.flow-status { display: inline-flex; align-items: baseline; gap: 8px; font: 500 12.5px var(--mono); }
+.flow-status b { color: var(--muted); font: 600 10px var(--mono); }
+.flow-status .income { color: var(--income); } .flow-status .expense { color: var(--expense); }
+.flow-status em { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 99px; font: 600 11.5px var(--display); font-style: normal; }
+.flow-status.is-receive em { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-strong); }
+.flow-status.is-pay em { background: color-mix(in srgb, var(--expense) 16%, transparent); color: var(--expense); }
+.flow-status.is-settled em { background: color-mix(in srgb, var(--income) 16%, transparent); color: var(--income); }
+.flow-status.is-empty em { padding: 0; color: var(--muted); font-weight: 400; }
+.flow-link-state { flex: none; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-legend { overflow-x: hidden; }
+.flow-link-state.is-settled { color: var(--income); }
+.flow-link-state.is-pay { color: var(--expense); }
+.flow-link-state.is-receive { color: var(--brand); }
+.hub-flow-body { display: grid; gap: 10px; padding: 0 0 6px; border-top: 1px solid var(--line-soft); }
+.flow-sheet { display: grid; }
+.flow-sheet-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(70px, auto) minmax(70px, auto) minmax(84px, auto); align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 5px 14px; border: 0; border-top: 1px solid var(--line-soft); background: none; color: var(--ink); font: inherit; text-align: left; }
+button.flow-sheet-row { cursor: pointer; }
+button.flow-sheet-row:hover, button.flow-sheet-row:focus-visible { outline: 0; background: var(--hover); }
+.flow-sheet-row > span:nth-child(n+3) { font: 400 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.flow-sheet-row .income { color: var(--income); } .flow-sheet-row .expense { color: var(--expense); }
+.flow-sheet-row.is-head { min-height: 28px; border-top: 0; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.flow-sheet-row.is-head > span:nth-child(n+3) { font: 600 10px var(--mono); }
+.flow-sheet-row.is-total { border-top: 1px solid var(--line); font-weight: 600; }
+.flow-sheet-row.is-total > span:nth-child(2) { color: var(--muted); font-size: 12.5px; }
+.flow-day { color: var(--muted); font: 400 12px var(--mono); white-space: nowrap; }
+.flow-day small { color: var(--faint); font-size: 10px; }
+.flow-entry { display: grid; min-width: 0; }
+.flow-entry > span { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.flow-entry > small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.flow-running { color: var(--ink); font-weight: 500; }
+@media (max-width: 700px) {
+  .flow-statuses { width: 100%; margin-left: 0; }
+  .flow-sheet-row { grid-template-columns: 50px minmax(0, 1fr) minmax(64px, auto); gap: 6px 8px; padding: 6px 10px; }
+  .flow-sheet-row > span:nth-child(3), .flow-sheet-row > span:nth-child(4) { grid-row: 2; }
+  .flow-sheet-row > span:nth-child(3) { grid-column: 2; text-align: left; }
+  .flow-sheet-row > span:nth-child(4) { grid-column: 3; }
+  .flow-sheet-row > span:nth-child(5) { grid-column: 3; grid-row: 1; }
+  .flow-sheet-row.is-head > span:nth-child(3), .flow-sheet-row.is-head > span:nth-child(4) { display: none; }
+  .flow-day small { display: none; }
+}
+/* The year card: after a subsection's (or section's) name, the number of months it has entries in, small and grey. */
+.ledger-cat-title { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+.ledger-cat-title > span { min-width: 0; }
+.ledger-months-used { flex: none; color: var(--faint); font: 400 10.5px var(--mono); letter-spacing: 0; text-transform: none; }
