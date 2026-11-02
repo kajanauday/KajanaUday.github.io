@@ -1529,8 +1529,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const amount = previous === null ? 'shown after saving' : `${previous < 0 ? '−' : '+'}${formatMoney(Math.abs(previous), key)} as ${previous < 0 ? 'an expense' : 'income'}`;
         const entries = totals.entries;
         return `<div class="month-currency${active ? '' : ' is-off'}">
-          <label class="check-field is-strong"><input type="checkbox" data-month-active="${key}"${active ? ' checked' : ''}${active && entries ? ' disabled' : ''}><span><span class="cur-dot ${region.color}"></span>${escapeHtml(region.code)} · ${escapeHtml(region.name)}${active && entries ? ` <em>${entries} ${entries === 1 ? 'entry' : 'entries'} — remove them to turn ${escapeHtml(region.code)} off</em>` : ''}</span></label>
-          ${active ? `<label class="check-field"><input type="checkbox" data-month-carry="${key}"${carry ? ' checked' : ''}><span>Bring in the balance from ${escapeHtml(from)} <em>${escapeHtml(amount)}</em></span></label>` : ''}
+          <label class="check-field is-strong"><input type="checkbox" name="month-active-${key}" data-month-active="${key}"${active ? ' checked' : ''}${active && entries ? ' disabled' : ''}><span><span class="cur-dot ${region.color}"></span>${escapeHtml(region.code)} · ${escapeHtml(region.name)}${active && entries ? ` <em>${entries} ${entries === 1 ? 'entry' : 'entries'} — remove them to turn ${escapeHtml(region.code)} off</em>` : ''}</span></label>
+          ${active ? `<label class="check-field"><input type="checkbox" name="month-carry-${key}" data-month-carry="${key}"${carry ? ' checked' : ''}><span>Bring in the balance from ${escapeHtml(from)} <em>${escapeHtml(amount)}</em></span></label>` : ''}
         </div>`;
       }).join('');
       renderMonthSections();
@@ -1559,7 +1559,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           box.dataset.sectionIndex = index;
           const entries = items(key).filter(item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category)))).length;
           box.innerHTML = `<div class="config-section-head">
-              <input class="config-section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40">
+              <input class="config-section-name" name="section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40">
               ${section.type === 'net' ? '' : `<div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>`}
               <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
               <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -1623,7 +1623,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return [...calc.lines, calc.income.mode !== 'off' ? calc.income.formula : '', calc.expense.mode !== 'off' ? calc.expense.formula : ''].some(text => /\bE\d+\b/i.test(text));
     }
     // An equation field: the input over a copy of its text, coloured by what each name stands for.
-    const calcField = (attrs, value, placeholder) => `<span class="calc-field"><span class="calc-hl" aria-hidden="true"></span><input ${attrs} value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" autocapitalize="off" spellcheck="false"></span>`;
+    const calcField = (attrs, value, placeholder) => `<span class="calc-field"><span class="calc-hl" aria-hidden="true"></span><input ${attrs} name="calc-field" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" autocapitalize="off" spellcheck="false"></span>`;
     function paintField(input) {
       const { draft } = setupState;
       const ids = new Map(draft.vars.map(item => [item.id, colorOf(item.id)]));
@@ -1651,7 +1651,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const options = mode => [['count', 'Add to total'], ['show', 'Show only'], ['off', 'Off']].map(([value, label]) => `<option value="${value}"${value === mode ? ' selected' : ''}>${label}</option>`).join('');
       document.querySelector('#calc-out').innerHTML = SIDES.map(([type, label]) => `<div class="calc-row is-out ${type}" data-side="${type}">
           <b>${label}</b>
-          <select data-side-mode="${type}" aria-label="${label}: add to the month">${options(draft[type].mode)}</select>
+          <select name="side-mode-${type}" data-side-mode="${type}" aria-label="${label}: add to the month">${options(draft[type].mode)}</select>
           ${calcField(`data-calc-out="${type}" aria-label="${label} for the month"`, draft[type].formula, type === 'income' ? 'e.g. GI (empty: nothing)' : 'e.g. GE (empty: nothing)')}
           <output class="calc-value"></output>
           <p class="calc-error" hidden></p>
@@ -1795,7 +1795,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const pop = document.createElement('div');
       pop.className = 'month-note-pop';
       pop.hidden = true;
-      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" wrap="off" spellcheck="false" aria-label="Notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
+      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" name="section-note" wrap="off" spellcheck="false" aria-label="Notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
       document.body.append(pop);
       const view = pop.querySelector('.month-note-view');
       const text = pop.querySelector('.month-note-text');
@@ -2018,7 +2018,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function chipInput({ values, label, placeholder, countFor = () => 0, onChange = () => {}, suggestions = null }) {
       const root = document.createElement('div');
       root.className = 'chip-field';
-      root.innerHTML = `<div class="chip-input"><input type="text" aria-label="${escapeHtml(label)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div><p class="chip-hint" aria-live="polite"></p>`;
+      root.innerHTML = `<div class="chip-input"><input type="text" name="chip-input" aria-label="${escapeHtml(label)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></div><p class="chip-hint" aria-live="polite"></p>`;
       const box = root.querySelector('.chip-input');
       const input = root.querySelector('input');
       const hint = root.querySelector('.chip-hint');
@@ -2090,9 +2090,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const carryNote = !previousYear ? `no ${year - 1} in Firebase` : `${closing < 0 ? '−' : '+'}${formatMoney(Math.abs(closing), key)} as ${closing < 0 ? 'an expense' : 'income'}`;
         return `<div class="config-currency${used ? '' : ' is-off'}">
           <span class="config-cur-code"><span class="cur-dot ${region.color}"></span>${escapeHtml(region.code)}</span>
-          <label class="money-field"><select data-config-from="${key}" aria-label="${escapeHtml(region.code)} starts">${['', ...MONTH_NAMES].map(name => `<option value="${name}"${draft.from[key] === name ? ' selected' : ''}>${name ? `from ${name}` : 'Not used this year'}</option>`).join('')}</select></label>
-          ${used ? `<label class="check-field"><input type="checkbox" data-config-carry-in="${key}"${draft.carryIn[key] ? ' checked' : ''}${previousYear ? '' : ' disabled'}><span>Bring in ${year - 1} closing <em>${escapeHtml(carryNote)}</em></span></label>
-          <label class="money-field${draft.carryIn[key] ? ' is-disabled' : ''}"><span>Opening</span><input type="number" step="1" inputmode="numeric" value="${escapeHtml(draft.openings[key])}" data-config-money="openings" data-property="${key}" aria-label="${escapeHtml(region.code)} opening balance"${draft.carryIn[key] ? ' disabled' : ''}></label>` : ''}
+          <label class="money-field"><select name="from-${key}" data-config-from="${key}" aria-label="${escapeHtml(region.code)} starts">${['', ...MONTH_NAMES].map(name => `<option value="${name}"${draft.from[key] === name ? ' selected' : ''}>${name ? `from ${name}` : 'Not used this year'}</option>`).join('')}</select></label>
+          ${used ? `<label class="check-field"><input type="checkbox" name="carry-in-${key}" data-config-carry-in="${key}"${draft.carryIn[key] ? ' checked' : ''}${previousYear ? '' : ' disabled'}><span>Bring in ${year - 1} closing <em>${escapeHtml(carryNote)}</em></span></label>
+          <label class="money-field${draft.carryIn[key] ? ' is-disabled' : ''}"><span>Opening</span><input type="number" name="opening-${key}" step="1" inputmode="numeric" value="${escapeHtml(draft.openings[key])}" data-config-money="openings" data-property="${key}" aria-label="${escapeHtml(region.code)} opening balance"${draft.carryIn[key] ? ' disabled' : ''}></label>` : ''}
         </div>`;
       }).join('') || '<span class="config-muted">No currencies in Firebase</span>';
     }
@@ -2139,10 +2139,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const entries = row.id ? store.eventItems(row.id).filter(item => !item.parentId).length : 0;
         return `<div class="config-event" data-event-index="${index}">
           <i class="ti ti-star-filled" aria-hidden="true"></i>
-          <input class="config-event-name" value="${escapeHtml(row.name)}" placeholder="Event name, e.g. Marriage" aria-label="Event name" maxlength="60" autocomplete="off">
+          <input class="config-event-name" name="event-name" value="${escapeHtml(row.name)}" placeholder="Event name, e.g. Marriage" aria-label="Event name" maxlength="60" autocomplete="off">
           <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
           ${eventCurrencyChips(row, year)}
-          <label class="event-switch" title="Also count this event's entries in the months they happened"><input type="checkbox" data-event-include${row.include ? ' checked' : ''}><span class="event-switch-track" aria-hidden="true"></span><span>Show in months</span></label>
+          <label class="event-switch" title="Also count this event's entries in the months they happened"><input type="checkbox" name="event-include" data-event-include${row.include ? ' checked' : ''}><span class="event-switch-track" aria-hidden="true"></span><span>Show in months</span></label>
           <button type="button" class="icon-button config-remove" data-remove-event aria-label="Delete ${escapeHtml(row.name || 'event')}" title="Delete event"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>`;
       }).join('');
@@ -2584,7 +2584,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         renderLedger();
       };
       const add = () => helpers.triggerLongPress(target.row);
-      const noteButton = target.kind === 'section' ? target.row?.querySelector?.('[data-month-note]') : null;
+      const noteButton = target.kind === 'section' ? target.row?.parentElement?.querySelector?.(':scope > div > .ledger-block-tools [data-month-note]') : null;
       const fits = pasteFits(target);
       const pasteAction = fits ? [{ icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
@@ -2612,7 +2612,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
-          ...(noteButton ? [{ icon: 'notes', label: 'Notes', read: true, run: () => noteButton.click() }] : []),
+          ...(noteButton ? [{ icon: 'notes', label: 'Notes', read: true, run: () => { target.row.parentElement.open = true; noteButton.click(); } }] : []),
           ...(target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
           ...(custom ? [{ icon: 'trash', label: 'Delete section', danger: true, run: () => deleteSection(target) }] : [])
         ]);
@@ -2839,7 +2839,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const pop = document.createElement('div');
       pop.className = 'tag-pop';
       pop.hidden = true;
-      pop.innerHTML = '<p class="tag-pop-title"></p><div class="tag-pop-list"></div><input type="text" placeholder="New tag, then Enter" aria-label="New tag" autocomplete="off" spellcheck="false" enterkeyhint="done"><p class="tag-pop-hint">Click a tag to add it · × to remove · Esc to close</p>';
+      pop.innerHTML = '<p class="tag-pop-title"></p><div class="tag-pop-list"></div><input type="text" name="new-tag" placeholder="New tag, then Enter" aria-label="New tag" autocomplete="off" spellcheck="false" enterkeyhint="done"><p class="tag-pop-hint">Click a tag to add it · × to remove · Esc to close</p>';
       document.body.append(pop);
       tagPicker.pop = pop;
       const input = pop.querySelector('input');
@@ -3130,8 +3130,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           <div class="flow-sheet-row is-total" role="row"><span></span><span>${escapeHtml(flowStatus(sum.balance, property).text)}</span><span class="expense">${formatMoney(sum.out, property)}</span><span class="income">${formatMoney(sum.in, property)}</span><span class="flow-running">${hubMoney(sum.balance, property)}</span></div>
         </div>`;
       }).join('');
-      const edit = isViewer ? '' : `<button type="button" class="mini-btn flow-edit" data-flow-edit="${escapeHtml(flow.id)}" aria-label="Edit the flow ${escapeHtml(flow.name)}" title="Rename, recolour or delete"><i class="ti ti-pencil" aria-hidden="true"></i></button>`;
-      return `<details class="hub-flow tag-c${flow.colour}" data-hub-flow="${escapeHtml(flow.id)}"${open ? ' open' : ''}><summary>${chevron}<i class="ti ti-arrows-exchange flow-icon" aria-hidden="true"></i><b>${escapeHtml(flow.name)}</b><small>${flow.rows.length} ${flow.rows.length === 1 ? 'entry' : 'entries'}${when}</small>${edit}<span class="flow-statuses">${status}</span></summary><div class="hub-flow-body">${sheet}</div></details>`;
+      const edit = isViewer ? '' : `<div class="flow-tools"><button type="button" class="quiet-button flow-edit" data-flow-edit="${escapeHtml(flow.id)}" aria-label="Edit the flow ${escapeHtml(flow.name)}" title="Rename, recolour or delete"><i class="ti ti-pencil" aria-hidden="true"></i> Edit flow</button></div>`;
+      return `<details class="hub-flow tag-c${flow.colour}" data-hub-flow="${escapeHtml(flow.id)}"${open ? ' open' : ''}><summary>${chevron}<i class="ti ti-arrows-exchange flow-icon" aria-hidden="true"></i><b>${escapeHtml(flow.name)}</b><small>${flow.rows.length} ${flow.rows.length === 1 ? 'entry' : 'entries'}${when}</small><span class="flow-statuses">${status}</span></summary><div class="hub-flow-body">${edit}${sheet}</div></details>`;
     }
     function renderHub() {
       const events = store.eventList();
@@ -3155,11 +3155,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const legend = `<aside class="hub-legend" aria-label="Special cards, flows and hashtags">
         ${hubFold('legend:cards', 'hub-legend-group', `${chevron}<i class="ti ti-star-filled" aria-hidden="true"></i><span>Special cards</span><small>${events.length}</small>`, `<nav class="hub-links">${cardLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
         ${hubFold('legend:flows', 'hub-legend-group', `${chevron}<i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>Flows</span><small>${flows.length}</small>`, `<nav class="hub-links">${flowLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
-        ${hubFold('legend:tags', 'hub-legend-group', `${chevron}<i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span><small>${tags.length}</small>${loading}`, `<input class="hub-filter" type="search" data-hub-filter placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false" value="${escapeHtml(hubFilter)}"><nav class="hub-links">${tagLinks || `<p class="hub-empty">${hubLoading ? 'Loading…' : 'None yet'}</p>`}</nav>`)}
+        ${hubFold('legend:tags', 'hub-legend-group', `${chevron}<i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span><small>${tags.length}</small>${loading}`, `<input class="hub-filter" type="search" name="hashtag-filter" data-hub-filter placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false" value="${escapeHtml(hubFilter)}"><nav class="hub-links">${tagLinks || `<p class="hub-empty">${hubLoading ? 'Loading…' : 'None yet'}</p>`}</nav>`)}
       </aside>`;
-      const tools = events.length ? '<span class="hub-tools"><button type="button" class="quiet-button" data-hub-all="open" title="Open every card">Expand all</button><button type="button" class="quiet-button" data-hub-all="close" title="Close every card">Collapse all</button></span>' : '';
-      const cards = hubFold('cards', 'hub-section', `${chevron}<h2><i class="ti ti-star-filled" aria-hidden="true"></i>Special cards</h2><small>${plural(events.length, 'card')}</small>${tools}`,
-        `<div class="hub-section-body">${years.map(year => {
+      const tools = events.length ? '<div class="hub-tools"><button type="button" class="quiet-button" data-hub-all="open" title="Open every card">Expand all</button><button type="button" class="quiet-button" data-hub-all="close" title="Close every card">Collapse all</button></div>' : '';
+      const cards = hubFold('cards', 'hub-section', `${chevron}<h2><i class="ti ti-star-filled" aria-hidden="true"></i>Special cards</h2><small>${plural(events.length, 'card')}</small>`,
+        `<div class="hub-section-body">${tools}${years.map(year => {
           const ofYear = events.filter(event => event.year === year);
           return hubFold(`year:${year}`, 'hub-year', `${chevron}<span>${year}</span><small>${plural(ofYear.length, 'card')}</small>`, `<div class="month-group">${ofYear.map(event => ledgerRenderer.eventBlock(event, year, state)).join('')}</div>`);
         }).join('') || '<p class="ledger-none">No special cards yet. Add one in Year settings.</p>'}</div>`);
@@ -3263,7 +3263,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (!specialMode) return;
         const all = event.target.closest('[data-hub-all]');
         if (all) {
-          // In a heading: the buttons act, the heading does not fold.
           event.preventDefault();
           event.stopPropagation();
           store.eventList().forEach(item => (all.dataset.hubAll === 'open' ? expandedMonths.add(`ev:${item.id}`) : expandedMonths.delete(`ev:${item.id}`)));
@@ -3283,7 +3282,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         }
         const flowEdit = event.target.closest('[data-flow-edit]');
         if (flowEdit) {
-          // In a flow's heading: the button acts, the heading does not fold.
           event.preventDefault();
           event.stopPropagation();
           return openFlowPicker({ mode: 'edit', flowId: flowEdit.dataset.flowEdit }, flowEdit);
