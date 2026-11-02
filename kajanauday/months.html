@@ -18,15 +18,15 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261103a">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261104b">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261103a" defer></script>
   <script src="../data-layer.js?v=20261101b" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261101b" defer></script>
-  <script src="../renderer-engine.js?v=20261027a" defer></script>
-  <script src="../kajanauday.js?v=20261103a" defer></script>
+  <script src="../component-blueprints.js?v=20261104b" defer></script>
+  <script src="../renderer-engine.js?v=20261104a" defer></script>
+  <script src="../kajanauday.js?v=20261104b" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -44,8 +44,8 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
+      <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
       <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe" title="Year summary"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
-      <button type="button" class="quiet-button summary-toggle" id="hashtag-button" title="Entries grouped by #hashtag, across all months and years"><i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span></button>
     </div>
     <div class="universe" id="universe">
       <div class="universe-inner">
@@ -53,16 +53,6 @@
       </div>
     </div>
     <div class="month-ledger" id="month-ledger"></div>
-  </main>
-  <!-- Hashtags: its own page (months.html#tags, #tags/<tag>), in place of the ledger. -->
-  <main class="tags-page" id="tags-page" aria-labelledby="tags-page-title" hidden>
-    <header class="tags-page-head">
-      <button type="button" class="quiet-button" data-tags-back title="Back to the ledger"><i class="ti ti-arrow-left" aria-hidden="true"></i><span>Ledger</span></button>
-      <h1 id="tags-page-title"><i class="ti ti-hash" aria-hidden="true"></i>Hashtags</h1>
-      <input id="hashtag-filter" type="search" placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false">
-    </header>
-    <div class="hashtag-list" id="hashtag-list" role="group" aria-label="Hashtags"></div>
-    <div class="tags-page-body" id="hashtag-results" aria-live="polite"></div>
   </main>
 
   <dialog class="modal conflict-dialog" id="conflict-dialog" aria-labelledby="conflict-dialog-title">

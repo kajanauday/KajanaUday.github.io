@@ -341,6 +341,16 @@
     @media (min-width: 701px) {
     .month-ledger-head h2 { min-width: 180px; } }
     .year-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+    /* Special cards and #hashtags: one gold-edged pill beside the year tabs, a star and a hash overlapped as its mark. */
+    .special-button { position: relative; height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px 0 10px; border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); border-radius: 999px; background: linear-gradient(180deg, var(--surface-soft), var(--surface)); color: var(--ink); cursor: pointer; font: 700 12px var(--display); letter-spacing: .02em; transition: border-color .15s, background .15s, box-shadow .15s; }
+    .special-button:hover, .special-button:focus-visible { outline: 0; border-color: var(--brand); box-shadow: 0 0 0 3px var(--gold-glow); }
+    .special-mark { position: relative; width: 22px; height: 18px; display: inline-block; }
+    .special-mark i { position: absolute; line-height: 1; }
+    .special-mark .ti-star-filled { left: 0; top: 0; color: var(--brand); font-size: 15px; }
+    .special-mark .ti-hash { right: 0; bottom: -1px; color: var(--brand-strong); font-size: 11px; font-weight: 700; }
+    .special-button[aria-pressed="true"] { border-color: transparent; background: var(--gold-gradient); color: var(--on-brand); box-shadow: 0 2px 10px var(--gold-glow-strong); }
+    .special-button[aria-pressed="true"] .special-mark i { color: var(--on-brand); }
+    @media (max-width: 700px) { .special-button { width: 40px; justify-content: center; padding: 0; } .special-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; } }
     .summary-toggle { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
     .summary-toggle[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
     /* One block per month: open months show the full ledger, closed months are a single slim row. */
@@ -727,9 +737,6 @@
     }
     @media (prefers-reduced-motion: reduce) { .search-spin { animation: none; } }
 
-    /* The ★ Special tab after the years: every special event, grouped by year. */
-    .year-tab.is-special { gap: 5px; }
-    .year-tab.is-special i { color: var(--brand); font-size: 12px; }
 
     /* Move: a button beside Delete in an entry's edit form, and its dialog. */
     .mini-btn.is-move { width: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; color: var(--brand-strong); font-size: 12px; font-weight: 600; }
@@ -830,17 +837,6 @@
       .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: var(--ms-slot, 52px); min-width: var(--ms-slot, 52px); }
       .month-tag.ms-cur.is-placeholder { width: calc(26px + 3 * var(--ms-slot, 52px) + 2px); }
     }
-    /* The Special tab is just its star. */
-    .year-tab.is-special { min-width: 36px; padding: 0 10px; }
-    .year-tab.is-special i { font-size: 14px; }
-    /* Three small stars for the Special tab, a little overlapped so they read as one mark. */
-    .special-stars { display: inline-flex; align-items: center; }
-    .special-stars i { color: var(--brand); font-size: 11px; }
-    .special-stars i + i { margin-left: -1px; }
-    .special-stars i:nth-child(2) { font-size: 13px; transform: translateY(-1px); }
-    /* Two stars now: both the same size. */
-    .special-stars i, .special-stars i:nth-child(2) { font-size: 12px; transform: none; }
-    .year-tab.is-special .special-stars i { font-size: 12px; transform: none; }
     /* The panel's expand / collapse-all control leads its header, in line with the subsection chevrons below it, so it
        reads as the same kind of control; the totals keep the right edge. */
     .ledger-panel-head { gap: 8px; }
@@ -1127,20 +1123,63 @@
 .ledger-entry-line time { cursor: pointer; }
 .ledger-entry-line time:hover { color: var(--brand); text-decoration: underline dotted; text-underline-offset: 3px; }
 .tag-pop .hashtag-chip i { margin-left: 2px; font-size: 11px; opacity: .8; }
-/* The Hashtags page: in place of the ledger, the same width, its tags and the chosen one's entries. */
-.tags-page { width: min(1100px, 100%); margin: 0 auto; padding: 14px clamp(14px, 2vw, 24px) 40px; }
-.tags-page[hidden], .ledger[hidden] { display: none; }
-.tags-page-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 4px 0 10px; }
-.tags-page-head h1 { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--brand); font: 700 18px var(--display); }
-.tags-page-head input { flex: 1 1 200px; max-width: 320px; height: 32px; margin-left: auto; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: 400 13px var(--display); }
-.tags-page-head input:focus { border-color: var(--brand); outline: 0; }
-.tags-page .hashtag-list { max-height: none; padding: 4px 0 12px; border-bottom: 1px solid var(--line); }
-.tags-page-body { margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-.tags-page-body:not(:has(.hashtag-head)) { border: 0; background: none; }
-.tags-page .hashtag-head { padding: 16px 16px 10px; }
-.tags-page .hashtag-head h2 { font-size: 22px; }
-.tags-page .search-group-head { top: 52px; }
-@media (max-width: 700px) { .tags-page { padding: 10px 12px 24px; } .tags-page .search-group-head { top: 56px; } .tags-page-head input { max-width: none; margin-left: 0; } }
+/* Special cards and hashtags (the ★ tab): a legend at the left, kept in view; the cards by year, then the tags, at the
+   right. Every group folds. On a narrow screen the legend sits above, its groups folded until opened. */
+.hub { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; gap: 18px; }
+.hub-legend { position: sticky; top: 64px; display: grid; gap: 8px; max-height: calc(100vh - 80px); overflow-y: auto; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overscroll-behavior: contain; }
+.hub details > summary { list-style: none; cursor: pointer; }
+.hub details > summary::-webkit-details-marker { display: none; }
+.hub-caret { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.hub details[open] > summary > .hub-caret { transform: rotate(90deg); }
+.hub-legend-group > summary { display: flex; align-items: center; gap: 6px; padding: 4px 2px; color: var(--ink); font: 700 12.5px var(--display); }
+.hub-legend-group > summary > .ti-star-filled { color: var(--brand); }
+.hub-legend-group > summary > .ti-hash { color: var(--brand); }
+.hub-legend-group > summary small, .hub-section > summary small, .hub-year > summary small { color: var(--muted); font: 500 10.5px var(--mono); }
+.hub-legend-group > summary small { margin-left: auto; }
+.hub-loading { color: var(--muted); }
+.hub-links { display: grid; gap: 1px; padding: 2px 0 6px; }
+.hub-legend-year { margin: 6px 0 2px; padding-left: 6px; color: var(--faint); font: 600 10px var(--mono); letter-spacing: .08em; }
+.hub-link { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 28px; padding: 3px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); cursor: pointer; font: 500 13px var(--display); text-align: left; }
+.hub-link span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-link small { color: var(--muted); font: 400 10.5px var(--mono); }
+.hub-link-icon { flex: none; color: var(--muted); font-size: 12px; }
+.hub-link.is-open .hub-link-icon, .hub-link:hover .hub-link-icon { color: var(--brand); }
+.hub-link[class*="tag-c"] .hub-link-icon { color: var(--tone); }
+.hub-link[class*="tag-c"] span { color: var(--tone); }
+.hub-link-mark { color: var(--muted); font-size: 12px; }
+.hub-link:hover, .hub-link:focus-visible { outline: 0; background: var(--hover); }
+.hub-link[hidden] { display: none; }
+.hub-empty { margin: 2px 6px 6px; color: var(--muted); font-size: 12px; }
+.hub-filter { box-sizing: border-box; width: 100%; height: 30px; margin: 2px 0 4px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: 400 13px var(--display); }
+.hub-filter:focus { border-color: var(--brand); outline: 0; }
+.hub-main { min-width: 0; display: grid; gap: 14px; }
+.hub-section > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 2px 8px; border-bottom: 1px solid var(--line); }
+.hub-section > summary h2 { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--brand); font: 700 17px var(--display); }
+.hub-tools { display: inline-flex; gap: 6px; margin-left: auto; }
+.hub-tools .quiet-button { min-height: 26px; padding: 0 10px; font-size: 11.5px; }
+.hub-section-body { display: grid; gap: 4px; padding-top: 6px; }
+.hub-year > summary { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; color: var(--muted); font: 600 10.5px var(--mono); letter-spacing: .08em; }
+.hub-year > summary::after { content: ""; order: 1; flex: 1; border-top: 1px solid var(--line); }
+.hub-year > summary small { order: 2; letter-spacing: 0; }
+.hub .month-block, .hub-tag { scroll-margin-top: 64px; }
+.hub-tag { border: 1px solid var(--line-soft); border-left: 2px solid var(--tone); border-radius: 8px; background: var(--surface); }
+.hub-tag + .hub-tag { margin-top: 4px; }
+.hub-tag[hidden] { display: none; }
+.hub-tag > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 12px; border-radius: 8px; }
+.hub-tag > summary b { color: var(--tone); font: 700 14px var(--display); }
+.hub-tag > summary small { color: var(--muted); font-size: 11.5px; }
+.hub-tag > summary .hashtag-sums { margin-left: auto; }
+.hub-tag > summary.is-search-hit { animation: search-hit 2.6s ease-out; }
+.hub-tag-body { border-top: 1px solid var(--line-soft); }
+.hub-tag-body:empty { display: none; }
+.hub .search-group-head { top: 52px; }
+@media (max-width: 860px) {
+  .hub { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .hub-legend { position: static; max-height: none; overflow: visible; padding: 6px 10px; }
+  .hub-legend .hub-links { max-height: 40vh; overflow-y: auto; }
+  .hub-tag > summary .hashtag-sums { margin-left: 0; width: 100%; }
+  .hub .search-group-head { top: 56px; }
+}
 /* Row menu: a right-click (computer) or double-tap (phone) on a month, panel, section, subsection, entry or note.
    A small menu at the pointer on a computer; a sheet sliding up from the bottom on a phone. */
 .row-menu { position: fixed; z-index: 70; width: 248px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 14px 40px rgba(0, 0, 0, .4); opacity: 0; transform: scale(.98); transform-origin: top left; transition: opacity .12s, transform .12s; }

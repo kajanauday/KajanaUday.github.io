@@ -301,12 +301,11 @@
   };
 
   // The selected year's tab also opens its settings, so it carries a small settings mark.
-  // After the years, a ★ Special tab: every special event, of every year. While it is chosen no year tab is.
+  // While the special cards and hashtags page is showing (its button sits beside the tabs), no year tab is chosen.
   const YearTabs = (years, activeYear, special = false) =>
     years.map(value => value === activeYear && !special
       ? `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="true" title="${value} settings">${value}<i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>`
-      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('')
-    + `<button type="button" class="year-tab is-special" data-ledger-special aria-pressed="${special}" aria-label="Special events" title="Special events of every year"><span class="special-stars" aria-hidden="true">${`<i class="ti ti-star${special ? '-filled' : ''}"></i>`.repeat(2)}</span></button>`;
+      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   // With `mKey`, each currency's summary is a button: on a closed month it opens the month with just that currency; on an

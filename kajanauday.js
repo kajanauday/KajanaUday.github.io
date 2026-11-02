@@ -201,14 +201,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function saveSortModes() {
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
     }
-    // The ledger shows one year's months, or (the ★ Special tab beside the years) every special event, grouped by the
-    // year it belongs to, newest year first. Remembered for the tab.
+    // The ledger shows one year's months, or (the ★ tab beside the years) the special cards and hashtags page (see
+    // renderHub). Remembered for the tab.
     let specialMode = sessionStorage.getItem(`${STORAGE_KEY}-special`) === 'true';
     function setSpecialMode(on) {
       specialMode = Boolean(on);
       sessionStorage.setItem(`${STORAGE_KEY}-special`, String(specialMode));
     }
-    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes, special: specialMode });
+    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, signed: signedMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
@@ -225,6 +225,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!ledger) return;
       const year = currentMonth.getFullYear();
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year, specialMode);
+      const specialButton = document.querySelector('[data-ledger-special]');
+      specialButton.setAttribute('aria-pressed', String(specialMode));
+      specialButton.title = specialMode ? `Back to ${year}` : 'Special cards and #hashtags';
       // Rows opened in the year summary stay open when it is redrawn, also under their new key after a rename; a row
       // being renamed keeps what was typed.
       const kpis = document.querySelector('#year-kpis');
@@ -244,7 +247,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
       const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
-      host.innerHTML = specialMode || store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
+      const typingFilter = document.activeElement?.matches?.('[data-hub-filter]');
+      host.innerHTML = specialMode ? renderHub() : store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
+      if (specialMode) {
+        applyHubFilter(host);
+        if (typingFilter) host.querySelector('[data-hub-filter]')?.focus({ preventScroll: true });
+        loadHubYears();
+      }
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
       host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
@@ -658,6 +667,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           return childrenOf(source.id).length ? { ok: false, label: 'An entry with notes can’t become a note' } : { ok: true, label: `Make a note of “${target.label}”` };
         }
         if (target.kind === 'category') return target.name === entry?.category && target.type === entry?.type ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.name}”` };
+        // Onto Income or Expenses: the entry becomes a subsection of its own there.
+        if (target.kind === 'type' && !target.section) return { ok: true, label: `Make “${entry?.description}” a subsection of ${target.type === 'income' ? 'Income' : 'Expenses'}` };
         // Onto a custom section's heading: the entry keeps its subsection name inside that section.
         if (target.kind === 'type' && target.section) return target.section === entry?.section ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.section}”` };
       }
@@ -670,7 +681,42 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       return { ok: false };
     }
+    // An entry dropped on Income or Expenses becomes a subsection there, named after it: its notes become the subsection's
+    // entries, and an entry without notes becomes its one entry. Amounts and dates stay as they were.
+    function entryToSubsection({ month, property }, id, type) {
+      const scope = panelScope(month, property);
+      const label = type === 'income' ? 'Income' : 'Expenses';
+      const entry = transactions.find(item => item.id === id && !item.parentId);
+      if (!entry) return showToast('Could not find that entry. Refresh and try again.');
+      const home = scope.own().find(section => section.type === type);
+      if (!home) return showToast(`Add an ${type === 'income' ? 'income' : 'expense'} section here first.`);
+      const notes = childrenOf(entry.id);
+      const moving = notes.length ? notes : [entry];
+      const taken = new Set(scope.sections().filter(section => section.type === type).flatMap(section => section.subsections.map(sub => sub.toLowerCase())));
+      const wanted = String(entry.description || '').trim() || 'Untitled';
+      let name = wanted;
+      for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${wanted} (${n})`;
+      if (!window.confirm(`Make “${entry.description}” a subsection of ${label}?\n\n${notes.length ? `Its ${notes.length} ${notes.length === 1 ? 'note becomes an entry' : 'notes become entries'}` : 'It becomes the one entry'} of the new subsection “${name}”. Amounts and dates stay the same.`)) return;
+      if (notes.length) {
+        // The notes take the entry's comment and tags where they have none of their own; the entry itself goes.
+        notes.forEach(note => {
+          delete note.parentId;
+          if (!note.place && entry.place) note.place = entry.place;
+          if (!note.tags?.length && entry.tags?.length) note.tags = [...entry.tags];
+        });
+        transactions.splice(transactions.indexOf(entry), 1);
+      }
+      retype(moving, type);
+      moving.forEach(row => fileUnder(row, { category: name, section: home.name, type }));
+      home.subsections.push(name);
+      revealKey = catKey(month, property, type, name);
+      scope.save();
+      saveTransactions();
+      renderLedger();
+      showToast(`“${name}” is now a subsection of ${label}${notes.length ? `, with ${notes.length} ${notes.length === 1 ? 'entry' : 'entries'}` : ''}.`);
+    }
     function applyMove(source, target, { month, property }) {
+      if (source.kind === 'entry' && target.kind === 'type' && !target.section) return entryToSubsection({ month, property }, source.id, target.type);
       const scope = panelScope(month, property);
       const inPanel = scope.match;
       let message = '';
@@ -929,10 +975,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (target) return openRowMenu(target, null, true, { triggerLongPress });
         }
         // A year tab switches years; the year already shown opens its settings.
-        // The ★ Special tab shows every special event; a year tab goes back to that year's months (and, when that
-        // year is already showing, opens its settings).
+        // The ★ # button opens the special cards and hashtags page, and from there goes back to the year's months; a
+        // year tab goes back to that year's months (and, when that year is already showing, opens its settings).
         if (event.target.closest('[data-ledger-special]')) {
-          setSpecialMode(true);
+          setSpecialMode(!specialMode);
           renderLedger();
           return window.scrollTo({ top: 0 });
         }
@@ -2714,8 +2760,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // ---- Hashtags: a tag given by gesture (right-click or two-finger tap on a row), or #word in an entry's description or
     // comment, or in its subsection's or section's name, groups entries
-    // across every month, year and event; a note can carry its own. Its page (months.html#tags, #tags/<tag>) lists every
-    // tag and sums up the chosen one.
+    // across every month, year and event; a note can carry its own. The ★ page lists every tag and sums each one up.
     function hashtagIndex() {
       const tags = new Map();
       searchRows(null).forEach(row => {
@@ -3075,7 +3120,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
     }
 
-    let openHashtagSummary = () => {};
     // ---- Tag picker: a click on a row's day, a right-click or a two-finger tap on an entry or note row; tags are kept on
     // the row itself ----
     const tagPicker = { pop: null, id: null, row: null };
@@ -3183,120 +3227,191 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }, true);
       addEventListener('scroll', () => { if (!pop.hidden) placeTagPicker(); }, true);
     }
-    function setupHashtags() {
-      const page = document.querySelector('#tags-page');
+    // ---- Special cards and hashtags, on one page (the ★ tab). A legend on the left lists every special card, by year,
+    // and every hashtag; the right side holds the cards, grouped by year, then the hashtags. Each group, each card and each
+    // tag folds open or closed. The cards are the special events' own ledgers, drawn and edited exactly as before.
+    const HUB_FOLDS_KEY = `${STORAGE_KEY}-hub-folds`;
+    const hubFolds = (() => {
+      try { return JSON.parse(localStorage.getItem(HUB_FOLDS_KEY) || '{}') || {}; } catch (error) { return {}; }
+    })();
+    const hubOpenTags = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-hub-tags`) || '[]'));
+    let hubFilter = '';
+    let hubLoading = false;
+    // A group is open unless folded; the legend's groups start folded on a phone, where they sit above the cards.
+    const hubOpen = key => hubFolds[key] ?? !(key.startsWith('legend:') && isPhone());
+    function setHubFold(key, open) {
+      if (hubOpen(key) === open) return;
+      hubFolds[key] = open;
+      try { localStorage.setItem(HUB_FOLDS_KEY, JSON.stringify(hubFolds)); } catch (error) { /* Not remembered; still applies now. */ }
+    }
+    const saveHubTags = () => sessionStorage.setItem(`${STORAGE_KEY}-hub-tags`, JSON.stringify([...hubOpenTags]));
+    const hubMoney = (minor, property) => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
+    const hubSums = rows => hashtagSums(rows).map(([property, sum]) => `<span class="hashtag-sum"><b>${escapeHtml(regions[property]?.code || property)}</b><span class="income">${hubMoney(sum.in, property)}</span><span class="expense">${hubMoney(sum.out, property)}</span><span class="balance">${hubMoney(sum.in - sum.out, property)}</span></span>`).join('');
+    const hubFold = (key, cls, head, body) => `<details class="${cls}" data-hub-fold="${key}"${hubOpen(key) ? ' open' : ''}><summary>${head}</summary>${body}</details>`;
+    const chevron = '<i class="ti ti-chevron-right hub-caret" aria-hidden="true"></i>';
+    // A tag's heading: its name, how many entries over which months, and its sums per currency.
+    function hubTagHead(entry) {
+      const dates = entry.rows.map(row => row.date).sort();
+      const span = dates.length ? [dates[0], dates[dates.length - 1]].map(date => monthLabel(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1))) : [];
+      const when = span.length ? ` · ${span[0] === span[1] ? span[0] : `${span[0]} – ${span[1]}`}` : '';
+      return `${chevron}<b>#${escapeHtml(entry.tag)}</b><small>${entry.rows.length} ${entry.rows.length === 1 ? 'entry' : 'entries'}${when}</small><span class="hashtag-sums">${hubSums(entry.rows)}</span>`;
+    }
+    // A tag's entries: newest place first; within it, newest entry first. A row opens where it lives.
+    function hubTagBody(entry) {
+      const rows = [...entry.rows].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+      const jumpAttr = jump => `data-search-jump='${escapeHtml(JSON.stringify(jump))}'`;
+      return [...new Set(rows.map(row => row.where))].map(place => {
+        const own = rows.filter(row => row.where === place);
+        return `<section class="search-group"><h3 class="search-group-head"><span>${escapeHtml(place)}</span><small>${own.length}</small><span class="search-sums">${hubSums(own)}</span></h3>${own.map(row =>
+          `<button type="button" class="search-row${row.kind === 'note' ? ' is-note' : ''}" ${jumpAttr(row.jump)}><span class="search-when">${escapeHtml(dayLabel(row.date))}</span><span class="search-main"><span class="search-desc">${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}${row.comment ? `<span class="search-comment">${LedgerSearch.markTags(escapeHtml(row.comment))}</span>` : ''}</span><span class="search-crumbs">${LedgerSearch.markTags(escapeHtml(row.crumbs))}${row.kind === 'note' && row.parent ? ` · in ${escapeHtml(row.parent)}` : ''}</span></span><strong class="search-amount ${row.type === 'net' ? (row.amount < 0 ? 'expense' : 'income') : row.type}">${hubMoney(row.type === 'net' ? Math.abs(row.amount) : row.amount, row.property)}<small>${escapeHtml(regions[row.property]?.code || '')}</small></strong></button>`).join('')}</section>`;
+      }).join('');
+    }
+    function renderHub() {
+      const events = store.eventList();
+      const years = [...new Set(events.map(event => event.year))].sort((a, b) => b - a);
+      const tags = hashtagIndex();
+      const state = renderState();
+      const entriesIn = id => store.eventItems(id).filter(item => !item.parentId).length;
+      const plural = (n, word) => `${n} ${n === 1 ? word : `${word}s`}`;
+      // Legend: the cards by year (☆ marks one that also counts in its months), then the tags, each with its count.
+      const cardLinks = years.map(year => `<p class="hub-legend-year">${year}</p>${events.filter(event => event.year === year).map(event =>
+        `<button type="button" class="hub-link${expandedMonths.has(`ev:${event.id}`) ? ' is-open' : ''}" data-hub-card="${escapeHtml(event.id)}" title="Go to ${escapeHtml(event.name)}"><i class="ti ti-star-filled hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(event.name)}</span>${event.include ? '<i class="ti ti-calendar-share hub-link-mark" title="Also counts in its months" aria-label="Also counts in its months"></i>' : ''}<small>${entriesIn(event.id)}</small></button>`).join('')}`).join('');
+      const tagLinks = tags.map(entry => `<button type="button" class="hub-link tag-c${LedgerSearch.tagColour(entry.tag)}" data-hub-tag-link="${escapeHtml(entry.tag)}" title="Go to #${escapeHtml(entry.tag)}"><i class="ti ti-hash hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(entry.tag)}</span><small>${entry.rows.length}</small></button>`).join('');
+      const loading = hubLoading ? '<i class="ti ti-loader-2 search-spin hub-loading" aria-label="Loading every month"></i>' : '';
+      const legend = `<aside class="hub-legend" aria-label="Special cards and hashtags">
+        ${hubFold('legend:cards', 'hub-legend-group', `${chevron}<i class="ti ti-star-filled" aria-hidden="true"></i><span>Special cards</span><small>${events.length}</small>`, `<nav class="hub-links">${cardLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
+        ${hubFold('legend:tags', 'hub-legend-group', `${chevron}<i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span><small>${tags.length}</small>${loading}`, `<input class="hub-filter" type="search" data-hub-filter placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false" value="${escapeHtml(hubFilter)}"><nav class="hub-links">${tagLinks || `<p class="hub-empty">${hubLoading ? 'Loading…' : 'None yet'}</p>`}</nav>`)}
+      </aside>`;
+      const tools = events.length ? '<span class="hub-tools"><button type="button" class="quiet-button" data-hub-all="open" title="Open every card">Expand all</button><button type="button" class="quiet-button" data-hub-all="close" title="Close every card">Collapse all</button></span>' : '';
+      const cards = hubFold('cards', 'hub-section', `${chevron}<h2><i class="ti ti-star-filled" aria-hidden="true"></i>Special cards</h2><small>${plural(events.length, 'card')}</small>${tools}`,
+        `<div class="hub-section-body">${years.map(year => {
+          const ofYear = events.filter(event => event.year === year);
+          return hubFold(`year:${year}`, 'hub-year', `${chevron}<span>${year}</span><small>${plural(ofYear.length, 'card')}</small>`, `<div class="month-group">${ofYear.map(event => ledgerRenderer.eventBlock(event, year, state)).join('')}</div>`);
+        }).join('') || '<p class="ledger-none">No special cards yet. Add one in Year settings.</p>'}</div>`);
+      const tagBlocks = tags.map(entry => {
+        const open = hubOpenTags.has(entry.tag);
+        return `<details class="hub-tag tag-c${LedgerSearch.tagColour(entry.tag)}" data-hub-tag="${escapeHtml(entry.tag)}"${open ? ' open' : ''}><summary>${hubTagHead(entry)}</summary><div class="hub-tag-body">${open ? hubTagBody(entry) : ''}</div></details>`;
+      }).join('');
+      const tagSection = hubFold('tags', 'hub-section', `${chevron}<h2><i class="ti ti-hash" aria-hidden="true"></i>Hashtags</h2><small>${plural(tags.length, 'tag')}</small>${loading}`,
+        `<div class="hub-section-body">${tagBlocks || `<p class="ledger-none">${hubLoading ? 'Loading every month…' : 'No hashtags yet. Add one like #gold to an entry’s description or comment, or to a subsection’s name.'}</p>`}</div>`);
+      return `<div class="hub">${legend}<div class="hub-main">${cards}${tagSection}</div></div>`;
+    }
+    // The legend's filter hides the tags (in the legend and on the page) that do not match what is typed.
+    function applyHubFilter(host) {
+      const typed = hubFilter.trim().replace(/^#/, '').toLocaleLowerCase();
+      host.querySelectorAll('[data-hub-tag-link]').forEach(link => { link.hidden = Boolean(typed) && !link.dataset.hubTagLink.includes(typed); });
+      host.querySelectorAll('.hub-tag[data-hub-tag]').forEach(tag => { tag.hidden = Boolean(typed) && !tag.dataset.hubTag.includes(typed); });
+    }
+    // Every year's months are loaded once (reads only), so each tag shows all of its entries.
+    function loadHubYears() {
+      if (hubLoading) return;
+      const missing = store.yearIds().map(Number).filter(year => store.year(year) && !store.isYearLoaded(year));
+      if (!missing.length) return;
+      hubLoading = true;
+      Promise.all(missing.map(year => store.ensureYear(year)))
+        .catch(() => showToast('Could not load every month from Firebase.'))
+        .finally(() => {
+          hubLoading = false;
+          if (specialMode) renderLedger({ loadMissing: false });
+        });
+    }
+    function hubReveal(element, mark = element) {
+      if (!element) return;
+      mark.classList.remove('is-search-hit');
+      void mark.offsetWidth; // restart the glow when the same place is chosen twice
+      mark.classList.add('is-search-hit');
+      element.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+    // Opens the page at a card (opened) or a tag (opened), unfolding the groups around it.
+    function goToCard(id) {
+      const key = `ev:${id}`;
+      setSpecialMode(true);
+      setHubFold('cards', true);
+      setHubFold(`year:${store.events[id]?.year}`, true);
+      expandedMonths.add(key);
+      saveExpandedMonths();
+      renderLedger();
+      const block = document.querySelector(`.month-block[data-month-key="${CSS.escape(key)}"]`);
+      hubReveal(block, block?.querySelector('.month-ledger-head'));
+    }
+    function goToTag(tag) {
+      setSpecialMode(true);
+      setHubFold('tags', true);
+      hubOpenTags.add(tag);
+      saveHubTags();
+      if (hubFilter && !tag.includes(hubFilter.trim().replace(/^#/, '').toLocaleLowerCase())) hubFilter = '';
+      renderLedger();
+      const block = document.querySelector(`.hub-tag[data-hub-tag="${CSS.escape(tag)}"]`);
+      if (!block) return showToast(hubLoading ? `Loading… #${tag} shows once every month is in.` : `No entries with #${tag}.`);
+      hubReveal(block, block.querySelector(':scope > summary'));
+    }
+    function setupHub() {
       const ledgerMain = document.querySelector('#ledger');
-      const filter = document.querySelector('#hashtag-filter');
-      const list = document.querySelector('#hashtag-list');
-      const results = document.querySelector('#hashtag-results');
-      let chosen = null;
-      let loading = false;
-      const money = (minor, property) => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
-      const sumsHtml = rows => hashtagSums(rows).map(([property, sum]) => `<span class="hashtag-sum"><b>${escapeHtml(regions[property]?.code || property)}</b><span class="income">${money(sum.in, property)}</span><span class="expense">${money(sum.out, property)}</span><span class="balance">${money(sum.in - sum.out, property)}</span></span>`).join('');
-      const draw = () => {
-        const index = hashtagIndex();
-        const typed = filter.value.trim().replace(/^#/, '').toLocaleLowerCase();
-        const shown = index.filter(entry => !typed || entry.tag.includes(typed));
-        if (chosen && !index.some(entry => entry.tag === chosen)) chosen = null;
-        list.innerHTML = shown.map(entry => `<button type="button" class="hashtag-chip tag-c${LedgerSearch.tagColour(entry.tag)}" data-hashtag="${escapeHtml(entry.tag)}" aria-pressed="${entry.tag === chosen}">#${escapeHtml(entry.tag)}<small>${entry.rows.length}</small></button>`).join('')
-          || `<p class="search-empty">${loading ? '' : typed ? 'No hashtag like that.' : 'No hashtags yet. Add one like #gold to an entry\'s description or comment, or to a subsection\'s name.'}</p>`;
-        const spinner = loading ? '<p class="search-empty"><i class="ti ti-loader-2 search-spin" aria-hidden="true"></i> Loading every month…</p>' : '';
-        const entry = index.find(item => item.tag === chosen);
-        if (!entry) {
-          results.innerHTML = spinner + (index.length ? '<p class="search-empty">Choose a hashtag to see its entries from every month and year.</p>' : '');
-          return;
-        }
-        // Newest place first; within it, newest entry first.
-        const rows = [...entry.rows].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
-        const places = [...new Set(rows.map(row => row.where))];
-        const dates = rows.map(row => row.date).sort();
-        const span = dates.length ? [dates[0], dates[dates.length - 1]].map(date => monthLabel(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1))) : [];
-        const jumpAttr = jump => `data-search-jump='${escapeHtml(JSON.stringify(jump))}'`;
-        results.innerHTML = spinner + `<header class="hashtag-head"><h2>#${escapeHtml(entry.tag)}</h2><p>${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} in ${places.length} ${places.length === 1 ? 'place' : 'places'}${span.length ? ` · ${span[0] === span[1] ? span[0] : `${span[0]} – ${span[1]}`}` : ''}</p><div class="hashtag-sums">${sumsHtml(rows)}</div></header>`
-          + places.map(place => {
-            const own = rows.filter(row => row.where === place);
-            return `<section class="search-group"><h3 class="search-group-head"><span>${escapeHtml(place)}</span><small>${own.length}</small><span class="search-sums">${sumsHtml(own)}</span></h3>${own.map(row =>
-              `<button type="button" class="search-row${row.kind === 'note' ? ' is-note' : ''}" ${jumpAttr(row.jump)}><span class="search-when">${escapeHtml(dayLabel(row.date))}</span><span class="search-main"><span class="search-desc">${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}${row.comment ? `<span class="search-comment">${LedgerSearch.markTags(escapeHtml(row.comment))}</span>` : ''}</span><span class="search-crumbs">${LedgerSearch.markTags(escapeHtml(row.crumbs))}${row.kind === 'note' && row.parent ? ` · in ${escapeHtml(row.parent)}` : ''}</span></span><strong class="search-amount ${row.type === 'net' ? (row.amount < 0 ? 'expense' : 'income') : row.type}">${money(row.type === 'net' ? Math.abs(row.amount) : row.amount, row.property)}<small>${escapeHtml(regions[row.property]?.code || '')}</small></strong></button>`).join('')}</section>`;
-          }).join('');
-      };
-      // Every year's months are loaded once (reads only), so a tag shows all of its entries.
-      const ensureAll = async () => {
-        const missing = store.yearIds().map(Number).filter(year => store.year(year) && !store.isYearLoaded(year));
-        if (!missing.length) return;
-        loading = true;
-        draw();
-        try { await Promise.all(missing.map(year => store.ensureYear(year))); } catch (error) { showToast('Could not load every month from Firebase.'); }
-        loading = false;
-        draw();
-      };
-      // The page stands in for the ledger; its address keeps the chosen tag, so Back and a reload come back to it.
-      const hashFor = tag => (tag ? `#tags/${encodeURIComponent(tag)}` : '#tags');
-      const tagInHash = () => (/^#tags(\/|$)/.test(location.hash) ? decodeURIComponent(location.hash.slice(6)) || null : undefined);
-      const show = tag => {
-        chosen = tag ?? chosen;
-        const wasHidden = page.hidden;
-        page.hidden = false;
-        ledgerMain.hidden = true;
-        document.title = `${chosen ? `#${chosen} · ` : ''}Hashtags | Kajana Uday Expenses`;
-        if (wasHidden) {
-          filter.value = '';
-          scrollTo(0, 0);
-        }
-        draw();
-        ensureAll();
-      };
-      const hide = () => {
-        if (page.hidden) return;
-        page.hidden = true;
-        ledgerMain.hidden = false;
-        document.title = 'Kajana Uday Expenses | Monthly ledger';
-      };
-      // Opening from the ledger is a step Back can undo; choosing another tag on the page only changes the address.
-      const open = (tag = null) => {
-        const next = tag ?? chosen;
-        if (page.hidden) history.pushState({ tags: true }, '', hashFor(next));
-        else history.replaceState({ tags: true }, '', hashFor(next));
-        show(next);
-        if (!tag) filter.focus();
-      };
-      const leave = () => {
-        if (history.state?.tags && history.length > 1) return history.back();
-        history.replaceState(null, '', location.pathname + location.search);
-        hide();
-      };
-      const route = () => {
-        const tag = tagInHash();
-        if (tag === undefined) hide();
-        else show(tag);
-      };
-      addEventListener('popstate', route);
-      route();
-      document.querySelector('#hashtag-button')?.addEventListener('click', () => open());
-      page.querySelector('[data-tags-back]').addEventListener('click', leave);
-      openHashtagSummary = open;
-      filter.addEventListener('input', draw);
-      page.addEventListener('click', event => {
-        const tag = event.target.closest('[data-hashtag]');
-        if (tag) {
+      const host = document.querySelector('#month-ledger');
+      // Folding is remembered; a tag's entries are drawn when it is opened.
+      host.addEventListener('toggle', event => {
+        const el = event.target;
+        if (!(el instanceof HTMLDetailsElement)) return;
+        if (el.dataset.hubFold) return setHubFold(el.dataset.hubFold, el.open);
+        const tag = el.dataset.hubTag;
+        if (tag === undefined) return;
+        if (el.open) {
+          hubOpenTags.add(tag);
+          const body = el.querySelector('.hub-tag-body');
+          const entry = hashtagIndex().find(item => item.tag === tag);
+          if (body && entry && !body.childElementCount) body.innerHTML = hubTagBody(entry);
+        } else hubOpenTags.delete(tag);
+        saveHubTags();
+      }, true);
+      host.addEventListener('input', event => {
+        if (!event.target.matches('[data-hub-filter]')) return;
+        hubFilter = event.target.value;
+        applyHubFilter(host);
+      });
+      host.addEventListener('click', event => {
+        if (!specialMode) return;
+        const all = event.target.closest('[data-hub-all]');
+        if (all) {
+          // In a heading: the buttons act, the heading does not fold.
           event.preventDefault();
-          return open(tag.dataset.hashtag);
+          event.stopPropagation();
+          store.eventList().forEach(item => (all.dataset.hubAll === 'open' ? expandedMonths.add(`ev:${item.id}`) : expandedMonths.delete(`ev:${item.id}`)));
+          if (all.dataset.hubAll === 'open') store.eventList().forEach(item => setHubFold(`year:${item.year}`, true));
+          saveExpandedMonths();
+          return renderLedger();
         }
-        const row = event.target.closest('[data-search-jump]');
+        const card = event.target.closest('[data-hub-card]');
+        if (card) {
+          event.stopPropagation();
+          return goToCard(card.dataset.hubCard);
+        }
+        const tagLink = event.target.closest('[data-hub-tag-link]');
+        if (tagLink) {
+          event.stopPropagation();
+          return goToTag(tagLink.dataset.hubTagLink);
+        }
+        const row = event.target.closest('.hub-tag [data-search-jump]');
         if (row) {
-          // To the ledger, as a new step: Back returns to this tag.
-          history.pushState(null, '', location.pathname + location.search);
-          hide();
+          event.stopPropagation();
           openSearchResult(JSON.parse(row.dataset.searchJump));
         }
-      });
-      // A tag in a ledger row opens its page (and does not open or close the row).
+      }, true);
+      // A tag in any row opens the page at that tag.
       ledgerMain.addEventListener('click', event => {
         const tag = event.target.closest('[data-hashtag]');
         if (!tag) return;
         event.preventDefault();
         event.stopPropagation();
-        open(tag.dataset.hashtag);
+        goToTag(tag.dataset.hashtag);
       }, true);
+      // Links to the former Hashtags page (months.html#tags, #tags/<tag>) open this page at the tag.
+      if (/^#tags(\/|$)/.test(location.hash)) {
+        const tag = decodeURIComponent(location.hash.slice(6));
+        history.replaceState(null, '', location.pathname + location.search);
+        setSpecialMode(true);
+        // Once the ledger is set up.
+        if (tag) setTimeout(() => goToTag(tag));
+      }
     }
     // ---- Move an entry (with its notes) to any month of any year, or into or out of a special event ----
     // The destination month is loaded first, so saving writes it whole; a subsection missing there is added to its list.
@@ -3523,7 +3638,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupMonthSettings();
     setupSectionSetup();
     setupMonthNotes();
-    setupHashtags();
+    setupHub();
     setupTagPicker();
     setupRowMenu();
     setupEntryDialog();

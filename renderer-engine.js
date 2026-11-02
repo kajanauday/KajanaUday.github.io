@@ -114,20 +114,9 @@
       });
     }
 
-    // The year's special events first, then months grouped by priority: this month, earlier months (newest first),
-    // then the ones still to come.
+    // Months grouped by priority: this month, earlier months (newest first), then the ones still to come. (Special events
+    // have their own page; see renderHub in kajanauday.js.)
     monthGroups(year, state) {
-      // The Special tab: every special event, grouped by the year it belongs to, newest year first. A year's own view
-      // shows its months only.
-      if (state.special) {
-        const events = this.store.eventList();
-        if (!events.length) return '<p class="ledger-none">No special events yet. Add one in Year settings.</p>';
-        const years = [...new Set(events.map(event => event.year))].sort((a, b) => b - a);
-        return years.map(eventYear => {
-          const ofYear = events.filter(event => event.year === eventYear);
-          return B().MonthGroup(String(eventYear), ofYear.length, ofYear.map(event => this.eventBlock(event, eventYear, state)).join(''), 'events');
-        }).join('');
-      }
       // Months as one list with no group labels: the current month first, then earlier months (newest first), then
       // upcoming ones at the bottom (soonest first). Past, current and upcoming show in their colours (see the stylesheet).
       return `<div class="month-group month-list">${this.monthOrder(year).map(month => this.monthBlock(year, month, state)).join('')}</div>`;
