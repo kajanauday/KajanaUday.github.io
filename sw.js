@@ -28,7 +28,8 @@ self.addEventListener('fetch', event => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const fresh = fetch(request).then(response => {
-      if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
+      // Icon and font files from other sites come back opaque; they are kept too, so the app looks the same offline.
+      if (response && (response.ok || response.type === 'opaque')) cache.put(request, response.clone()).catch(() => {});
       return response;
     }).catch(() => null);
     // A page is fetched first and falls back to the copy, so a new build is picked up the moment it is published; the

@@ -18,22 +18,22 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261108d">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261110b">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
-  <script src="../offline-store.js?v=20261103a" defer></script>
-  <script src="../data-layer.js?v=20261108c" defer></script>
+  <script src="../offline-store.js?v=20261110a" defer></script>
+  <script src="../data-layer.js?v=20261109a" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261108d" defer></script>
+  <script src="../component-blueprints.js?v=20261110b" defer></script>
   <script src="../renderer-engine.js?v=20261108c" defer></script>
-  <script src="../kajanauday.js?v=20261108e" defer></script>
+  <script src="../kajanauday.js?v=20261110b" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
     <a class="brand" href="months.html" aria-label="Kajana Uday Expenses"><span class="brand-word">Kajana Uday <span>Expenses</span></span></a>
     <div></div>
     <div class="header-actions">
-      <span class="save-state" role="status" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></span>
+      <button type="button" class="save-state" id="sync-button" aria-live="polite" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></button>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
@@ -47,6 +47,12 @@
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
+
+  <dialog class="modal sync-dialog" id="sync-dialog" aria-labelledby="sync-dialog-title">
+    <div class="modal-header"><div><p>This device and Firebase</p><h2 id="sync-dialog-title">Sync</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div id="sync-body"></div>
+    <div class="modal-actions"><button type="button" class="quiet-button" data-sync="download"><i class="ti ti-cloud-download" aria-hidden="true"></i> Download everything again</button><button type="button" class="primary-button" data-sync="now"><i class="ti ti-refresh" aria-hidden="true"></i> Sync now</button></div>
+  </dialog>
 
   <dialog class="modal conflict-dialog" id="conflict-dialog" aria-labelledby="conflict-dialog-title">
     <div class="modal-header"><h2 id="conflict-dialog-title">Changed on another device</h2></div>

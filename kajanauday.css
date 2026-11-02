@@ -942,27 +942,15 @@
 }
 /* A section block's own buttons (notes, a custom section's setup) at the top of its body; its heading only marks notes. */
 .ledger-block-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 2px 0 4px; }
-.ledger-block-tools .mini-btn, .ledger-block-tools .month-note-btn { width: auto; height: 24px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 6px; font: 500 11.5px var(--display); }
+.ledger-block-tools .mini-btn { width: auto; height: 24px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 6px; font: 500 11.5px var(--display); }
 .section-setup-btn { color: var(--brand); }
-.section-setup-btn i, .ledger-block-tools .month-note-btn i { font-size: 14px; }
-.ledger-note-mark { color: var(--brand); font-size: 13px; opacity: .85; }
+.section-setup-btn i { font-size: 14px; }
 .ledger-carry.is-shown-only { opacity: .6; }
 /* A custom section's own Income · Expenses · Balance in its heading, like a month's. */
 .ledger-type-section > summary > .section-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; }
 .ledger-type-section > summary .section-totals span { font: 500 13.5px var(--mono); }
 .ledger-type-section > summary .section-totals span.balance { color: var(--ink); }
-/* Section notes: a small button at the top of a section block, and the popover it opens. */
 .month-ledger-head h2 { display: flex; align-items: center; gap: 2px; }
-.month-note-btn { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; font-size: 13px; opacity: .45; transition: opacity .15s, color .15s; }
-.month-note-btn:hover, .month-note-btn:focus-visible { opacity: 1; color: var(--brand); }
-.month-note-btn.has-note { color: var(--brand); opacity: .9; }
-.month-note-pop { position: fixed; z-index: 60; max-width: calc(100vw - 16px); padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
-.month-note-view { max-width: min(520px, calc(100vw - 40px)); margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-.month-note-view.is-empty { color: var(--muted); font-size: 12px; }
-.month-note-text, .month-note-hint { display: none; }
-.month-note-pop.is-editing .month-note-view { display: none; }
-.month-note-pop.is-editing .month-note-text { display: block; min-height: 40px; padding: 6px 8px; overflow: auto; border: 1px solid var(--brand); border-radius: 6px; outline: 0; background: var(--surface-soft); color: var(--ink); font: 400 13px/1.5 var(--display); resize: none; white-space: pre; }
-.month-note-pop.is-editing .month-note-hint { display: block; margin: 5px 0 0; color: var(--muted); font-size: 10.5px; }
 /* Hashtags: a #tag in a row (click for its summary), and the window listing every tag with the chosen one's entries. */
 .hashtag { color: var(--brand); cursor: pointer; }
 .hashtag:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -1090,8 +1078,17 @@
    entries follow a "from <Month>" line with what that month came to; the month name opens the month there. */
 .month-block.is-year { margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
 .month-block.is-year + .month-block { border-top: 0; }
-.ledger-month-from { min-height: 28px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 4px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 12.5px; }
+.ledger-month-from { min-height: 28px; display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 4px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 12.5px; }
 .ledger-month-from:first-child { margin-top: 0; }
+/* A month inside a year-card subsection: its name opens and closes it, like a subsection; opened, its entries follow. */
+.ledger-year-month > summary { cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
+.ledger-year-month > summary::-webkit-details-marker { display: none; }
+.ledger-year-month > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.ledger-year-month[open] > summary > i { transform: rotate(90deg); }
+.ledger-year-month > summary:hover .ledger-month-name { color: var(--brand-strong); }
+.ledger-month-name { color: var(--ink); font: 500 13px var(--display); }
+.ledger-year-month-body { padding: 0 0 4px 14px; border-left: 2px solid var(--line-soft); margin-left: 5px; }
+.ledger-year-month-body > .ledger-month-jump { margin: 4px 0 2px; font-size: 11.5px; }
 .ledger-month-jump { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: var(--brand); cursor: pointer; font: 600 12.5px var(--display); }
 .ledger-month-jump i { font-size: 13px; }
 .ledger-month-jump:hover, .ledger-month-jump:focus-visible { outline: 0; text-decoration: underline; text-underline-offset: 3px; }
@@ -1232,3 +1229,29 @@ button.flow-sheet-row:hover, button.flow-sheet-row:focus-visible { outline: 0; b
 .ledger-cat-title { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
 .ledger-cat-title > span { min-width: 0; }
 .ledger-months-used { flex: none; color: var(--faint); font: 400 10.5px var(--mono); letter-spacing: 0; text-transform: none; }
+/* Sync: the dot in the top bar is a button that opens the Sync panel; 'behind' (violet) means Firebase holds something
+   newer that this device is fetching. A month (or special card, or the year card) that differs shows ↑ (changed here, not
+   in Firebase yet) or ↓ (newer in Firebase) beside its name. */
+button.save-state { padding: 0; border: 0; background: none; cursor: pointer; font: inherit; }
+button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 50%; }
+.save-state[data-state="behind"] .save-dot { background: #a78bfa; box-shadow: 0 0 0 3px rgba(167, 139, 250, .22); }
+:root[data-theme="light"] .save-state[data-state="behind"] .save-dot { background: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, .15); }
+.sync-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; font-size: 11px; vertical-align: 2px; -webkit-text-fill-color: currentColor; }
+.sync-mark.is-local { background: color-mix(in srgb, var(--amber) 20%, transparent); color: var(--amber); }
+.sync-mark.is-remote { background: rgba(167, 139, 250, .2); color: #a78bfa; }
+:root[data-theme="light"] .sync-mark.is-remote { color: #7c3aed; }
+.sync-dialog { width: min(460px, calc(100% - 20px)); }
+.sync-states { display: grid; gap: 10px; margin: 4px 0 10px; padding: 0; list-style: none; }
+.sync-states > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); }
+.sync-states > li > i { font-size: 18px; }
+.sync-states b { display: block; color: var(--ink); font: 600 13px var(--display); }
+.sync-states span { color: var(--muted); font-size: 12px; }
+.sync-states .is-ok > i { color: var(--income); }
+.sync-states .is-local > i { color: var(--amber); }
+.sync-states .is-remote > i { color: #a78bfa; }
+.sync-states .is-offline > i { color: #60a5fa; }
+.sync-paths { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0 0; padding: 0; list-style: none; }
+.sync-paths li { padding: 1px 8px; border-radius: 99px; background: var(--surface); color: var(--muted); font-size: 11.5px; }
+.sync-note { margin: 0 0 6px; color: var(--muted); font-size: 12px; }
+.sync-note.is-refresh { color: var(--brand); }
+.sync-dialog .modal-actions { flex-wrap: wrap; }

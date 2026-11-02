@@ -11,6 +11,11 @@
 // the stamp a path carried when it was read is kept beside its data. Before anything is sent those stamps are read back;
 // a path another device has written since is a clash, and `onConflict` decides whether this device's change goes out or
 // gives way to the newer one.
+//
+// Freshness: each node kept here remembers the newest Firebase write it includes (its watermark, from those stamps). A
+// stamp written by another device after that is a part that is newer in Firebase; compare() lists those beside the
+// changes still waiting here, and pull() fetches such parts again. The app uses these to keep a full copy (an admin
+// downloads every month) and to mark what is out of date on either side.
 (function (global) {
   const DB_NAME = 'kajanauday-offline';
   // The copy as kept under the app's former name (written in two halves so the old name is nowhere a word): moved over
@@ -115,6 +120,7 @@
       return this.trim();
     }
     forget(path) { return ask(this.store(NODES, 'readwrite').delete(path)).catch(() => {}); }
+    rows() { return ask(this.store(NODES, 'readonly').getAll()).catch(() => []); }
     async usage() {
       const rows = await ask(this.store(NODES, 'readonly').getAll()).catch(() => []);
       return { bytes: rows.reduce((sum, row) => sum + (row.bytes || 0), 0), nodes: rows.length, budget: this.budget };
@@ -202,7 +208,7 @@
           if (!this.loadedStamps) this.loadedStamps = this.stampsNow().catch(() => ({}));
           const [data] = await Promise.all([this.raw.get(path), this.loadedStamps]);
           if (this.offline) { this.offline = false; this.report(); }
-          await this.vault.keep(path, data, this.stamps[stampKey(path)]?.at || 0);
+          await this.vault.keep(path, data, this.watermark(path));
           return data;
         } catch (error) {
           if (!isOffline(error)) throw error;
@@ -213,6 +219,58 @@
       this.offline = true;
       this.report();
       return row.data;
+    }
+    // The newest write Firebase has recorded for a path: at it, under it, or above it (a write above replaces it whole).
+    watermark(path, stamps = this.stamps) {
+      let at = 0;
+      Object.entries(stamps || {}).forEach(([key, stamp]) => {
+        const written = key === 'root' ? '' : key.replace(/~/g, '/');
+        if (written === path || written.startsWith(`${path}/`) || path.startsWith(`${written}/`)) at = Math.max(at, Number(stamp?.at) || 0);
+      });
+      return at;
+    }
+    // What differs between this device and Firebase. `pending`: paths changed here and still waiting to go out.
+    // `outdated`: nodes kept here that another device has written since (the node paths to fetch again), with `newer`, the
+    // written paths themselves. `kept`: every node on this device. With no connection only `pending` can be known.
+    async compare() {
+      const [queue, rows] = await Promise.all([this.vault.pending(), this.vault.rows()]);
+      const pending = [...new Set(queue.flatMap(item => Object.keys(item.update).filter(path => !path.startsWith('meta/'))))];
+      let remote = null;
+      if (navigator.onLine !== false) {
+        try {
+          remote = await this.stampsNow();
+          this.offline = false;
+        } catch (error) {
+          if (!isOffline(error)) throw error;
+        }
+      }
+      if (!remote) this.offline = true;
+      const kept = new Map(rows.map(row => [row.path, row]));
+      const outdated = new Set();
+      const newer = [];
+      Object.entries(remote || {}).forEach(([key, stamp]) => {
+        if (!stamp || stamp.by === this.deviceId) return;
+        const path = key === 'root' ? '' : key.replace(/~/g, '/');
+        const holder = kept.has(path) ? path : [...kept.keys()].filter(other => path.startsWith(`${other}/`)).sort((a, b) => b.length - a.length)[0];
+        if (holder !== undefined && Number(stamp.at) > Number(kept.get(holder).at || 0)) {
+          outdated.add(holder);
+          newer.push(path);
+        }
+      });
+      return { pending, queued: queue.length, outdated: [...outdated], newer, kept: [...kept.keys()], bytes: rows.reduce((sum, row) => sum + (row.bytes || 0), 0), offline: this.offline };
+    }
+    // Fetches paths again, one at a time, so this device holds what Firebase holds now. Stops at a lost connection.
+    async pull(paths, onProgress = () => {}) {
+      await this.stampsNow();
+      let done = 0;
+      for (const path of paths) {
+        if (navigator.onLine === false) break;
+        await this.get(path);
+        if (this.offline) break;
+        done += 1;
+        onProgress(done, paths.length);
+      }
+      return done;
     }
     // Written to this device and queued; sending is tried at once and again whenever the connection returns.
     async patch(update) {

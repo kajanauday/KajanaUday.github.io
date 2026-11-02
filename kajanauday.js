@@ -19,6 +19,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const isViewer = authSession.role === 'viewer';
     if (isViewer) document.documentElement.classList.add('is-viewer');
     let store;
+    // This device and Firebase (see "Sync markers and panel"); set up before the store opens, which already reports.
+    // pending: paths changed here and not in Firebase yet; outdated: nodes kept here that Firebase has newer; newer: the
+    // paths written elsewhere; busy: a sync in progress; needsRefresh: the page shows something Firebase has changed.
+    const syncState = { pending: [], outdated: [], newer: [], kept: 0, bytes: 0, offline: false, checkedAt: null, mirroredAt: null, busy: null, needsRefresh: false };
+    let syncNow = () => Promise.resolve();
     try {
       // Every request carries the signed-in user's ID token; a session Firebase no longer accepts goes back to sign-in.
       const auth = () => FamilyAuth.token().catch(error => {
@@ -63,7 +68,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // The save status in the top bar is only a coloured dot: green saved, amber saving, red when saving or loading
     // failed, blue for a view-only sign-in. The words are its tooltip and are read out by screen readers.
     function setSaveStatus(state) {
-      const text = { saved: 'All changes saved', saving: 'Saving…', pending: 'Waiting to send to Firebase', offline: 'Offline — changes are saved on this device', error: 'Could not save to Firebase', 'load-error': 'Could not load data from Firebase', viewer: 'View only' }[state] || '';
+      const text = { saved: 'All changes saved', saving: 'Saving…', pending: 'Waiting to send to Firebase', offline: 'Offline — changes are saved on this device', behind: 'Newer data in Firebase — updating this device', error: 'Could not save to Firebase', 'load-error': 'Could not load data from Firebase', viewer: 'View only' }[state] || '';
       const el = document.querySelector('.save-state');
       if (!el) return;
       el.dataset.state = state;
@@ -82,10 +87,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return 'device';
       }
     }
-    // What the sync layer reports, as the dot in the top bar. A viewer's dot stays on 'viewer'.
+    // What the sync layer reports, as the dot in the top bar. A viewer's dot stays on 'viewer'. All saved, but Firebase
+    // holding something newer than this device, shows as 'behind'; the month markers follow the outbox (see syncMarks).
     function setSyncStatus(state) {
       if (isViewer) return;
-      setSaveStatus({ synced: 'saved', pending: 'pending', offline: 'offline', saving: 'saving', error: 'error' }[state] || 'saved');
+      const behind = state === 'synced' && syncState.outdated.length;
+      setSaveStatus(behind ? 'behind' : { synced: 'saved', pending: 'pending', offline: 'offline', saving: 'saving', error: 'error' }[state] || 'saved');
+      if (store?.sync) refreshPendingMarks();
     }
     // Another device wrote the same part of the ledger after this one last read it. Nothing is merged on its own: the
     // choice is this device's queued change or the newer one already in Firebase.
@@ -205,7 +213,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
-      sectionNote: (mKey, property, key) => store.sectionNote(...yearMonthOf(mKey), property, key),
       flow: id => store.flow(id),
       today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; }
     };
@@ -224,8 +231,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
       const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
-      // The year card's section groups (open by default) and description lists (closed by default) stay as they were.
-      const yearFolds = new Map([...host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items')].map(item => [item.dataset.key, item.open]));
+      // The year card's section groups (open by default), description lists and months (closed by default) stay as they were.
+      const yearFolds = new Map([...host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items, .month-block.is-year details.ledger-year-month')].map(item => [item.dataset.key, item.open]));
       const typingFilter = document.activeElement?.matches?.('[data-hub-filter]');
       host.innerHTML = specialMode ? renderHub() : store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       if (specialMode) {
@@ -237,12 +244,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
       host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
       host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing').forEach(cat => { const section = cat.closest('details.ledger-type-section'); if (section) section.open = true; });
-      host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items').forEach(item => {
+      host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items, .month-block.is-year details.ledger-year-month').forEach(item => {
         if (yearFolds.has(item.dataset.key) && !item.querySelector('form')) item.open = yearFolds.get(item.dataset.key);
       });
       revealKey = null;
       focusDrafts(host);
       fitSummaryColumns();
+      applySyncMarks();
       if (!loadMissing) return;
       loadOpenMonths(year);
       if (!specialMode && expandedMonths.has(`yr:${year}`)) loadYearForCard(year);
@@ -1788,116 +1796,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         showToast(`Saved how “${name}” counts.`);
       });
     }
-    // ---- Notes for one section block of a month: hover the note button to read them, click it to write; the box grows
-    // with the text ----
-    function setupSectionNotes() {
-      const ledger = document.querySelector('#ledger');
-      const pop = document.createElement('div');
-      pop.className = 'month-note-pop';
-      pop.hidden = true;
-      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" name="section-note" wrap="off" spellcheck="false" aria-label="Notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
-      document.body.append(pop);
-      const view = pop.querySelector('.month-note-view');
-      const text = pop.querySelector('.month-note-text');
-      let button = null;
-      let editing = false;
-      // Clicking the button while writing saves and closes (its blur comes first; the click must not reopen it).
-      let closedBy = null;
-      const place = () => {
-        const r = button.getBoundingClientRect();
-        pop.style.top = `${r.bottom + 6}px`;
-        pop.style.left = `${Math.max(8, Math.min(r.left - 8, innerWidth - pop.offsetWidth - 8))}px`;
-      };
-      // As wide as the longest line and as tall as all of them, within the window.
-      const fit = () => {
-        text.style.width = '0';
-        text.style.height = '0';
-        // scrollWidth leaves out the right padding and the caret; the borders come on top of both.
-        const width = text.scrollWidth + 24;
-        const fits = width <= innerWidth - 40;
-        text.style.width = `${Math.max(Math.min(width, innerWidth - 40), 220)}px`;
-        const height = text.scrollHeight + 4;
-        text.style.height = `${Math.min(height, innerHeight * 0.7)}px`;
-        // Scroll only once the text outgrows the window.
-        text.style.overflowX = fits ? 'hidden' : 'auto';
-        text.style.overflowY = height <= innerHeight * 0.7 ? 'hidden' : 'auto';
-        place();
-      };
-      // A button stands for one section block's notes: its month (data-month-note), currency and section key.
-      const noteOf = target => {
-        const [year, monthIndex] = yearMonthOf(target.dataset.monthNote);
-        const { noteProperty: property, noteSection: key } = target.dataset;
-        return { text: store.sectionNote(year, monthIndex, property, key), save: value => store.saveSectionNote(year, monthIndex, property, key, value) };
-      };
-      const show = target => {
-        button = target;
-        const note = noteOf(button).text;
-        view.textContent = note || (isViewer ? 'No notes' : 'No notes · click to write');
-        view.classList.toggle('is-empty', !note);
-        pop.classList.remove('is-editing');
-        pop.hidden = false;
-        place();
-      };
-      const hide = () => {
-        if (editing) return;
-        pop.hidden = true;
-        button = null;
-      };
-      const edit = target => {
-        if (isViewer) return viewOnly();
-        show(target);
-        editing = true;
-        pop.classList.add('is-editing');
-        text.value = noteOf(button).text;
-        fit();
-        text.focus();
-        text.setSelectionRange(text.value.length, text.value.length);
-      };
-      const finish = save => {
-        if (!editing) return;
-        editing = false;
-        closedBy = { button, at: Date.now() };
-        const note = noteOf(button);
-        const value = text.value.replace(/\s+$/, '');
-        if (save && value !== note.text) {
-          note.save(value).catch(() => showToast('Could not save the notes. Try again.'));
-          button.classList.toggle('has-note', Boolean(value));
-          button.querySelector('i').className = `ti ti-${value ? 'notes' : 'note'}`;
-          showToast(value ? 'Notes saved.' : 'Notes removed.');
-        }
-        hide();
-      };
-      ledger.addEventListener('mouseover', event => {
-        const target = event.target.closest('[data-month-note]');
-        if (target && !editing && target !== button) show(target);
-      });
-      ledger.addEventListener('mouseout', event => {
-        const target = event.target.closest('[data-month-note]');
-        if (target && !target.contains(event.relatedTarget)) hide();
-      });
-      ledger.addEventListener('click', event => {
-        const target = event.target.closest('[data-month-note]');
-        if (!target) return;
-        // A section's button sits in its heading: the click must not open or close the block.
-        event.preventDefault();
-        event.stopPropagation();
-        if (closedBy?.button === target && Date.now() - closedBy.at < 400) return;
-        if (editing) finish(true);
-        else edit(target);
-      }, true);
-      text.addEventListener('input', fit);
-      text.addEventListener('keydown', event => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          finish(false);
-        } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault();
-          finish(true);
-        }
-      });
-      text.addEventListener('blur', () => finish(true));
-      addEventListener('scroll', () => { if (button && !pop.hidden) place(); }, true);
-    }
     function setupMonthSettings() {
       const dialog = document.querySelector('#month-settings-dialog');
       const form = document.querySelector('#month-settings-form');
@@ -1964,13 +1862,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           list.forEach(section => {
             const name = section.name.trim();
             if (!section.originalName || section.originalName === name) return;
-            // A custom section's notes for this month follow its new name.
-            const from = ExpenseStore.sectionNoteKey(section.type, section.originalName);
-            const note = section.type === 'net' && store.sectionNote(year, month, key, from);
-            if (note) {
-              trackSave(store.saveSectionNote(year, month, key, ExpenseStore.sectionNoteKey(section.type, name), note));
-              trackSave(store.saveSectionNote(year, month, key, from, ''));
-            }
             transactions.forEach(item => {
               if (item.property === key && item.date.startsWith(keyOf(year, month)) && item.section === section.originalName) {
                 item.section = name;
@@ -2584,7 +2475,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         renderLedger();
       };
       const add = () => helpers.triggerLongPress(target.row);
-      const noteButton = target.kind === 'section' ? target.row?.parentElement?.querySelector?.(':scope > div > .ledger-block-tools [data-month-note]') : null;
       const fits = pasteFits(target);
       const pasteAction = fits ? [{ icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
@@ -2612,7 +2502,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
-          ...(noteButton ? [{ icon: 'notes', label: 'Notes', read: true, run: () => { target.row.parentElement.open = true; noteButton.click(); } }] : []),
           ...(target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
           ...(custom ? [{ icon: 'trash', label: 'Delete section', danger: true, run: () => deleteSection(target) }] : [])
         ]);
@@ -3420,11 +3309,104 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (row) setActive(rowsEls().indexOf(row));
       });
     }
+    // ---- Sync markers and panel (see "This device and Firebase" below) ----
+    // The card a Firebase path belongs to: a month, a special card, or the year card for a year's own node.
+    function cardOf(path) {
+      const month = /^months\/(\d{4})_(\w+)/.exec(path);
+      if (month) return keyOf(Number(month[1]), ExpenseStore.MONTH_NAMES.indexOf(month[2]));
+      const event = /^events\/([^/]+)/.exec(path);
+      if (event) return `ev:${event[1]}`;
+      const year = /^years\/(\d{4})/.exec(path);
+      if (year) return `yr:${year[1]}`;
+      return null;
+    }
+    // ↑ on cards changed here and still waiting; ↓ on cards Firebase has newer (both, when both).
+    function syncMarks() {
+      const marks = new Map();
+      const add = (path, kind) => {
+        const key = cardOf(path);
+        if (!key) return;
+        const set = marks.get(key) || new Set();
+        set.add(kind);
+        marks.set(key, set);
+      };
+      syncState.pending.forEach(path => add(path, 'local'));
+      syncState.newer.forEach(path => add(path, 'remote'));
+      return marks;
+    }
+    function applySyncMarks() {
+      const marks = syncMarks();
+      document.querySelectorAll('.month-block[data-month-key]').forEach(block => {
+        const head = block.querySelector('.month-ledger-head h2');
+        if (!head) return;
+        head.querySelectorAll('.sync-mark').forEach(mark => mark.remove());
+        const kinds = marks.get(block.dataset.monthKey);
+        if (!kinds) return;
+        [['local', 'arrow-up', 'Changed on this device; not in Firebase yet'], ['remote', 'arrow-down', 'Newer in Firebase; this device is updating']].filter(([kind]) => kinds.has(kind)).forEach(([kind, icon, title]) => {
+          head.insertAdjacentHTML('beforeend', `<span class="sync-mark is-${kind}" title="${title}" role="img" aria-label="${title}"><i class="ti ti-${icon}" aria-hidden="true"></i></span>`);
+        });
+      });
+    }
+    // After a save, the outbox changes: the ↑ markers follow it at once, with no request to Firebase.
+    let pendingTimer = null;
+    function refreshPendingMarks() {
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(async () => {
+        const queue = await store.sync.vault.pending();
+        syncState.pending = [...new Set(queue.flatMap(item => Object.keys(item.update).filter(path => !path.startsWith('meta/'))))];
+        applySyncMarks();
+        drawSyncPanel();
+      }, 150);
+    }
+    const when = at => (at ? new Date(at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'not yet');
+    function drawSyncPanel() {
+      const body = document.querySelector('#sync-body');
+      if (!body) return;
+      if (!store.sync) {
+        body.innerHTML = '<p class="sync-note">This browser cannot keep a copy of the ledger (a private window, say), so it works online only.</p>';
+        return;
+      }
+      const names = paths => [...new Set(paths.map(describePath))];
+      const list = paths => `<ul class="sync-paths">${names(paths).slice(0, 12).map(name => `<li>${escapeHtml(name)}</li>`).join('')}${names(paths).length > 12 ? `<li>and ${names(paths).length - 12} more</li>` : ''}</ul>`;
+      const rows = [];
+      if (syncState.offline) rows.push(`<li class="is-offline"><i class="ti ti-wifi-off" aria-hidden="true"></i><div><b>Offline</b><span>Working from this device; changes go out when the connection returns.</span></div></li>`);
+      if (syncState.pending.length) rows.push(`<li class="is-local"><i class="ti ti-arrow-up" aria-hidden="true"></i><div><b>Changed here, not in Firebase yet</b>${list(syncState.pending)}</div></li>`);
+      if (syncState.newer.length) rows.push(`<li class="is-remote"><i class="ti ti-arrow-down" aria-hidden="true"></i><div><b>Newer in Firebase</b>${list(syncState.newer)}</div></li>`);
+      if (!rows.length) rows.push(`<li class="is-ok"><i class="ti ti-circle-check" aria-hidden="true"></i><div><b>This device and Firebase match</b><span>Last checked ${when(syncState.checkedAt)}.</span></div></li>`);
+      const kb = syncState.bytes / 1024;
+      const size = kb > 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(kb))} KB`;
+      const copy = isViewer ? 'what you have opened' : syncState.mirroredAt ? `the whole ledger (downloaded ${when(syncState.mirroredAt)})` : 'being downloaded…';
+      body.innerHTML = `<ul class="sync-states">${rows.join('')}</ul><p class="sync-note">On this device: ${copy} · ${syncState.kept} parts · ${size}${syncState.busy ? ' · syncing…' : ''}</p>${syncState.needsRefresh ? '<p class="sync-note is-refresh">This page shows data Firebase has changed since; it refreshes once you finish editing.</p>' : ''}`;
+      document.querySelector('[data-sync="download"]').hidden = isViewer;
+    }
+    function setupSyncPanel() {
+      const dialog = document.querySelector('#sync-dialog');
+      const button = document.querySelector('#sync-button');
+      if (!dialog || !button) return;
+      button.addEventListener('click', () => {
+        drawSyncPanel();
+        dialog.showModal();
+      });
+      dialog.addEventListener('click', async event => {
+        const action = event.target.closest('[data-sync]')?.dataset.sync;
+        if (!action) return;
+        if (!store.sync) return showToast('This browser cannot keep a copy of the ledger.');
+        event.target.closest('[data-sync]').disabled = true;
+        drawSyncPanel();
+        await syncNow({ everything: action === 'download' });
+        event.target.closest('[data-sync]').disabled = false;
+        if (syncState.needsRefresh) {
+          dialog.close();
+          showToast('Showing the newer data from Firebase…');
+          setTimeout(() => window.location.reload(), 800);
+        }
+      });
+      dialog.addEventListener('close', () => { if (syncState.needsRefresh && store.sync) setTimeout(() => window.location.reload(), 300); });
+    }
     ensureNextYear();
     setupYearConfig();
     setupMonthSettings();
     setupSectionSetup();
-    setupSectionNotes();
     setupHub();
     setupTagPicker();
     setupFlowPicker();
@@ -3459,18 +3441,70 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     if (isViewer) {
       setSaveStatus('viewer');
     }
-    // Anything added with no connection goes out when one returns; a clash settled in the other device's favour means this
-    // page is showing what Firebase no longer holds, so it is read again.
+    // ---- This device and Firebase, kept the same ----
+    // With a copy on this device (store.sync), changes made here go out as soon as there is a connection, and parts that
+    // another device changed are fetched again. An admin also keeps the whole ledger here: every month of every year and
+    // the special cards, downloaded once in the background and kept up to date, so all of it opens and changes offline.
+    // Months (and special cards, and the year card) that differ carry a marker: ↑ changed here, not in Firebase yet;
+    // ↓ newer in Firebase. The dot in the top bar opens the Sync panel. Sync runs on opening, every three minutes, when the
+    // connection returns and when the tab is shown again. Whatever this page shows that Firebase has changed since, it reads
+    // again by reloading, once nothing is being edited.
     if (store.sync) {
-      const send = () => store.sync.flush().then(() => {
-        if (!store.sync.stale) return;
-        showToast('Taking the newer version from your other device…');
-        setTimeout(() => window.location.reload(), 1200);
-      });
-      window.addEventListener('online', send);
+      const SYNC_EVERY = 3 * 60 * 1000;
+      const MIRRORED = 'mirroredAt';
+      const fullCopy = !isViewer;
+      // The nodes of a full copy: the shell, the special cards, and every month of every year.
+      const allPaths = () => ['currencies', 'years', 'events', ...store.yearIds().flatMap(year => ExpenseStore.MONTH_NAMES.map(name => `months/${year}_${name}`))];
+      // Whether the page shows a node: the shell always, a month once loaded.
+      const onScreen = path => !path.startsWith('months/') || store.synced.has(path.slice(7));
+      const idle = () => !hasDraft() && !document.querySelector('dialog[open]') && !document.activeElement?.matches?.('input, textarea, select');
+      const reloadWhenIdle = () => {
+        if (!syncState.needsRefresh || !idle() || document.hidden) return;
+        showToast('Showing the newer data from Firebase…');
+        setTimeout(() => window.location.reload(), 1000);
+      };
+      async function runSync({ everything = false } = {}) {
+        if (syncState.busy) return syncState.busy;
+        syncState.busy = (async () => {
+          // 1. Changes made here go out first (a clash with another device asks which one stays).
+          await store.sync.flush();
+          if (store.sync.stale) syncState.needsRefresh = true;
+          // 2. What differs now.
+          let report = await store.sync.compare();
+          const kept = new Set(report.kept);
+          const missing = fullCopy ? allPaths().filter(path => !kept.has(path)) : [];
+          const toPull = everything && fullCopy ? allPaths() : [...new Set([...report.outdated, ...missing])];
+          // 3. Parts newer in Firebase, and parts not here yet, are fetched.
+          if (toPull.length && !report.offline) {
+            const big = toPull.length > 6;
+            if (big) showToast(`Downloading the ledger to this device… 0 of ${toPull.length}`);
+            const done = await store.sync.pull(toPull, (n, total) => { if (big && (n % 6 === 0 || n === total)) showToast(`Downloading the ledger to this device… ${n} of ${total}`); });
+            if (done === toPull.length && (missing.length || everything)) {
+              syncState.mirroredAt = Date.now();
+              store.sync.vault.write(MIRRORED, syncState.mirroredAt);
+              if (big) showToast('The whole ledger is on this device. It works offline too.');
+            }
+            if (report.outdated.some(onScreen)) syncState.needsRefresh = true;
+            report = await store.sync.compare();
+          }
+          Object.assign(syncState, { pending: report.pending, outdated: report.outdated, newer: report.newer, kept: report.kept.length, bytes: report.bytes, offline: report.offline, checkedAt: report.offline ? syncState.checkedAt : Date.now() });
+          setSyncStatus(report.offline ? 'offline' : report.queued ? 'pending' : 'synced');
+          applySyncMarks();
+          drawSyncPanel();
+          reloadWhenIdle();
+        })().catch(error => {
+          console.error('Could not sync with Firebase.', error);
+        }).finally(() => { syncState.busy = null; });
+        return syncState.busy;
+      }
+      syncNow = runSync;
+      store.sync.vault.read(MIRRORED).then(at => { syncState.mirroredAt = at || null; });
+      window.addEventListener('online', () => runSync());
       window.addEventListener('offline', () => setSyncStatus('offline'));
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) send(); });
-      send();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) runSync(); });
+      setInterval(() => (syncState.needsRefresh ? reloadWhenIdle() : runSync()), SYNC_EVERY);
+      setTimeout(() => runSync(), 1500);
     }
+    setupSyncPanel();
     renderLedger();
     })();
