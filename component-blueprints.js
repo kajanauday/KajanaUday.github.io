@@ -182,8 +182,9 @@
       .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
       .map(entry => EntryRow(entry, { mKey, type, property, order }, state, ctx))
       .join('');
-    // The sort button shows only where there is something to order: two entries, or an entry with two notes. The year
-    // card keeps its month-by-month order.
+    // The sort buttons sit on the subsection's own line, straight after its name (and its event's section name). They
+    // show only where there is something to order: two entries, or an entry with two notes. The year card keeps its
+    // month-by-month order.
     const sortable = !inYear && (category.entries.length > 1 || category.entries.some(entry => entry.subEntries.filter(sub => notesShownIn(mKey, sub)).length > 1));
     const draftHere = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
     const e = state.editDraft;
@@ -194,7 +195,8 @@
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i>${inYear ? `<span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${MonthsUsed(category._meta.months.length)}</span>` : `<span class="ledger-cat-name">${ctx.esc(name)}</span>`}${eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : ''}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${sortable ? `<div class="ledger-cat-tools">${SortButtons(key, order, name, ctx)}</div>` : ''}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that

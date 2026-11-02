@@ -321,11 +321,9 @@
     .ledger-cat > summary:hover .ledger-cat-name { color: var(--brand-strong); }
     .ledger-cat > summary > i { color: var(--faint); font-size: 12px; transition: transform .15s; }
     .ledger-cat > summary > strong { grid-column: -2 / -1; justify-self: end; }
-    /* Sort buttons, Day and Amount, just left of the amount: seen while the subsection is open or hovered, so closed rows
-       stay as they were. The active one is tinted; the other is faint until hovered. */
-    /* A subsection's Day / Amount order buttons: at the top right of its entries, once it is open. */
-    .ledger-cat-tools { display: flex; justify-content: flex-end; margin: 2px 0 -2px; }
-    .ledger-sorts { display: inline-flex; gap: 2px; }
+    /* A subsection's Day / Amount order buttons, on its own line straight after its name. The active one is tinted; the
+       other is faint until hovered. */
+    .ledger-sorts { flex: none; display: inline-flex; align-self: center; gap: 2px; }
     .ledger-sort { width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--faint); font-size: 14px; cursor: pointer; transition: color .15s, background-color .15s; }
     .ledger-sort:hover, .ledger-sort:focus-visible { background: var(--line-soft); color: var(--brand-strong); }
     .ledger-sort.is-active { background: var(--brand-soft); color: var(--brand); }
@@ -1228,6 +1226,7 @@ button.flow-sheet-row:hover, button.flow-sheet-row:focus-visible { outline: 0; b
 /* The year card: after a subsection's (or section's) name, the number of months it has entries in, small and grey. */
 .ledger-cat-title { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
 .ledger-cat-title > span { min-width: 0; }
+.ledger-cat-title > .ledger-cat-event { margin-left: 0; }
 .ledger-months-used { flex: none; color: var(--faint); font: 400 10.5px var(--mono); letter-spacing: 0; text-transform: none; }
 /* Sync: the dot in the top bar is a button that opens the Sync panel; 'behind' (violet) means Firebase holds something
    newer that this device is fetching. A month (or special card, or the year card) that differs shows ↑ (changed here, not
