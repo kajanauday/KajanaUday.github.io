@@ -76,8 +76,7 @@
         isEmpty: !isFuture && !this.store.monthNode(year, monthIndex)?.metadata.entries,
         summaryHtml: this.monthSummary(year, monthIndex, currencies, isFuture, { mKey, shown: open ? shown : null }),
         panelsHtml,
-        single: currencies.length <= 1,
-        note: this.store.monthNote(year, monthIndex)
+        single: currencies.length <= 1
       });
     }
 

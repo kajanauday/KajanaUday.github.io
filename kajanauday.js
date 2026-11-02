@@ -1788,14 +1788,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         showToast(`Saved how “${name}” counts.`);
       });
     }
-    // ---- Notes for a month, or for one section block of it: hover the note button to read them, click it to write; the
-    // box grows with the text ----
-    function setupMonthNotes() {
+    // ---- Notes for one section block of a month: hover the note button to read them, click it to write; the box grows
+    // with the text ----
+    function setupSectionNotes() {
       const ledger = document.querySelector('#ledger');
       const pop = document.createElement('div');
       pop.className = 'month-note-pop';
       pop.hidden = true;
-      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" wrap="off" spellcheck="false" aria-label="Month notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
+      pop.innerHTML = '<p class="month-note-view"></p><textarea class="month-note-text" wrap="off" spellcheck="false" aria-label="Notes"></textarea><p class="month-note-hint">Saved when you click away · Esc to cancel</p>';
       document.body.append(pop);
       const view = pop.querySelector('.month-note-view');
       const text = pop.querySelector('.month-note-text');
@@ -1823,13 +1823,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         text.style.overflowY = height <= innerHeight * 0.7 ? 'hidden' : 'auto';
         place();
       };
-      // A button stands for a month's notes, or with data-note-property / data-note-section for one section block's.
+      // A button stands for one section block's notes: its month (data-month-note), currency and section key.
       const noteOf = target => {
         const [year, monthIndex] = yearMonthOf(target.dataset.monthNote);
         const { noteProperty: property, noteSection: key } = target.dataset;
-        return key
-          ? { text: store.sectionNote(year, monthIndex, property, key), save: value => store.saveSectionNote(year, monthIndex, property, key, value) }
-          : { text: store.monthNote(year, monthIndex), save: value => store.saveMonthNote(year, monthIndex, value) };
+        return { text: store.sectionNote(year, monthIndex, property, key), save: value => store.saveSectionNote(year, monthIndex, property, key, value) };
       };
       const show = target => {
         button = target;
@@ -2586,7 +2584,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         renderLedger();
       };
       const add = () => helpers.triggerLongPress(target.row);
-      const noteButton = target.row?.querySelector?.('[data-month-note]');
+      const noteButton = target.kind === 'section' ? target.row?.querySelector?.('[data-month-note]') : null;
       const fits = pasteFits(target);
       const pasteAction = fits ? [{ icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
@@ -2596,8 +2594,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           .map(({ cur, fits: fit }) => ({ icon: 'clipboard', label: `Paste “${clipboard.label}” into ${regions[cur]?.code || cur}`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fit, target: { kind: 'panel', mKey, property: cur } })) : [];
         return write([
           ...pastes,
-          { icon: 'settings', label: settingsLabel, run: settings },
-          ...(noteButton ? [{ icon: 'notes', label: 'Month notes', read: true, run: () => noteButton.click() }] : [])
+          { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
       if (kind === 'panel') {
@@ -3429,7 +3426,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupYearConfig();
     setupMonthSettings();
     setupSectionSetup();
-    setupMonthNotes();
+    setupSectionNotes();
     setupHub();
     setupTagPicker();
     setupFlowPicker();

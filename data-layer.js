@@ -10,8 +10,7 @@
 //     monthSections/<year>_<Month>/<cur>  { own: true, sections[{ name, type, subsections[] }] }  each month's own taxonomy per
 //                                    currency; a month without one has no sections. (A legacy year-wide `sections[]` is moved
 //                                    into every month once, on open, and then removed.)
-//     monthNotes/<year>_<Month>      free text the family keeps about that month
-//     sectionNotes/<year>_<Month>/<cur>/<key>  the same for one section block of that month: key 'income', 'expenses', or
+//     sectionNotes/<year>_<Month>/<cur>/<key>  free text the family keeps about one section block of that month: key 'income', 'expenses', or
 //                                    's~' + the custom section's name made safe for a Firebase key (sectionNoteKey)
 //     metadata                       { entries, currencies[], <cur>: { income, expenses, balance, entries, opening, closing } }
 //     months/<year>_<Month>          { name, month, currencies[], metadata: { entries, <cur>: { income, expenses, balance, entries,
@@ -724,7 +723,6 @@
       const update = this.recomputeFrom(key);
       return this.queue(() => this.db.patch(update));
     }
-    monthNote(year, monthIndex) { return this.year(year)?.monthNotes?.[monthIdOf(year, monthIndex)] || ''; }
     sectionNote(year, monthIndex, currency, key) { return this.year(year)?.sectionNotes?.[monthIdOf(year, monthIndex)]?.[currency]?.[key] || ''; }
     // Writes one section block's notes on their own (empty removes them).
     saveSectionNote(year, monthIndex, currency, key, text) {
@@ -734,15 +732,6 @@
       if (text) own[key] = text;
       else delete own[key];
       return this.queue(() => this.db.patch({ [`years/${year}/sectionNotes/${id}/${currency}/${key}`]: text || null }));
-    }
-    // Writes one month's notes on their own (empty removes them); nothing else in the year changes.
-    saveMonthNote(year, monthIndex, text) {
-      const node = this.year(year);
-      const id = monthIdOf(year, monthIndex);
-      node.monthNotes ||= {};
-      if (text) node.monthNotes[id] = text;
-      else delete node.monthNotes[id];
-      return this.queue(() => this.db.patch({ [`years/${year}/monthNotes/${id}`]: text || null }));
     }
     // Writes one month's currency setup ({ <cur>: { active, carry } }) and the rebuilt metadata.
     saveMonthSetup(year, monthIndex, setup) {

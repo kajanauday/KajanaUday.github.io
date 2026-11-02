@@ -946,7 +946,7 @@
 .ledger-type-section > summary > .section-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; }
 .ledger-type-section > summary .section-totals span { font: 500 13.5px var(--mono); }
 .ledger-type-section > summary .section-totals span.balance { color: var(--ink); }
-/* Month notes: a small button beside the month's name (about the size of the save dot), and the popover it opens. */
+/* Section notes: a small button beside a section block's title (about the size of the save dot), and the popover it opens. */
 .month-ledger-head h2 { display: flex; align-items: center; gap: 2px; }
 .month-note-btn { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; font-size: 13px; opacity: .45; transition: opacity .15s, color .15s; }
 .month-note-btn:hover, .month-note-btn:focus-visible { opacity: 1; color: var(--brand); }

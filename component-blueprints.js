@@ -328,18 +328,17 @@
   };
 
   // Month row: header always, currency panels only while open (closed months stay cheap).
-  // A month's notes: a small button beside its name, filled when it has some; hovering shows them, a click edits them.
-  // The same for a section block of a month (Expenses, Income, a custom section), in one currency.
+  // A section block's notes (Expenses, Income, a custom section, in one currency): a small button beside its title, filled
+  // when it has some; hovering shows them, a click edits them.
   const NoteButton = (attrs, note, what) =>
     `<button type="button" class="month-note-btn${note ? ' has-note' : ''}" ${attrs} aria-label="${note ? `${what} notes` : `Add ${what.toLowerCase()} notes`}"><i class="ti ti-${note ? 'notes' : 'note'}" aria-hidden="true"></i></button>`;
-  const MonthNoteButton = (mKey, note) => NoteButton(`data-month-note="${mKey}"`, note, 'Month');
   const SectionNoteButton = (mKey, property, key, title, ctx) =>
     NoteButton(`data-month-note="${mKey}" data-note-property="${property}" data-note-section="${ctx.esc(key)}"`, ctx.sectionNote(mKey, property, key), title);
   // The year card (isYear) leads the list: the year's months as one ledger.
-  const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, isEvent, isYear, summaryHtml, panelsHtml, single, note }) =>
+  const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, isEvent, isYear, summaryHtml, panelsHtml, single }) =>
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}${isEvent ? ' is-event' : ''}${isYear ? ' is-year' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent || isYear ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${isYear ? '<i class="ti ti-calendar-stats month-name-star" aria-hidden="true"></i>' : ''}${name}</button>${isEvent || isYear ? '' : MonthNoteButton(mKey, note)}</h2>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent || isYear ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${isYear ? '<i class="ti ti-calendar-stats month-name-star" aria-hidden="true"></i>' : ''}${name}</button></h2>
           ${summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}
