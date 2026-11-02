@@ -1,5 +1,5 @@
 // LedgerRenderer: paints months.html from the ExpenseStore.
-//   Level 1  year tabs, "N entries in YYYY" and the year summary cards: straight from years/<year>/metadata
+//   Level 1  year tabs and the year card's figures: straight from years/<year>/metadata
 //   Level 2  month rows from years/<year>/months, each showing only the currencies active that month; a closed row's
 //            figures are that month's stored metadata
 //   Level 3+ an opened month's panels (sections → categories → entries → sub-entries), built from its fetched entries
@@ -26,16 +26,6 @@
       if (year !== today.getFullYear()) return months.reverse();
       const now = today.getMonth();
       return [...months.filter(month => month === now), ...months.filter(month => month < now).reverse(), ...months.filter(month => month > now)];
-    }
-
-    // `edit` is the year-summary row being renamed, if any.
-    yearKpis(year, edit = null) {
-      return this.store.yearCurrencies(year).map(currency => {
-        const totals = this.store.yearTotals(year, currency);
-        const region = this.ctx.regions[currency];
-        const breakdown = this.store.isYearLoaded(year) ? this.store.yearBreakdown(year, currency) : null;
-        return B().YearKpiCard({ id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, breakdown }, year, this.ctx, edit);
-      }).join('');
     }
 
     currencyPanel(currency, year, monthIndex, state) {
@@ -119,7 +109,36 @@
     monthGroups(year, state) {
       // Months as one list with no group labels: the current month first, then earlier months (newest first), then
       // upcoming ones at the bottom (soonest first). Past, current and upcoming show in their colours (see the stylesheet).
-      return `<div class="month-group month-list">${this.monthOrder(year).map(month => this.monthBlock(year, month, state)).join('')}</div>`;
+      // The year card leads the list.
+      return `<div class="month-group month-list">${this.yearCard(year, state)}${this.monthOrder(year).map(month => this.monthBlock(year, month, state)).join('')}</div>`;
+    }
+
+    // The whole year as one ledger, drawn like a month (see ExpenseStore.yearbook): its key "yr:<year>". Its figures are
+    // the year's totals; once opened it loads every month of the year, then shows each currency's panel.
+    yearCard(year, state) {
+      const mKey = `yr:${year}`;
+      const currencies = this.store.yearCurrencies(year);
+      if (!currencies.length) return '';
+      const open = state.expandedMonths.has(mKey);
+      const shown = this.shownCurrencies(mKey, currencies, state);
+      const rows = currencies.map(currency => {
+        const totals = this.store.yearTotals(year, currency);
+        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
+      });
+      const panelsHtml = !open ? '' : this.store.isYearLoaded(year)
+        ? shown.map(currency => B().CurrencyPanel(this.store.yearbook(year, currency), { mKey }, state, this.ctx)).join('')
+        : `<p class="ledger-none">Loading every month of ${year}…</p>`;
+      return B().MonthBlock({
+        mKey,
+        label: `${year}, the whole year`,
+        name: String(year),
+        open,
+        isYear: true,
+        isEmpty: !this.store.year(year)?.metadata.entries,
+        summaryHtml: B().MonthSummary(rows, { isFuture: false, mKey, shown: open ? shown : null, slots: this.store.currencyKeys() }, this.ctx),
+        panelsHtml,
+        single: shown.length <= 1
+      });
     }
 
     yearTabs(activeYear, special = false) {

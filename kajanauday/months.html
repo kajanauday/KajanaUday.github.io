@@ -18,15 +18,15 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261104b">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261106a">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261103a" defer></script>
-  <script src="../data-layer.js?v=20261101b" defer></script>
+  <script src="../data-layer.js?v=20261106a" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261104b" defer></script>
-  <script src="../renderer-engine.js?v=20261104a" defer></script>
-  <script src="../kajanauday.js?v=20261104b" defer></script>
+  <script src="../component-blueprints.js?v=20261106a" defer></script>
+  <script src="../renderer-engine.js?v=20261106a" defer></script>
+  <script src="../kajanauday.js?v=20261106a" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -45,12 +45,6 @@
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
       <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
-      <button type="button" class="quiet-button summary-toggle" data-toggle-universe aria-pressed="false" aria-controls="universe" title="Year summary"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Year summary</span></button>
-    </div>
-    <div class="universe" id="universe">
-      <div class="universe-inner">
-        <section class="year-kpis" id="year-kpis" aria-label="Year to date"></section>
-      </div>
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>

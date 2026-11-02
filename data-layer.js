@@ -26,9 +26,9 @@
 //                                    { name, year, created, include, currencies[], sections/<cur>[], entries: <cur> → income/expenses →
 //                                    [{ category, total, count, entries[{ date, …, notes[{ date, … }] }] }] }
 //                                    With `include` on, each entry also counts in the month of its date (totals, balances, the
-//                                    year summary); a month's metadata keeps that share as `fromEvents` so it can be taken out.
+//                                    year's totals); a month's metadata keeps that share as `fromEvents` so it can be taken out.
 //
-// The shell (year tabs, month rows, year summary) is drawn from `years` alone. A month's entries are fetched only when it is
+// The shell (year tabs, month rows, the year card's figures) is drawn from `years` alone. A month's entries are fetched only when it is
 // opened (ensureMonth). Amounts are minor units (paise / sen). An entry with notes counts as the sum of its notes.
 (function (global) {
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -542,6 +542,12 @@
       this.writes = Promise.resolve();
       this.events = {};
       this.eventSynced = new Map(); // eventId → JSON of its entries document as Firebase holds it
+      // Change counters for the year card (see yearbook): a month's goes up when its entries load or change, the events'
+      // when any event, its entries or its settings change.
+      this.versions = new Map(); // monthId → number
+      this.eventsVersion = 0;
+      this.slices = new Map();   // '<monthId>|<cur>' → { sig, sections }: one month as the year card uses it
+      this.books = new Map();    // '<year>|<cur>' → { sig, book }: the year card's last build
       Object.entries(events || {}).forEach(([id, event]) => this.addEvent(id, event));
     }
     // readOnly opens a store that can never write to Firebase (view-only accounts); auth supplies the ID token per request.
@@ -657,6 +663,7 @@
           const items = flattenMonth(id, data, this.currencyKeys());
           this.transactions.push(...items);
           this.synced.set(id, JSON.stringify(monthDoc(items)));
+          this.changed(id);
         }).finally(() => this.loading.delete(id)));
       }
       return this.loading.get(id);
@@ -666,7 +673,10 @@
       const items = flattenEvent(id, stored.entries, this.currencyKeys());
       this.transactions.push(...items);
       this.eventSynced.set(id, JSON.stringify(monthDoc(items, true)));
+      this.eventsVersion += 1;
     }
+    // A month's entries changed (or loaded): the year card rebuilds that month, and only that month, when next drawn.
+    changed(monthId) { this.versions.set(monthId, (this.versions.get(monthId) || 0) + 1); }
     ensureYear(year) {
       return Promise.all(MONTH_NAMES.map((_, monthIndex) => this.ensureMonth(year, monthIndex)));
     }
@@ -685,6 +695,7 @@
         if (next === json) return;
         update[`months/${id}`] = doc;
         this.synced.set(id, next);
+        this.changed(id);
         years.add(year);
       });
       // An event's entries are saved with the event; when it shows in months, every year's totals are rebuilt.
@@ -694,6 +705,7 @@
         if (next === json) return;
         update[`events/${id}/entries`] = doc;
         this.eventSynced.set(id, next);
+        this.eventsVersion += 1;
         if (this.events[id]?.include && this.yearIds().length) years.add(this.yearIds()[0]);
       });
       if (years.size) Object.assign(update, this.recomputeFrom([...years].sort()[0]));
@@ -837,6 +849,7 @@
         const doc = monthDoc(this.eventItems(id), true);
         update[`events/${id}/entries`] = doc;
         this.eventSynced.set(id, JSON.stringify(doc));
+        this.eventsVersion += 1;
       });
       if (!Object.keys(update).length) return;
       await this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the event sections.', error));
@@ -864,6 +877,7 @@
     createEvent(id, name, year, currencies = []) {
       this.events[id] = normalizeEvent({ name, year, currencies, created: new Date().toISOString().slice(0, 10) }, this.currencyKeys());
       this.eventSynced.set(id, 'null');
+      this.eventsVersion += 1;
       const { sections, ...meta } = this.events[id];
       return this.queue(() => this.db.patch({ [`events/${id}`]: meta }));
     }
@@ -872,6 +886,7 @@
     saveEventMeta(id, fields) {
       const event = this.events[id];
       const rebuild = 'include' in fields && Boolean(fields.include) !== event.include;
+      this.eventsVersion += 1;
       Object.assign(event, fields, 'include' in fields ? { include: Boolean(fields.include) } : {});
       const update = Object.fromEntries(Object.keys(fields).map(key => [`events/${id}/${key}`, event[key]]));
       if (rebuild && this.yearIds().length) Object.assign(update, this.recomputeFrom(this.yearIds()[0]));
@@ -881,6 +896,7 @@
       const included = this.events[id]?.include;
       delete this.events[id];
       this.eventSynced.delete(id);
+      this.eventsVersion += 1;
       for (let index = this.transactions.length - 1; index >= 0; index--) if (this.transactions[index].eventId === id) this.transactions.splice(index, 1);
       const update = { [`events/${id}`]: null };
       if (included && this.yearIds().length) Object.assign(update, this.recomputeFrom(this.yearIds()[0]));
@@ -896,6 +912,119 @@
         _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expense, closing: totals.income - totals.expense, carried: 0, carriedFrom: '' },
         sections: this.groupIntoSections(items, this.eventSections(id, currency))
       };
+    }
+
+    // ---- year card: a whole year as one ledger ----
+    // One currency's year in the same shape as country(), so the month panel draws it: every section, subsection and entry
+    // of the year's months, each entry exactly as stored (with its notes), marked with the month it comes from. Only the
+    // totals are added up: Income, Expenses and the closing balance are the year's own (with its net and the balance it
+    // opened on), and each block adds up to them as a month's do (the balance the year opened on, what custom sections and
+    // events shown in months add, then the subsections).
+    //   A section is one section across the year, by name (nameKey) and type, spelled as in its latest month: the Income
+    //   (Expenses) block holds every income (expense) section, a custom section or an event's ★ section is its own block.
+    //   A subsection is one row per section across the year, by name; `_meta.months` gives its amount and entry count per
+    //   month, `_meta.items` what it went on: its entries' notes (or an entry itself when it has none) added up by
+    //   description over the year (total, how many, in how many months), largest first.
+    //   Each entry keeps its id (the same object the month edits) and gains `month` (0–11) and `ref`, the Firebase path
+    //   of the month document it is stored in, so anything changed from the year card lands in that month.
+    // Not worked out on every draw: each month is a cached slice, rebuilt only when that month's entries, its section
+    // list or the events change (versions, eventsVersion), and the year is put together again only when a slice changed.
+    // Months not loaded yet are left out (the year card loads every month before it draws).
+    monthSlice(year, monthIndex, currency) {
+      const id = monthIdOf(year, monthIndex);
+      const sig = `${this.versions.get(id) || 0}|${this.eventsVersion}|${JSON.stringify(this.sections(year, monthIndex, currency))}`;
+      const key = `${id}|${currency}`;
+      const cached = this.slices.get(key);
+      if (cached?.sig === sig) return cached;
+      const slice = { sig, sections: this.country(year, monthIndex, currency).sections };
+      this.slices.set(key, slice);
+      return slice;
+    }
+    yearbook(year, currency) {
+      // The months this currency is on (as the year's totals count them), loaded.
+      const months = MONTH_NAMES.map((_, monthIndex) => monthIndex).filter(monthIndex => this.monthNode(year, monthIndex)?.metadata?.[currency] && this.isLoaded(year, monthIndex));
+      const slices = months.map(monthIndex => [monthIndex, this.monthSlice(year, monthIndex, currency)]);
+      const totals = this.yearTotals(year, currency);
+      const sig = `${slices.map(([monthIndex, slice]) => `${monthIndex}:${slice.sig}`).join(',')}#${JSON.stringify(totals)}`;
+      const key = `${year}|${currency}`;
+      const cached = this.books.get(key);
+      if (cached?.sig === sig) return cached.book;
+      const sections = new Map();
+      // Months are taken newest first, so a name is spelled as its latest month spells it.
+      [...slices].reverse().forEach(([monthIndex, slice]) => {
+        const monthId = monthIdOf(year, monthIndex);
+        Object.values(slice.sections).forEach(section => {
+          const { id: name, type } = section._meta;
+          const sectionKey = section._meta.event ? `event:${section._meta.event}:${type}` : `${section._meta.block ? 'block' : 'section'}:${type}:${nameKey(name)}`;
+          let into = sections.get(sectionKey);
+          if (!into) {
+            into = { _meta: { id: name, type, subsections: [], names: [], categories: new Map() }, categories: {} };
+            if (section._meta.block) into._meta.block = true;
+            if (section._meta.event) into._meta.event = section._meta.event;
+            sections.set(sectionKey, into);
+          }
+          if (!into._meta.names.includes(name)) into._meta.names.push(name);
+          // A custom section's own figures (GI, GE, GB) and what it adds to Income and Expenses: the months' sum.
+          if (section._meta.stats) {
+            const stats = into._meta.stats ||= {};
+            Object.entries(section._meta.stats).forEach(([field, amount]) => { if (amount !== undefined) stats[field] = (stats[field] || 0) + amount; });
+          }
+          (section._meta.adds?.lines || []).forEach(line => {
+            const lines = (into._meta.adds ||= { lines: [] }).lines;
+            const same = lines.find(item => item.type === line.type && item.label === line.label);
+            if (same) Object.assign(same, { amount: same.amount + line.amount, counted: same.counted || line.counted });
+            else lines.push({ ...line });
+          });
+          section._meta.subsections.forEach(sub => {
+            if (!into._meta.subsections.some(own => nameKey(own) === nameKey(sub))) into._meta.subsections.push(sub);
+          });
+          Object.entries(section.categories).forEach(([categoryName, category]) => {
+            const catKey = nameKey(categoryName);
+            let row = into._meta.categories.get(catKey);
+            if (!row) {
+              row = { _meta: { id: categoryName, icon: category._meta.icon, entries: 0, total: 0, months: [] }, entries: [] };
+              into._meta.categories.set(catKey, row);
+            }
+            row._meta.entries += category._meta.entries;
+            row._meta.total += category._meta.total;
+            if (category.entries.length) row._meta.months.push({ month: monthIndex, total: category._meta.total, entries: category._meta.entries });
+            const path = `months/${monthId}/${currency}/${bucketOf(type)}`;
+            row.entries.push(...category.entries.map(entry => ({ ...entry, month: monthIndex, ref: { path, id: entry.id } })));
+          });
+        });
+      });
+      // What each subsection went on, by description, over the year.
+      sections.forEach(section => section._meta.categories.forEach(row => {
+        const items = new Map();
+        row.entries.forEach(entry => {
+          (entry.subEntries.length ? entry.subEntries.map(note => [note.description, Number(note.amount)]) : [[entry.description, entry._meta.total]]).forEach(([name, amount]) => {
+            const key = nameKey(name) || '—';
+            const item = items.get(key) || { key, name: name || '—', total: 0, count: 0, months: new Set() };
+            item.total += amount;
+            item.count += 1;
+            item.months.add(entry.month);
+            items.set(key, item);
+          });
+        });
+        row._meta.items = [...items.values()].map(item => ({ ...item, months: item.months.size })).sort((a, b) => b.total - a.total);
+      }));
+      const out = {};
+      sections.forEach((section, sectionKey) => {
+        // Subsections listed in a month under a spelling another month uses for its entries show once.
+        section._meta.subsections = section._meta.subsections.filter(sub => !section._meta.categories.has(nameKey(sub)) || section._meta.categories.get(nameKey(sub))._meta.id === sub);
+        section._meta.categories.forEach(row => { section.categories[row._meta.id] = row; });
+        delete section._meta.categories;
+        out[sectionKey] = section;
+      });
+      // The balance the year opened on, as its first month brought it in.
+      const first = months.length ? this.monthNode(year, months[0]).metadata[currency] : null;
+      const region = this.currencies[currency];
+      const book = {
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, net: totals.balance, opening: totals.opening, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months },
+        sections: out
+      };
+      this.books.set(key, { sig, book });
+      return book;
     }
 
     // ---- name catalogue ----
@@ -953,49 +1082,7 @@
 
     // ---- year breakdown ----
     isYearLoaded(year) { return MONTH_NAMES.every((_, monthIndex) => this.isLoaded(year, monthIndex)); }
-    // Entries-only totals for one currency across the whole year (every month loaded): section → subsection → item, with
-    // names de-duplicated by nameKey. Items are what a subsection was spent on: each note of an entry with notes (e.g.
-    // "EMI - Home Loan" under EMIలు), or the entry itself when it has none. An entry without a stored section is placed
-    // by its month's list, else under "Other". A section is `renamable` when it is a real section (stored on entries or
-    // in a month's list), not an event's ★ section or the "Other" fallback.
-    yearBreakdown(year, currency) {
-      const byType = { income: new Map(), expense: new Map(), net: new Map() };
-      MONTH_NAMES.forEach((_, monthIndex) => {
-        const lists = this.sections(year, monthIndex, currency);
-        this.items(year, currency, monthIndex, { withEvents: true }).filter(item => !item.parentId).forEach(item => {
-          const { name: sectionName, source } = this.summarySection(item, lists);
-          const total = this.entryTotal(item.id);
-          const sections = byType[item.type in byType ? item.type : 'expense'];
-          const section = sections.get(nameKey(sectionName)) || { name: sectionName, total: 0, subsections: new Map(), renamable: false, event: false };
-          section.total += total;
-          if (source === 'stored' || source === 'list') section.renamable = true;
-          if (source === 'event') section.event = true;
-          sections.set(nameKey(sectionName), section);
-          const sub = section.subsections.get(nameKey(item.category)) || { name: item.category, total: 0, entries: 0, months: new Set(), items: new Map() };
-          sub.total += total;
-          sub.entries += 1;
-          sub.months.add(monthIndex);
-          section.subsections.set(nameKey(item.category), sub);
-          const notes = this.transactions.filter(note => note.parentId === item.id);
-          (notes.length ? notes.map(note => [note.description, Number(note.amount)]) : [[item.description, total]]).forEach(([name, amount]) => {
-            const key = nameKey(name) || '—';
-            const part = sub.items.get(key) || { name: name || '—', total: 0, count: 0, months: new Set() };
-            part.total += amount;
-            part.count += 1;
-            part.months.add(monthIndex);
-            sub.items.set(key, part);
-          });
-        });
-      });
-      const sorted = map => [...map].map(([key, value]) => ({ ...value, key })).sort((a, b) => b.total - a.total);
-      const finish = sections => sorted(sections).map(section => ({
-        ...section,
-        subsections: sorted(section.subsections).map(sub => ({ ...sub, months: sub.months.size, items: sorted(sub.items).map(part => ({ ...part, months: part.months.size })) }))
-      }));
-      return { expense: finish(byType.expense), income: finish(byType.income), net: finish(byType.net) };
-    }
-
-    // The section the year summary files an entry under, and where that came from: 'event' (★ event name), 'stored' (the
+    // The section a year-wide rename files an entry under, and where that came from: 'event' (★ event name), 'stored' (the
     // entry's own section), 'list' (the month's list section holding its subsection) or 'other' (neither).
     summarySection(item, lists) {
       if (item.eventId) return { name: `★ ${this.eventName(item.eventId)}`, source: 'event' };
@@ -1005,9 +1092,9 @@
       return { name: otherSectionName(item.type), source: 'other' };
     }
 
-    // ---- year-wide rename (from the year summary) ----
-    // Renames one year-summary row for one currency across the whole year: a section, a subsection or an item.
-    // target: { level: 'section' | 'sub' | 'item', type, section, sub?, item? }, keys as yearBreakdown gives them (nameKey).
+    // ---- year-wide rename (from the year card) ----
+    // Renames one row of the year card for one currency across the whole year: a section, a subsection or an item.
+    // target: { level: 'section' | 'sub' | 'item', type, section, sub?, item? }, each a name's nameKey.
     //   section  every month's list section of that name and type, and every entry (and note) that stores it
     //   sub      in that section, every month's list name and every entry (and its notes) filed under it
     //   item     in that subsection, every note (or note-less entry) of that description

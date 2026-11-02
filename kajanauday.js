@@ -52,9 +52,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return latest ? new Date(latest, latest < today.getFullYear() ? 11 : 0, 1) : new Date(today.getFullYear(), today.getMonth(), 1);
     })();
     let toastTimer;
-    // The year summary always starts collapsed; it opens only from its button.
-    let universeOpen = false;
-    try { sessionStorage.removeItem(`${STORAGE_KEY}-universe`); } catch (error) { /* Nothing stored. */ }
 
     function saveTransactions() { trackSave(store.saveTransactions()); }
     function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
@@ -167,12 +164,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     let ledgerDraft = null;
     let entryDraft = null;
     let subEntryDraftParentId = null;
-    let editDraft = null; // { kind: 'entry' | 'note', id } or { kind: 'category', month, property, type, category }
-    // Year-summary rename: the row being renamed ({ key, property, target, original, name, open, fresh }), and right after
-    // a rename, [old key, new key] so the renamed row and the rows inside it stay open under their new keys.
-    let summaryEdit = null;
-    let summaryKeyMove = null;
-    const hasDraft = () => Boolean(ledgerDraft || entryDraft || subEntryDraftParentId || editDraft || summaryEdit);
+    // { kind: 'entry' | 'note', id }, { kind: 'category', month, property, type, category, section }, or in the year card
+    // { kind: 'year-section', month, property, type, block, group, section } and
+    // { kind: 'year-item', month, property, type, section, category, item }
+    let editDraft = null;
+    const hasDraft = () => Boolean(ledgerDraft || entryDraft || subEntryDraftParentId || editDraft);
     const expandedEntries = new Set();
     let revealKey = null; // subsection to open on the next render, e.g. the one that just got an entry
     const catKey = (month, property, section, category) => [month, property, section, category].join('|');
@@ -217,7 +213,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       netClass: minor => (minor > 0 ? 'income' : minor < 0 ? 'expense' : '')
     };
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
-    function renderYearKpis(year) { return ledgerRenderer.yearKpis(year, summaryEdit); }
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     // loadMissing: false redraws from what is already in memory only, without starting any Firebase load.
     function renderLedger({ loadMissing = true } = {}) {
@@ -228,25 +223,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const specialButton = document.querySelector('[data-ledger-special]');
       specialButton.setAttribute('aria-pressed', String(specialMode));
       specialButton.title = specialMode ? `Back to ${year}` : 'Special cards and #hashtags';
-      // Rows opened in the year summary stay open when it is redrawn, also under their new key after a rename; a row
-      // being renamed keeps what was typed.
-      const kpis = document.querySelector('#year-kpis');
-      const [movedFrom, movedTo] = summaryKeyMove || [];
-      const moveKey = key => (movedFrom && (key === movedFrom || key.startsWith(`${movedFrom}|`)) ? movedTo + key.slice(movedFrom.length) : key);
-      const openRows = new Set([...kpis.querySelectorAll('details[open][data-key], .is-renaming[data-open][data-key]')].map(row => moveKey(row.dataset.key)));
-      summaryKeyMove = null;
-      const typed = kpis.querySelector('[data-kb-rename] input');
-      if (typed && summaryEdit) summaryEdit.name = typed.value;
-      kpis.innerHTML = renderYearKpis(year);
-      kpis.querySelectorAll('details[data-key]').forEach(row => { if (openRows.has(row.dataset.key)) row.open = true; });
-      const toggle = document.querySelector('[data-toggle-universe]');
-      toggle.setAttribute('aria-pressed', String(universeOpen));
-      toggle.querySelector('span').textContent = universeOpen ? 'Hide summary' : 'Year summary';
-      toggle.hidden = specialMode; // the year summary belongs to a year, not to the Special tab
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
       const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
+      // The year card's section groups (open by default) and description lists (closed by default) stay as they were.
+      const yearFolds = new Map([...host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items')].map(item => [item.dataset.key, item.open]));
       const typingFilter = document.activeElement?.matches?.('[data-hub-filter]');
       host.innerHTML = specialMode ? renderHub() : store.year(year) ? renderMonthGroups(year) : '<p class="ledger-none">No years in Firebase yet. Add one from Year settings.</p>';
       if (specialMode) {
@@ -258,28 +240,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
       host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
       host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing').forEach(cat => { const section = cat.closest('details.ledger-type-section'); if (section) section.open = true; });
+      host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items').forEach(item => {
+        if (yearFolds.has(item.dataset.key) && !item.querySelector('form')) item.open = yearFolds.get(item.dataset.key);
+      });
       revealKey = null;
       focusDrafts(host);
-      // After the ledger's own fields, which close any open suggestion list, so the summary field keeps its list.
-      if (summaryEdit) {
-        const field = kpis.querySelector('[data-kb-rename] input');
-        if (!field) summaryEdit = null;
-        else {
-          attachSummarySuggestions(field, summaryEdit);
-          field.focus({ preventScroll: true });
-          if (summaryEdit.fresh) field.select();
-          summaryEdit.fresh = false;
-        }
-      }
-      const showUniverse = universeOpen && !specialMode;
-      document.body.classList.toggle('show-universe', showUniverse);
-      const universe = document.querySelector('#universe');
-      universe.inert = !showUniverse;
-      universe.setAttribute('aria-hidden', String(!showUniverse));
       fitSummaryColumns();
       if (!loadMissing) return;
       loadOpenMonths(year);
-      if (universeOpen) loadYearForSummary(year);
+      if (!specialMode && expandedMonths.has(`yr:${year}`)) loadYearForCard(year);
     }
     // The month list's figure columns are as wide as the widest figure showing (plus a small gap), so every month's
     // figures line up without spreading out; a longer figure (say −13.135K) widens them all. Fonts arriving late
@@ -305,19 +274,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const adding = host.querySelector('[data-ledger-form="entry"], [data-ledger-form="sub-entry"]');
       focusQuietly(adding?.elements.day || adding?.elements.description);
       focusQuietly(host.querySelector('[data-ledger-form="edit-entry"], [data-ledger-form="edit-note"]')?.elements.description);
-      const rename = host.querySelector('[data-ledger-form="rename-category"]')?.elements.name;
+      const rename = host.querySelector('[data-ledger-form="rename-category"], [data-ledger-form="rename-year-section"], [data-ledger-form="rename-year-item"]')?.elements.name;
       focusQuietly(rename);
       rename?.select();
       attachLedgerSuggestions(host);
     }
-    // The year-summary name field suggests names already in use: sections and subsections of the same type, or for an item
-    // past entry and note descriptions (those filed under the same subsection first). The current name is left out.
-    // Picking one only fills it in; Enter then renames, merging into that name after asking.
-    function attachSummarySuggestions(field, { target, original }) {
+    // The year card's section and description fields suggest names already in use: sections of the same type, or past
+    // entry and note descriptions (those filed under the same subsection first). The current name is left out. Picking
+    // one only fills it in; Enter then renames, merging into that name after asking.
+    function attachYearRenameSuggestions(field, { level, type, category, original }) {
       const items = () => {
-        if (target.level === 'section') return sectionChoices([original]).filter(item => item.type === target.type);
-        if (target.level === 'sub') return subsectionChoices(target.type, [original]);
-        const owner = { type: target.type, category: target.sub };
+        if (level === 'section') return sectionChoices([original]).filter(item => item.type === type);
+        const owner = { type, category };
         const merged = new Map();
         [...descriptionChoices('notes', owner, original), ...descriptionChoices('entries', owner, original)].forEach(item => {
           const key = nameKey(item.name);
@@ -362,6 +330,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const input = form.elements.description;
         suggest.attach(input, { items: () => descriptionChoices(kind, owner || {}, form.dataset.ledgerForm.startsWith('edit') ? input.defaultValue : ''), onPick: pickDescription(form) });
       });
+      const sectionForm = host.querySelector('[data-ledger-form="rename-year-section"]');
+      if (sectionForm) attachYearRenameSuggestions(sectionForm.elements.name, { level: 'section', type: sectionForm.dataset.type, original: sectionForm.dataset.section });
+      const itemForm = host.querySelector('[data-ledger-form="rename-year-item"]');
+      if (itemForm) attachYearRenameSuggestions(itemForm.elements.name, { level: 'item', type: itemForm.dataset.type, category: itemForm.dataset.category, original: itemForm.dataset.name });
       const renameForm = host.querySelector('[data-ledger-form="rename-category"]');
       if (renameForm) {
         suggest.attach(renameForm.elements.name, {
@@ -373,14 +345,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         });
       }
     }
-    // The category breakdown needs every month's entries; they load once per year, then the summary repaints.
+    // The year card needs every month's entries; they load once per year, then the ledger repaints.
     const yearLoads = new Set();
-    function loadYearForSummary(year) {
+    function loadYearForCard(year) {
       if (!store.year(year) || store.isYearLoaded(year) || yearLoads.has(year)) return;
       yearLoads.add(year);
       store.ensureYear(year).then(() => renderLedger(), error => {
         console.error('Could not load the year from Firebase.', error);
-        showToast(`Could not load ${year} for the summary.`);
+        showToast(`Could not load every month of ${year}.`);
       }).finally(() => yearLoads.delete(year));
     }
     // Open months show "Loading entries…" until their entries arrive from Firebase, then the ledger repaints.
@@ -394,10 +366,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         console.error('Could not load entries from Firebase.', error);
         showToast('Could not load entries from Firebase.');
       });
-    }
-    function setUniverse(open) {
-      universeOpen = open;
-      renderLedger();
     }
     function selectLedgerYear(year) {
       const today = new Date();
@@ -784,64 +752,128 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(message);
     }
-    // Renaming from the year summary changes the whole year for that currency: every month's section lists and every
-    // entry and note filed under the row (see ExpenseStore.planRename). Merging into a name that already exists asks first.
-    function saveSummaryRename() {
-      const edit = summaryEdit;
-      const input = document.querySelector('[data-kb-rename] input');
-      if (!edit || !input) return;
-      const name = input.value.trim().replace(/\s+/g, ' ');
-      const year = currentMonth.getFullYear();
-      const what = { section: 'section', sub: 'subsection', item: 'item' }[edit.target.level];
-      if (name === edit.original) return cancelSummaryRename();
-      if (!name) {
-        input.setAttribute('aria-invalid', 'true');
-        showToast('Type a name first.');
-        return input.focus();
-      }
-      if (!store.isYearLoaded(year)) return showToast(`Still loading ${year}; try again in a moment.`);
-      const plan = store.planRename(year, edit.property, edit.target, name);
-      if (!plan.months) {
-        cancelSummaryRename();
-        return showToast(`Nothing in ${year} is filed under “${edit.original}”.`);
-      }
-      if (plan.merged && !window.confirm(`“${name}” already exists in ${year}. Merge “${edit.original}” into it?`)) return input.focus();
-      plan.apply();
-      trackSave(store.saveTransactions(year));
-      const at = edit.key.lastIndexOf('|') + 1;
-      summaryKeyMove = [edit.key, edit.key.slice(0, at) + (ExpenseStore.nameKey(name) || '—')];
-      summaryEdit = null;
-      renderLedger();
-      showToast(`Renamed ${what} “${edit.original}” to “${name}” in ${plan.months} ${plan.months === 1 ? 'month' : 'months'} of ${year} (${plan.entries} ${plan.entries === 1 ? 'entry' : 'entries'}).`);
-    }
-    function cancelSummaryRename() {
-      if (!summaryEdit) return;
-      summaryEdit = null;
-      renderLedger();
-    }
-    // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
-    function saveCategoryRename(form) {
-      const { month, property, type, category } = form.dataset;
+    // ---- The year card's renames: they change every month of the year, for the currency they are made in, exactly as
+    // renaming in each month would. A name already used in a month by other entries is refused (rename there first). ----
+    function saveYearCategoryRename(form) {
+      const { month: key, property, type, category, section } = form.dataset;
+      const year = Number(key.slice(3));
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
       const name = input.value.trim().replace(/\s+/g, ' ');
-      const scope = panelScope(month, property);
       if (name === category) {
         editDraft = null;
         return renderLedger();
       }
+      const fail = text => {
+        hint.textContent = text;
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+      };
+      if (!name) return fail('Type a name first.');
+      if (!store.isYearLoaded(year)) return fail(`Still loading ${year}; try again in a moment.`);
+      const same = (a, b) => ExpenseStore.nameKey(a) === ExpenseStore.nameKey(b);
+      // Each month's own spelling of the subsection, where it has it (on entries or in its list).
+      const months = [];
+      for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+        const scope = panelScope(keyOf(year, monthIndex), property);
+        const rows = transactions.filter(item => scope.match(item) && item.type === type);
+        const spelling = [...rows.map(item => item.category), ...scope.sections().filter(item => item.type === type).flatMap(item => item.subsections)].find(other => same(other, category));
+        if (!spelling) continue;
+        // Only where the month files it under the same section as the row renamed (as the year card groups it).
+        const home = Object.values(store.monthSlice(year, monthIndex, property).sections).find(item => !item._meta.event && item._meta.type === type && spelling in item.categories);
+        if (section && home && !same(home._meta.id, section)) continue;
+        const clash = spelling !== name && rows.some(item => item.category !== spelling && item.category.toLowerCase() === name.toLowerCase());
+        months.push({ monthIndex, scope, spelling, clash });
+      }
+      const clashes = months.filter(item => item.clash).map(item => ExpenseStore.MONTH_NAMES[item.monthIndex]);
+      if (clashes.length) return fail(`"${name}" already has entries in ${clashes.join(', ')}. Rename it there first.`);
+      if (!months.length) return fail(`Nothing in ${year} is filed under "${category}".`);
+      let finalName = name;
+      months.forEach(item => { finalName = renameCategoryIn(item.scope, type, item.spelling, name); });
+      // One save: every changed month's entries and the year (its months' section lists and totals).
+      trackSave(store.saveTransactions(year));
+      editDraft = null;
+      revealKey = catKey(key, property, type, finalName);
+      renderLedger();
+      showToast(`Renamed "${category}" to "${finalName}" in ${months.length} ${months.length === 1 ? 'month' : 'months'} of ${year}.`);
+    }
+    // A double-click on a section's heading in the year card: a custom section's, a section's own heading inside Income or
+    // Expenses (`group`), or Income or Expenses itself, which renames the one section it holds.
+    function startYearSectionRename(key, property, block, group = null) {
+      if (!block) return;
+      if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+      const type = ['income', 'net'].includes(block.dataset.type) ? block.dataset.type : 'expense';
+      const named = block.dataset.section || '';
+      let section = group || named;
+      if (!section) {
+        const shown = [...new Set([...block.querySelectorAll('.ledger-cat:not([data-event-id])')].map(cat => cat.dataset.section))];
+        if (shown.length !== 1) return showToast(shown.length ? 'Double-click a section’s own name below to rename it.' : 'No section to rename here.');
+        section = shown[0];
+      }
+      editDraft = { kind: 'year-section', month: key, property, type, block: named, group, section };
+      renderLedger();
+    }
+    // A description renamed in the year card: every entry and note of the year (in that currency, section and
+    // subsection) that carries it.
+    function saveYearItemRename(form) {
+      const { month: key, property, type, section, category, item, name: original } = form.dataset;
+      const year = Number(key.slice(3));
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const fail = text => {
+        hint.textContent = text;
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+      };
+      if (name === original) {
+        editDraft = null;
+        return renderLedger();
+      }
+      if (!name) return fail('Type a name first.');
+      if (!store.isYearLoaded(year)) return fail(`Still loading ${year}; try again in a moment.`);
+      const plan = store.planRename(year, property, { level: 'item', type, section: ExpenseStore.nameKey(section), sub: ExpenseStore.nameKey(category), item }, name);
+      if (!plan.months) return fail(`Nothing in ${year} is called "${original}" here.`);
+      plan.apply();
+      trackSave(store.saveTransactions(year));
+      editDraft = null;
+      renderLedger();
+      const count = Number(form.dataset.count) || 0;
+      showToast(`Renamed "${original}" to "${name}" (${count} ${count === 1 ? 'time' : 'times'}) in ${plan.months} ${plan.months === 1 ? 'month' : 'months'} of ${year}.`);
+    }
+    function saveYearSectionRename(form) {
+      const { month: key, property, type, section } = form.dataset;
+      const year = Number(key.slice(3));
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const fail = text => {
+        hint.textContent = text;
+        input.setAttribute('aria-invalid', 'true');
+        input.focus();
+      };
+      if (name === section) {
+        editDraft = null;
+        return renderLedger();
+      }
+      if (!name) return fail('Type a name first.');
+      if (!store.isYearLoaded(year)) return fail(`Still loading ${year}; try again in a moment.`);
+      const plan = store.planRename(year, property, { level: 'section', type, section: ExpenseStore.nameKey(section) }, name);
+      if (!plan.months) return fail(`Nothing in ${year} is filed under "${section}".`);
+      if (plan.merged && !window.confirm(`"${name}" already exists in ${year}. Merge "${section}" into it?`)) return input.focus();
+      plan.apply();
+      trackSave(store.saveTransactions(year));
+      editDraft = null;
+      renderLedger();
+      showToast(`Renamed the section "${section}" to "${name}" in ${plan.months} ${plan.months === 1 ? 'month' : 'months'} of ${year}.`);
+    }
+    // Renames a subsection in one month (or event) and currency: its entries and the panel's own list. Renaming onto an
+    // empty subsection already listed merges into it, keeping its spelling and section. Saving is left to the caller.
+    function renameCategoryIn(scope, type, category, name) {
       const inPanel = item => scope.match(item) && item.type === type;
       const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
-      const taken = transactions.some(item => inPanel(item) && sameName(item.category));
-      const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used here.` : '';
-      if (problem) {
-        hint.textContent = problem;
-        input.setAttribute('aria-invalid', 'true');
-        return input.focus();
-      }
       // Copy the month's list before moving entries, so the copy still holds the old name.
       const sections = scope.own().filter(section => section.type === type);
-      // Renaming onto an empty subsection already listed merges into it, keeping its spelling and section.
       const target = sections.find(section => section.subsections.some(sameName));
       const finalName = target ? target.subsections.find(sameName) : name;
       const moved = transactions.filter(item => inPanel(item) && item.category === category);
@@ -863,6 +895,29 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!sections.some(section => section.subsections.includes(finalName))) {
         sections.find(section => section.name === moved[0]?.section)?.subsections.push(finalName);
       }
+      return finalName;
+    }
+    // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
+    function saveCategoryRename(form) {
+      const { month, property, type, category } = form.dataset;
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const scope = panelScope(month, property);
+      if (name === category) {
+        editDraft = null;
+        return renderLedger();
+      }
+      const inPanel = item => scope.match(item) && item.type === type;
+      const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
+      const taken = transactions.some(item => inPanel(item) && sameName(item.category));
+      const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used here.` : '';
+      if (problem) {
+        hint.textContent = problem;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      const finalName = renameCategoryIn(scope, type, category, name);
       scope.save();
       saveTransactions();
       editDraft = null;
@@ -887,8 +942,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const rowKeyFor = target => {
         const el = getElement(target);
         if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
-        const summaryRow = el.closest('[data-kb-level]');
-        if (summaryRow) return `kb:${summaryRow.closest('[data-key]')?.dataset.key}|${summaryRow.dataset.kbItem ?? ''}`;
+        // The year card's section headings and descriptions rename for the whole year.
+        const yearSection = el.closest('.ledger-year-group > summary[data-year-section]');
+        if (yearSection) return `ysec:${yearSection.parentElement.dataset.key}`;
+        const yearItem = el.closest('[data-year-item]');
+        if (yearItem) return `yitem:${yearItem.closest('.ledger-year-items')?.dataset.key}|${yearItem.dataset.yearItem}`;
         const note = el.closest('[data-note-id]');
         if (note) return `note:${note.dataset.noteId}`;
         const entryCell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -932,6 +990,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (focused) document.querySelector(`[data-sort-cat="${CSS.escape(key)}"][data-sort-field="${field}"]`)?.focus({ preventScroll: true });
           return showToast(`${name}: ${B().SORT_LABELS[to]}.`);
         }
+        const yearJump = event.target.closest('[data-year-jump]');
+        if (yearJump) {
+          event.preventDefault();
+          const { yearJump: mKey, property, category } = yearJump.dataset;
+          return openSearchResult({ year: Number(mKey.slice(0, 4)), mKey, property, category });
+        }
         const moveButton = event.target.closest('[data-move-entry]');
         if (moveButton) {
           event.preventDefault();
@@ -954,7 +1018,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (isDouble) {
             event.preventDefault();
             // A double-tap on a phone opens the row menu; the first tap's opening or closing is undone first.
-            const target = lastPointerType !== 'mouse' && !rowKey.startsWith('kb:') ? menuTargetFor(event.target) : null;
+            const target = lastPointerType !== 'mouse' ? menuTargetFor(event.target) : null;
             if (target) {
               if (target.kind === 'entry') {
                 const toggle = target.row.querySelector('[data-toggle-entry]');
@@ -962,7 +1026,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
               } else if (['section', 'subsection'].includes(target.kind)) target.row.parentElement.open = !target.row.parentElement.open;
               return openRowMenu(target, null, true, { triggerLongPress });
             }
-            return rowKey.startsWith('kb:') ? startSummaryRename(event.target) : triggerEdit(event.target, rowKey);
+            return triggerEdit(event.target, rowKey);
           }
         }
         // A currency panel's header has no edit of its own: on a phone, its double-tap opens the row menu too.
@@ -991,7 +1055,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           }
           return year === currentMonth.getFullYear() ? openYearSettings(year) : selectLedgerYear(year);
         }
-        if (event.target.closest('[data-toggle-universe]')) return setUniverse(!universeOpen);
         // A currency's summary beside a month name: on a closed month, opens it with only that currency; on an open one,
         // shows or hides that currency's panel (hiding the last one closes the month).
         const currencyPack = event.target.closest('[data-month-currency]');
@@ -1035,6 +1098,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             renderLedger();
             // An event's settings live with its year's events.
             if (key.startsWith('ev:')) return openYearSettings(store.events[key.slice(3)]?.year || currentMonth.getFullYear());
+            if (key.startsWith('yr:')) return openYearSettings(Number(key.slice(3)));
             return openMonthSettings(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1);
           }
           saveExpandedMonths();
@@ -1095,30 +1159,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           expandButton.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} all ${code} subsections`);
         }
       });
-      // The year-summary name field: Enter renames, Esc cancels, and so does moving focus anywhere else. Focus is checked
-      // a frame later because a redraw replaces the field (and refocuses the new one).
-      ledger.addEventListener('keydown', event => {
-        if (event.key !== 'Escape' || !event.target.closest('[data-kb-rename]')) return;
-        event.preventDefault();
-        cancelSummaryRename();
-      });
-      ledger.addEventListener('focusout', event => {
-        if (!event.target.closest?.('[data-kb-rename]')) return;
-        requestAnimationFrame(() => {
-          if (summaryEdit && !document.activeElement?.closest('[data-kb-rename]')) cancelSummaryRename();
-        });
-      });
       ledger.addEventListener('submit', event => {
-        if (event.target.closest('[data-kb-rename]')) {
-          event.preventDefault();
-          return saveSummaryRename();
-        }
         const form = event.target.closest('[data-ledger-form]');
         if (!form) return;
         event.preventDefault();
         if (form.dataset.ledgerForm === 'entry') return saveEntryDraft(form);
         if (form.dataset.ledgerForm === 'edit-entry' || form.dataset.ledgerForm === 'edit-note') return saveEditDraft(form);
-        if (form.dataset.ledgerForm === 'rename-category') return saveCategoryRename(form);
+        if (form.dataset.ledgerForm === 'rename-category') return form.dataset.month.startsWith('yr:') ? saveYearCategoryRename(form) : saveCategoryRename(form);
+        if (form.dataset.ledgerForm === 'rename-year-section') return saveYearSectionRename(form);
+        if (form.dataset.ledgerForm === 'rename-year-item') return saveYearItemRename(form);
         if (form.dataset.ledgerForm === 'sub-entry') {
           const description = form.elements.description.value.trim();
           if (!description) {
@@ -1177,7 +1226,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (event.key === 'Escape') {
           if (form.dataset.ledgerForm === 'entry') entryDraft = null;
           else if (form.dataset.ledgerForm === 'sub-entry') subEntryDraftParentId = null;
-          else if (['edit-entry', 'edit-note', 'rename-category'].includes(form.dataset.ledgerForm)) editDraft = null;
+          else if (['edit-entry', 'edit-note', 'rename-category', 'rename-year-section', 'rename-year-item'].includes(form.dataset.ledgerForm)) editDraft = null;
           else ledgerDraft = null;
           renderLedger();
           return;
@@ -1218,6 +1267,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return target;
       };
 
+      // The year card adds up the months: entries are added in their month (its "from <Month>" lines open it there).
+      const blockYearAdd = monthBlock => {
+        if (!monthBlock.dataset.monthKey.startsWith('yr:')) return false;
+        showToast('Add entries in their month: click “from <month>” in a subsection to open it.');
+        return true;
+      };
       // An event's rows inside a month are read-only there; they are changed in the event itself.
       const blockEventRow = element => {
         const row = element.closest('.ledger-cat[data-event-id]');
@@ -1235,6 +1290,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const monthBlock = element.closest('.month-block');
         if (!panel || !monthBlock) return false;
         if (blockEventRow(element)) return true;
+        if (blockYearAdd(monthBlock)) return true;
         const property = panel.dataset.property;
         const mKey = monthBlock.dataset.monthKey;
         const sections = panelScope(mKey, property).sections();
@@ -1294,26 +1350,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return false;
       };
 
-      // Double-click on a year-summary name: rename it for the whole year. The second click was not let through, so a
-      // section or subsection row was toggled once; its state before the double-click is kept for the edit and after it.
-      const startSummaryRename = element => {
-        if (isViewer) return viewOnly();
-        const row = getElement(element)?.closest('[data-kb-level]');
-        if (!row) return;
-        if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
-        const d = row.dataset;
-        const details = row.tagName === 'SUMMARY' ? row.parentElement : null;
-        summaryEdit = {
-          key: details ? details.dataset.key : `${row.closest('[data-key]').dataset.key}|${d.kbItem}`,
-          property: d.kbProperty,
-          target: { level: d.kbLevel, type: d.kbType, section: d.kbSection, sub: d.kbSub, item: d.kbItem },
-          original: d.kbName,
-          name: d.kbName,
-          open: details ? !details.open : false,
-          fresh: true
-        };
-        renderLedger();
-      };
       // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
       // field; Income/Expenses opens the month's settings, where its sections are named.
       const triggerEdit = (element, rowKey) => {
@@ -1337,10 +1373,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const cat = element.closest('.ledger-cat');
           const blockType = element.closest('.ledger-type-section')?.dataset.type;
           const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
-          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim() };
+          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim(), section: cat.dataset.section };
+        } else if (kind === 'ysec') {
+          // The first click folded or unfolded the section; put that back.
+          const group = element.closest('.ledger-year-group');
+          group.open = !group.open;
+          return startYearSectionRename(monthBlock.dataset.monthKey, panel.dataset.property, element.closest('.ledger-type-section'), group.querySelector(':scope > summary').dataset.yearSection);
+        } else if (kind === 'yitem') {
+          const cat = element.closest('.ledger-cat');
+          const blockType = element.closest('.ledger-type-section')?.dataset.type;
+          const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
+          editDraft = { kind: 'year-item', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, section: cat.dataset.section, category: cat.querySelector('.ledger-cat-name').textContent.trim(), item: element.closest('[data-year-item]').dataset.yearItem };
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
+          if (monthBlock.dataset.monthKey.startsWith('yr:')) return startYearSectionRename(monthBlock.dataset.monthKey, panel.dataset.property, section);
           if (monthBlock.dataset.monthKey.startsWith('ev:')) return showToast('Press and hold the section name to add a subsection.');
           return openMonthSettings(...yearMonthOf(monthBlock.dataset.monthKey));
         }
@@ -1359,7 +1406,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
       // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
       const moveSourceFor = row => {
-        if (row.closest('[data-event-id]')) return null;
+        if (row.closest('[data-event-id], .month-block.is-year')) return null;
         const note = row.closest('.ledger-sub-entry[data-note-id]');
         if (note) return { kind: 'note', id: note.dataset.noteId, label: note.querySelector('.ledger-entry-desc')?.textContent || '' };
         const toggle = row.querySelector('[data-toggle-entry]');
@@ -2906,7 +2953,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const el = element?.nodeType === Node.TEXT_NODE ? element.parentElement : element;
       if (!el || el.closest('form') || el.closest('.ledger-cat[data-event-id]')) return null;
       const block = el.closest('.month-block');
-      if (!block) return null;
+      if (!block || block.classList.contains('is-year')) return null;
       const mKey = block.dataset.monthKey;
       const panel = el.closest('.ledger-panel');
       const property = panel?.dataset.property;

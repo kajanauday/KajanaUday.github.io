@@ -240,72 +240,12 @@
     .year-tab i { color: var(--faint); font-size: 13px; }
     .year-tab[aria-pressed="true"]:hover i { color: var(--brand); }
     .ledger { width: min(1440px, 100%); display: grid; gap: 12px; margin: 0 auto; padding: 14px clamp(14px, 2vw, 24px) 32px; }
-    .kpi-card, .ledger-panel { --tint: var(--surface); --edge: var(--line); --accent: var(--india); }
-    .kpi-card.japan, .ledger-panel.japan { --accent: var(--japan); }
-    .year-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; align-items: start; }
+    .ledger-panel { --tint: var(--surface); --edge: var(--line); --accent: var(--india); }
+    .ledger-panel.japan { --accent: var(--japan); }
     .ledger-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
     .ledger-panels.is-single { grid-template-columns: minmax(0, 1fr); }
-    .kpi-card { container-type: inline-size; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 11px 14px; border: 1px solid var(--edge); border-top: 3px solid var(--accent); border-radius: var(--radius); background: var(--tint); box-shadow: var(--shadow); }
-    .kpi-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; font: 700 13px var(--display); }
-    .kpi-head > span:last-child { margin-left: auto; color: var(--muted); font: 500 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
-    .kpi-values { min-width: 0; display: grid; grid-template-columns: repeat(5, minmax(0, max-content)); justify-content: start; gap: 4px clamp(14px, 2.2vw, 30px); margin: 0; }
-    .kpi-values div { min-width: 0; }
-    .kpi-values dt, .ledger-totals dt { color: var(--muted); font: 500 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
-    .kpi-values dd { margin: 2px 0 0; overflow: hidden; font: 700 16px var(--display); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-    /* Year summary: category breakdown inside each currency card. */
-    .kpi-breakdown { display: grid; gap: 14px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
-    .kb-loading, .kb-note { margin: 0; color: var(--muted); font-size: 12px; }
-    .kb-note { font-size: 11px; }
-    .kb-type > summary { min-height: 32px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-radius: 6px; color: var(--ink); cursor: pointer; font: 500 12.5px var(--mono); letter-spacing: .06em; list-style: none; text-transform: uppercase; }
-    .kb-type > summary::-webkit-details-marker { display: none; }
-    .kb-type > summary:hover { background: var(--hover); }
-    .kb-type > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
-    .kb-type[open] > summary > i { transform: rotate(90deg); }
-    .kb-type > summary strong { font: 500 14.5px var(--mono); letter-spacing: 0; text-align: right; }
-    .kb-type-body { display: grid; gap: 4px; padding: 2px 0 6px; }
-    .kb-type > summary strong.expense, .kb-amount.expense { color: var(--expense); }
-    .kb-type > summary strong.income, .kb-amount.income { color: var(--income); }
-    .kb-section > summary, .kb-sub > summary, .kb-edit-row { min-height: 30px; display: grid; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
-    .kb-section > summary::-webkit-details-marker, .kb-sub > summary::-webkit-details-marker { display: none; }
-    .kb-section > summary, .kb-section > .kb-edit-row { grid-template-columns: 14px minmax(0, 1fr) 44px minmax(90px, auto); color: var(--ink); font-size: 14px; }
-    .kb-section > summary > i, .kb-sub > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
-    .kb-section[open] > summary > i, .kb-sub[open] > summary > i { transform: rotate(90deg); }
-    .kb-section > summary:hover, .kb-sub > summary:hover { background: var(--hover); border-radius: 6px; }
-    .kb-section-name, .kb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .kb-share { color: var(--muted); font: 400 12px var(--mono); text-align: right; }
-    .kb-amount { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     /* Level 2: subsections, then level 3: what each was spent on. Both share one column set so figures line up. */
-    .kb-subs, .kb-items { display: grid; gap: 0; margin: 0 0 6px 5px; padding: 0 0 0 16px; border-left: 2px solid var(--line-soft); list-style: none; }
-    .kb-sub > summary, .kb-sub > .kb-edit-row, .kb-item { grid-template-columns: 14px minmax(0, 1fr) minmax(40px, 90px) 44px minmax(90px, auto) 64px; color: var(--text, var(--ink)); font-size: 13.5px; }
-    .kb-sub + .kb-sub { border-top: 1px dotted var(--line); }
-    .kb-items { margin-left: 6px; }
-    .kb-subs.is-flat { margin: 0; padding: 0; border-left: 0; }
-    .kb-item { min-height: 28px; display: grid; align-items: center; gap: 8px; border-top: 1px dotted var(--line-soft); color: var(--note, var(--muted)); font-size: 13px; }
-    .kb-item:first-child { border-top: 0; }
-    .kb-item::before { content: ""; }
-    .kb-item .kb-amount { font-size: 13px; }
-    .kb-bar { height: 5px; overflow: hidden; border-radius: 99px; background: var(--line-soft); }
-    .kb-bar i { display: block; height: 100%; border-radius: inherit; background: var(--brand); opacity: .75; }
-    .kb-item .kb-bar i { opacity: .45; }
-    .kb-months { color: var(--muted); font: 400 11px var(--mono); text-align: right; white-space: nowrap; }
     /* Year-wide rename: double-click a name; the row tints and its name becomes a field in the same column. */
-    .kb-section > summary, .kb-sub > summary, .kb-item { user-select: none; -webkit-user-select: none; }
-    .kb-edit-row, .kb-item.is-renaming { margin: 0 -6px; padding: 0 6px; border-radius: 6px; background: rgba(251, 191, 36, .12); }
-    .kb-edit-row > i { color: var(--brand); font-size: 12px; }
-    .kb-rename-form { display: contents; }
-    .kb-rename-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--brand); border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; user-select: text; -webkit-user-select: text; }
-    .kb-rename-form input[aria-invalid="true"] { border-bottom-color: var(--expense); }
-    @container (max-width: 460px) {
-      .kb-sub > summary, .kb-sub > .kb-edit-row, .kb-item { grid-template-columns: 14px minmax(0, 1fr) 40px minmax(80px, auto); }
-      .kb-sub .kb-bar, .kb-sub .kb-months { display: none; }
-    }
-    dd.income { color: var(--income); }
-    dd.expense { color: var(--expense); }
-    /* Layer 2: year summary + month strip, folded away until the eye is pressed. */
-    .universe { display: none; }
-    .universe-inner { display: grid; gap: 12px; }
-    .show-universe .universe { display: block; animation: unfold .28s ease both; }
-    @keyframes unfold { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
     .month-ledger-head .icon-button { width: 32px; height: 32px; font-size: 16px; }
     .month-ledger { display: grid; gap: 4px; }
     /* Month list: priority groups, hairline dividers, and a statement-style summary on closed months. */
@@ -351,8 +291,6 @@
     .special-button[aria-pressed="true"] { border-color: transparent; background: var(--gold-gradient); color: var(--on-brand); box-shadow: 0 2px 10px var(--gold-glow-strong); }
     .special-button[aria-pressed="true"] .special-mark i { color: var(--on-brand); }
     @media (max-width: 700px) { .special-button { width: 40px; justify-content: center; padding: 0; } .special-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; } }
-    .summary-toggle { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
-    .summary-toggle[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-strong); }
     /* One block per month: open months show the full ledger, closed months are a single slim row. */
     /* The month name is the toggle: plain heading when closed, highlighted when open. */
     .month-name { position: relative; isolation: isolate; margin: 0; padding: 4px 10px; border: 0; border-radius: 7px; background: var(--gold-text); -webkit-background-clip: text; background-clip: text; color: transparent; cursor: pointer; font: 800 15px var(--display); letter-spacing: .09em; text-align: left; text-transform: uppercase; filter: drop-shadow(0 0 10px var(--gold-glow)); transition: filter .15s, opacity .15s; }
@@ -537,10 +475,10 @@
     .mini-btn.is-save:hover { background: var(--brand-soft); }
     .ledger-form-hint { grid-column: 1 / -1; margin: 0; color: var(--expense); font-size: 11px; }
     .ledger-form-hint:empty { display: none; }
-    /* Currency cards (month panels and year summary): one even colour per currency, midnight navy for India and dark umber
+    /* Currency cards (month panels and the year card): one even colour per currency, midnight navy for India and dark umber
        for Japan, with a glossy sheen along the top edge only, so the figures sit on a uniform field. Every text colour is at
        least 6:1 on the card. */
-    .ledger-panel, .kpi-card {
+    .ledger-panel {
       --card: #10162a; --halo: rgba(37, 99, 235, .16);
       --ink: #f3f5fb; --text: #d5dcee; --muted: #9aa8cc; --note: #b4bfdb;
       --line: rgba(255, 255, 255, .12); --line-soft: rgba(255, 255, 255, .07); --line-strong: rgba(255, 255, 255, .3);
@@ -551,12 +489,12 @@
       color: var(--text);
       box-shadow: 0 1px 2px var(--base-shadow), 0 18px 40px -16px var(--halo), inset 0 1px 0 var(--inset);
     }
-    .ledger-panel.japan, .kpi-card.japan {
+    .ledger-panel.japan {
       --card: #1e1410; --halo: rgba(194, 65, 12, .16);
       --ink: #fbf3ec; --text: #ebd9cc; --muted: #c3a390; --note: #d8bfae; --expense: #ff9a85; --expense-soft-text: #ff9a85;
     }
     /* Light cards: soft sapphire for India and warm parchment for Japan, with a white gloss along the top edge. */
-    :root[data-theme="light"] .ledger-panel, :root[data-theme="light"] .kpi-card {
+    :root[data-theme="light"] .ledger-panel {
       --card: #edf2fb; --halo: rgba(37, 99, 235, .12);
       --ink: #13213f; --text: #22314f; --muted: #4e5e86; --note: #3b4a6e;
       --line: rgba(19, 33, 63, .12); --line-soft: rgba(19, 33, 63, .07); --line-strong: rgba(19, 33, 63, .28);
@@ -564,13 +502,13 @@
       --sheen-top: rgba(255, 255, 255, .75); --sheen-mid: rgba(255, 255, 255, .25); --edge: rgba(19, 33, 63, .1); --inset: rgba(255, 255, 255, .95); --base-shadow: rgba(19, 33, 63, .08);
       --expense: #b3261e; --expense-soft-text: #b3261e;
     }
-    :root[data-theme="light"] .ledger-panel.japan, :root[data-theme="light"] .kpi-card.japan {
+    :root[data-theme="light"] .ledger-panel.japan {
       --card: #fbf1e9; --halo: rgba(194, 65, 12, .12);
       --ink: #3a1c10; --text: #4a2a1c; --muted: #7a5241; --note: #5e3c2d;
       --line: rgba(58, 28, 16, .12); --line-soft: rgba(58, 28, 16, .07); --line-strong: rgba(58, 28, 16, .28); --edge: rgba(58, 28, 16, .1); --base-shadow: rgba(58, 28, 16, .08);
       --expense: #b3261e; --expense-soft-text: #b3261e;
     }
-    .ledger-panel-head h3, .kpi-head, .ledger-type-section > summary strong, .ledger-cat-name { color: var(--ink); }
+    .ledger-panel-head h3, .ledger-type-section > summary strong, .ledger-cat-name { color: var(--ink); }
     .ledger-panel .ledger-entry-cell { color: var(--text); }
     .ledger-panel .ledger-sub-entry { color: var(--note); }
     .ledger-panel .ledger-cat > summary > i, .ledger-panel .ledger-carry i, .ledger-panel .ledger-none, .ledger-panel input::placeholder { color: var(--muted); }
@@ -635,9 +573,6 @@
       .brand-word { display: none; }
       .topbar { grid-template-columns: 1fr auto 1fr; }
     }
-    @media (max-width: 1280px) {
-      .kpi-card { grid-template-columns: minmax(0, 1fr); gap: 7px; }
-    }
     @media (max-width: 700px) {
       .ledger-topbar { height: 52px; padding: 0 12px; }
       .ledger-topbar .brand-word { display: none; }
@@ -647,16 +582,10 @@
       .ms-kv { min-width: 6ch; }
       .ms-kv + .ms-kv { min-width: 8ch; }
       .year-tab { min-width: 0; padding: 0 9px; }
-      /* Events and Year summary become icon buttons so the year bar stays on one line; the names stay for screen readers. */
-      .summary-toggle { width: 36px; justify-content: center; padding: 0; }
-      .summary-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
       .ledger { gap: 10px; padding: 10px 12px 24px; }
-      .kpi-card { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 9px 11px; }
-      .kpi-values { gap: 4px 10px; }
-      .kpi-values dd { font-size: 13px; }
       .month-ledger-head { gap: 8px; }
       .ledger-panel { padding: 10px; }
-      .year-kpis, .ledger-panels { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+      .ledger-panels { grid-template-columns: minmax(0, 1fr); gap: 8px; }
       .month-block.is-open .month-ledger-head { flex-wrap: nowrap; gap: 8px; }
       /* Phone: keep each currency summary aligned below the month name. */
       .month-summary { display: contents; }
@@ -668,9 +597,6 @@
       .month-ledger-head h2 { min-width: 0; }
       .month-name { white-space: nowrap; }
       .month-ledger-toggle { min-height: 30px; padding: 0 9px; }
-    }
-    @media (max-width: 380px) {
-      .kpi-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
@@ -918,11 +844,7 @@
     .month-block.is-future .month-name[aria-expanded="true"]::before { box-shadow: none; border-bottom: 2px dashed var(--line-strong); height: 0; }
     .month-block.is-open.is-future button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 2px dashed var(--line-strong); }
     .month-block.is-future button.month-tag.ms-cur:hover { border-bottom-color: var(--muted); }
-    /* Year summary: a compact icon button right after the year tabs (it summarises the selected year), the same height
-       as the tab group; its words stay for screen readers and the tooltip. */
     .year-bar { justify-content: flex-start; gap: 8px; }
-    .summary-toggle { width: 34px; height: 34px; min-height: 34px; margin-left: 0; padding: 0; justify-content: center; gap: 0; font-size: 15px; }
-    .summary-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
     /* Past month names in the theme's steel blue (not plain black / white), matching their open-state underline:
        gold is the current month, steel blue the months gone by, grey the ones to come. */
     :root { --past-name: #aebcd8; }
@@ -945,10 +867,10 @@
     .month-block.is-open.is-future button.month-tag.ms-cur[aria-pressed="true"] { border-bottom: 1px dashed var(--muted); box-shadow: none; padding-bottom: 5px; }
     .month-block.is-future .month-name[aria-expanded="true"]::before { border-bottom: 1px dashed var(--muted); height: 0; }
     /* Simple currency boxes: no thick coloured cap, sheen or glow; an even 1px border, a flat tinted fill (INR blue,
-       JPY amber) and a small shadow. The Year summary cards match. */
-    .ledger-panel, .kpi-card, .ledger-panel.japan, .kpi-card.japan,
-    :root[data-theme="light"] .ledger-panel, :root[data-theme="light"] .kpi-card,
-    :root[data-theme="light"] .ledger-panel.japan, :root[data-theme="light"] .kpi-card.japan {
+       JPY amber) and a small shadow. */
+    .ledger-panel, .ledger-panel.japan,
+    :root[data-theme="light"] .ledger-panel,
+    :root[data-theme="light"] .ledger-panel.japan {
       border: 1px solid var(--line); border-top-width: 1px; border-top-color: var(--line);
       background: var(--card);
       box-shadow: 0 1px 2px var(--base-shadow);
@@ -981,7 +903,7 @@
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
       --modal-shadow: 0 24px 64px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06);
     }
-    :root:not([data-theme="light"]) .ledger-panel, :root:not([data-theme="light"]) .kpi-card {
+    :root:not([data-theme="light"]) .ledger-panel {
       --card: #191d24; --halo: transparent;
       --ink: #e8e9ec; --text: #d3d6dc; --muted: #9ea4b0; --note: #b8bdc7;
       --line: rgba(255, 255, 255, .08); --line-soft: rgba(255, 255, 255, .05); --line-strong: rgba(255, 255, 255, .2);
@@ -989,7 +911,7 @@
       --edge: rgba(255, 255, 255, .08); --inset: transparent; --base-shadow: rgba(0, 0, 0, .3);
       --expense: #ee8a82; --expense-soft-text: #ee8a82;
     }
-    :root:not([data-theme="light"]) .ledger-panel.japan, :root:not([data-theme="light"]) .kpi-card.japan {
+    :root:not([data-theme="light"]) .ledger-panel.japan {
       --card: #1e1b18;
       --ink: #ecebe8; --text: #d9d5cf; --muted: #a8a197; --note: #c2bcb3;
     }
@@ -1210,3 +1132,68 @@
 .row-menu.is-sheet .row-menu-item i { font-size: 19px; }
 .row-menu.is-sheet .row-menu-list { max-height: 62vh; }
 @media (prefers-reduced-motion: reduce) { .row-menu, .row-menu.is-sheet { transition: none; } }
+/* The year card: the first card of a year's list, the year's months as one ledger. Inside a subsection, each month's
+   entries follow a "from <Month>" line with what that month came to; the month name opens the month there. */
+.month-block.is-year { margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
+.month-block.is-year + .month-block { border-top: 0; }
+.ledger-month-from { min-height: 28px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 4px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 12.5px; }
+.ledger-month-from:first-child { margin-top: 0; }
+.ledger-month-jump { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: var(--brand); cursor: pointer; font: 600 12.5px var(--display); }
+.ledger-month-jump i { font-size: 13px; }
+.ledger-month-jump:hover, .ledger-month-jump:focus-visible { outline: 0; text-decoration: underline; text-underline-offset: 3px; }
+.ledger-month-from small { color: var(--faint); font: 400 11px var(--mono); }
+.ledger-month-from strong { font: 400 13px var(--mono); font-variant-numeric: tabular-nums; }
+.ledger-type-section[data-type="income"] .ledger-month-from strong { color: var(--income-2); }
+.ledger-month-from strong.expense { color: var(--expense); }
+.year-section-form { grid-template-columns: minmax(0, 1fr); margin: 2px -6px 6px; padding-left: 6px; }
+.month-block.is-year .ledger-form-hint { color: var(--muted); }
+.month-block.is-year form:has([aria-invalid]) .ledger-form-hint { color: var(--expense); }
+/* The year card's entries show their day and month ("18 Oct"): a wider first column, on one line. */
+.month-block.is-year .ledger-entries { --entry-cols: 54px minmax(0, 1.7fr) minmax(0, 0.73fr) 108px; }
+.month-block.is-year .ledger-entry time { white-space: nowrap; }
+@media (max-width: 700px) { .month-block.is-year .ledger-entries { --entry-cols: 50px minmax(0, 1.35fr) minmax(0, 1fr) 88px; } }
+/* The year card's own figures under each currency header: net, share saved, opening balance. */
+.ledger-year-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; padding: 6px 0 2px; color: var(--muted); font-size: 12px; }
+.ledger-year-stats b { margin-left: 4px; color: var(--ink); font: 500 13px var(--mono); font-variant-numeric: tabular-nums; }
+.ledger-year-stats b.income { color: var(--income); }
+.ledger-year-stats b.expense { color: var(--expense); }
+/* A share (of the section, or of Income / Expenses), quiet beside the amount. */
+.ledger-share { color: var(--muted); font: 400 11.5px var(--mono); text-align: right; }
+/* Income or Expenses holding several sections: each section's own heading, with its share and total. */
+.ledger-year-group > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto minmax(70px, auto); align-items: center; gap: 8px; margin: 4px -6px 0; padding: 0 6px; border-radius: 6px; cursor: pointer; list-style: none; color: var(--ink); font: 600 13px var(--display); letter-spacing: .03em; text-transform: uppercase; user-select: none; -webkit-user-select: none; }
+.ledger-year-group > summary::-webkit-details-marker { display: none; }
+.ledger-year-group > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.ledger-year-group[open] > summary > i { transform: rotate(90deg); }
+.ledger-year-group > summary:hover { background: var(--hover); }
+.ledger-year-group > summary strong { font: 400 14px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.ledger-year-group > summary strong.expense { color: var(--expense); }
+.ledger-year-group > summary strong.income { color: var(--income-2); }
+.ledger-year-group-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger-year-group > div, .ledger-year-group.is-renaming { padding-left: 12px; border-left: 2px solid var(--line-soft); }
+/* What a subsection went on, by description: closed until opened, then one line per description. */
+.ledger-year-items { margin: 2px 0 6px; }
+.ledger-year-items > summary { display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; list-style: none; color: var(--muted); font-size: 12px; user-select: none; -webkit-user-select: none; }
+.ledger-year-items > summary::-webkit-details-marker { display: none; }
+.ledger-year-items > summary > i { font-size: 11px; transition: transform .15s; }
+.ledger-year-items[open] > summary > i { transform: rotate(90deg); }
+.ledger-year-items > summary:hover { color: var(--brand); }
+.ledger-year-items > summary small { color: var(--faint); font: 400 11px var(--mono); }
+.ledger-year-items ul { display: grid; margin: 0 0 4px; padding: 0 0 0 14px; border-left: 2px solid var(--line-soft); list-style: none; }
+.ledger-item { min-height: 26px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(40px, 80px) auto 40px minmax(70px, auto); align-items: center; gap: 8px; border-top: 1px dotted var(--line-soft); color: var(--note, var(--muted)); font-size: 13px; user-select: none; -webkit-user-select: none; }
+.ledger-item:first-child { border-top: 0; }
+.ledger-item-name { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.ledger-item[data-year-item] { cursor: text; }
+.ledger-item strong { font: 400 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.ledger-item strong.expense { color: var(--expense); }
+.ledger-item strong.income { color: var(--income-2); }
+.ledger-item-count { color: var(--faint); font: 400 10.5px var(--mono); white-space: nowrap; }
+.ledger-share-bar { height: 5px; overflow: hidden; border-radius: 99px; background: var(--line-soft); }
+.ledger-share-bar i { display: block; height: 100%; border-radius: inherit; background: var(--brand); opacity: .6; }
+.ledger-item.is-renaming { margin: 0 -6px; padding: 0 6px; border-radius: 6px; background: rgba(251, 191, 36, .12); }
+.ledger-item-form { display: grid; gap: 2px; min-width: 0; }
+.ledger-item-form input { min-width: 0; width: 100%; height: 26px; padding: 3px 4px; border: 0; border-bottom: 1px solid var(--brand); border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: 400 13px var(--display); }
+.ledger-item-form input[aria-invalid="true"] { border-bottom-color: var(--expense); }
+@media (max-width: 700px) {
+  .ledger-item { grid-template-columns: minmax(0, 1fr) 36px minmax(64px, auto); }
+  .ledger-item .ledger-share-bar, .ledger-item .ledger-item-count { display: none; }
+}
