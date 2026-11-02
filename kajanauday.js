@@ -572,183 +572,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(kind === 'note' ? 'Note deleted.' : `Deleted ${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''}.`);
     }
-    // ---- Moving rows (press, hold, drag) ----
-    // A move stays inside one month and currency, and never changes the month's totals: an entry that gains its first note
-    // keeps its own amount as a note, and one that loses its last note drops to 0.
-    const childrenOf = id => transactions.filter(item => item.parentId === id);
-    function keepOwnAmountAsNote(entry) {
-      if (childrenOf(entry.id).length || !Number(entry.amount)) return false;
-      const { id, parentId, ...fields } = entry;
-      transactions.push({ ...fields, id: `${entry.id}-own-${Date.now()}`, parentId: entry.id });
-      return true;
-    }
-    function zeroIfEmptied(entry) {
-      if (!entry || childrenOf(entry.id).length) return false;
-      entry.amount = 0;
-      delete entry.formula;
-      return true;
-    }
-    const fileUnder = (item, { category, section, type }) => Object.assign(item, { category, section, type });
-    // Balance (custom) sections hold signed amounts: + counts as income, − as an expense. Moving rows between one and
-    // Income or Expenses flips signs where needed, so every total stays exactly the same.
-    const signFactor = (from, to) => ((from === 'net') !== (to === 'net') && (from === 'expense' || to === 'expense') ? -1 : 1);
-    const negateFormula = formula => (/^=-\((.*)\)$/.test(formula) ? `=${formula.slice(3, -1)}` : `=-(${formula.slice(1)})`);
-    // The amounts that count for an entry: its notes when it has any, else its own.
-    const countedRows = rows => rows.flatMap(row => (row.parentId ? [row] : childrenOf(row.id).length ? [] : [row]));
-    function retype(rows, to) {
-      rows.forEach(row => {
-        if (signFactor(row.type, to) > 0) return;
-        row.amount = -Number(row.amount);
-        if (row.formula) row.formula = negateFormula(row.formula);
-      });
-    }
-    // Why rows cannot become `to`, or '' if they can: a balance amount must end up zero or more in Income or Expenses.
-    function retypeProblem(rows, to) {
-      if (to === 'net') return '';
-      const negative = countedRows(rows).some(row => row.type === 'net' && signFactor('net', to) * Number(row.amount) < 0);
-      if (!negative) return '';
-      return to === 'income' ? 'Only positive balance amounts can move to Income' : 'Only negative balance amounts can move to Expenses';
-    }
-    // source: { kind: 'note'|'entry'|'category', id?, name?, type?, section? }; target: { kind: 'entry'|'category'|'type', ... }
-    function moveVerdict(source, target, where = {}) {
-      if (!target) return { ok: false };
-      // Rows can move between any sections; amounts that cannot keep their meaning in the destination are refused.
-      const typeOf = side => (side.kind === 'category' || side.kind === 'type' ? side.type : transactions.find(item => item.id === side.id)?.type);
-      const moving = source.kind === 'category'
-        ? transactions.filter(item => where.month && panelScope(where.month, where.property).match(item) && item.type === source.type && item.category === source.name)
-        : [transactions.find(item => item.id === source.id), ...childrenOf(source.id)].filter(Boolean);
-      const problem = retypeProblem(moving, typeOf(target));
-      if (problem) return { ok: false, label: problem };
-      if (source.kind === 'note') {
-        const note = transactions.find(item => item.id === source.id);
-        if (target.kind === 'entry') return target.id === note?.parentId ? { ok: false, label: 'Already in this entry' } : { ok: true, label: `Make a note of “${target.label}”` };
-        if (target.kind === 'category') return { ok: true, label: `Make an entry in “${target.name}”` };
-        if (target.kind === 'type' && target.section) return { ok: true, label: `Make an entry in “${target.section}”` };
-      }
-      if (source.kind === 'entry') {
-        const entry = transactions.find(item => item.id === source.id);
-        if (target.kind === 'entry') {
-          if (target.id === source.id) return { ok: false };
-          return childrenOf(source.id).length ? { ok: false, label: 'An entry with notes can’t become a note' } : { ok: true, label: `Make a note of “${target.label}”` };
-        }
-        if (target.kind === 'category') return target.name === entry?.category && target.type === entry?.type ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.name}”` };
-        // Onto Income or Expenses: the entry becomes a subsection of its own there.
-        if (target.kind === 'type' && !target.section) return { ok: true, label: `Make “${entry?.description}” a subsection of ${target.type === 'income' ? 'Income' : 'Expenses'}` };
-        // Onto a custom section's heading: the entry keeps its subsection name inside that section.
-        if (target.kind === 'type' && target.section) return target.section === entry?.section ? { ok: false, label: 'Already here' } : { ok: true, label: `Move to “${target.section}”` };
-      }
-      if (source.kind === 'category') {
-        if (target.kind === 'category') return target.name === source.name && target.type === source.type ? { ok: false } : { ok: true, label: `Merge into “${target.name}”` };
-        if (target.kind === 'type') {
-          const label = target.section || (target.type === 'income' ? 'Income' : 'Expenses');
-          return target.type === source.type && (!target.section || target.section === source.section) ? { ok: false, label: `Already under ${label}` } : { ok: true, label: `Move to ${label}` };
-        }
-      }
-      return { ok: false };
-    }
-    // An entry dropped on Income or Expenses becomes a subsection there, named after it: its notes become the subsection's
-    // entries, and an entry without notes becomes its one entry. Amounts and dates stay as they were.
-    function entryToSubsection({ month, property }, id, type) {
-      const scope = panelScope(month, property);
-      const label = type === 'income' ? 'Income' : 'Expenses';
-      const entry = transactions.find(item => item.id === id && !item.parentId);
-      if (!entry) return showToast('Could not find that entry. Refresh and try again.');
-      const home = scope.own().find(section => section.type === type);
-      if (!home) return showToast(`Add an ${type === 'income' ? 'income' : 'expense'} section here first.`);
-      const notes = childrenOf(entry.id);
-      const moving = notes.length ? notes : [entry];
-      const taken = new Set(scope.sections().filter(section => section.type === type).flatMap(section => section.subsections.map(sub => sub.toLowerCase())));
-      const wanted = String(entry.description || '').trim() || 'Untitled';
-      let name = wanted;
-      for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${wanted} (${n})`;
-      if (!window.confirm(`Make “${entry.description}” a subsection of ${label}?\n\n${notes.length ? `Its ${notes.length} ${notes.length === 1 ? 'note becomes an entry' : 'notes become entries'}` : 'It becomes the one entry'} of the new subsection “${name}”. Amounts and dates stay the same.`)) return;
-      if (notes.length) {
-        // The notes take the entry's comment and tags where they have none of their own; the entry itself goes.
-        notes.forEach(note => {
-          delete note.parentId;
-          if (!note.place && entry.place) note.place = entry.place;
-          if (!note.tags?.length && entry.tags?.length) note.tags = [...entry.tags];
-        });
-        transactions.splice(transactions.indexOf(entry), 1);
-      }
-      retype(moving, type);
-      moving.forEach(row => fileUnder(row, { category: name, section: home.name, type }));
-      home.subsections.push(name);
-      revealKey = catKey(month, property, type, name);
-      scope.save();
-      saveTransactions();
-      renderLedger();
-      showToast(`“${name}” is now a subsection of ${label}${notes.length ? `, with ${notes.length} ${notes.length === 1 ? 'entry' : 'entries'}` : ''}.`);
-    }
-    function applyMove(source, target, { month, property }) {
-      if (source.kind === 'entry' && target.kind === 'type' && !target.section) return entryToSubsection({ month, property }, source.id, target.type);
-      const scope = panelScope(month, property);
-      const inPanel = scope.match;
-      let message = '';
-      let listsChanged = false;
-      if (source.kind === 'note' || source.kind === 'entry') {
-        const item = transactions.find(row => row.id === source.id);
-        if (!item) return showToast('Could not find that row. Refresh and try again.');
-        const oldParent = transactions.find(row => row.id === item.parentId);
-        if (target.kind === 'entry') {
-          const parent = transactions.find(row => row.id === target.id);
-          const kept = keepOwnAmountAsNote(parent);
-          item.parentId = parent.id;
-          retype([item], parent.type);
-          fileUnder(item, parent);
-          expandedEntries.add(parent.id);
-          revealKey = catKey(month, property, parent.type, parent.category);
-          message = `Moved “${item.description}” under “${parent.description}”${kept ? ', keeping its own amount as a note' : ''}.`;
-        } else {
-          delete item.parentId;
-          const moved = [item, ...childrenOf(item.id)];
-          // Dropped on a custom section's heading, it keeps its subsection name, which the section gains if needed.
-          const destination = target.kind === 'type'
-            ? { category: item.category, section: target.section, type: target.type }
-            : { category: target.name, section: target.section, type: target.type };
-          if (target.kind === 'type') {
-            const home = scope.own().find(section => section.name === target.section);
-            if (home && !home.subsections.includes(destination.category)) {
-              home.subsections.push(destination.category);
-              listsChanged = true;
-            }
-          }
-          retype(moved, destination.type);
-          moved.forEach(row => fileUnder(row, destination));
-          revealKey = catKey(month, property, destination.type, destination.category);
-          message = `Moved “${item.description}” to “${target.kind === 'type' ? target.section : target.name}”.`;
-        }
-        if (oldParent && oldParent.id !== item.parentId && zeroIfEmptied(oldParent)) message += ` “${oldParent.description}” has no notes left, so it is now 0.`;
-      } else {
-        const rows = transactions.filter(item => inPanel(item) && item.type === source.type && item.category === source.name);
-        const lists = scope.own();
-        let destination;
-        if (target.kind === 'category') {
-          const count = rows.filter(item => !item.parentId).length;
-          if (!window.confirm(`Merge “${source.name}” (${count} ${count === 1 ? 'entry' : 'entries'}) into “${target.name}”?`)) return;
-          destination = { category: target.name, section: target.section, type: target.type };
-        } else {
-          // A custom section's heading names its own section; Income/Expenses take the first section of that type.
-          const home = lists.find(section => target.section && section.name === target.section) || lists.find(section => section.type === target.type);
-          if (!home) return showToast(`Add an ${target.type === 'income' ? 'income' : 'expense'} section here first.`);
-          if (!window.confirm(`Move “${source.name}” and its entries to ${target.section || (target.type === 'income' ? 'Income' : 'Expenses')}?`)) return;
-          if (!home.subsections.includes(source.name)) home.subsections.push(source.name);
-          destination = { category: source.name, section: home.name, type: target.type };
-        }
-        lists.filter(section => section.type === source.type && section.name !== destination.section).forEach(section => {
-          section.subsections = section.subsections.filter(name => name !== source.name);
-        });
-        listsChanged = true;
-        retype(rows, destination.type);
-        rows.forEach(item => fileUnder(item, destination));
-        revealKey = catKey(month, property, destination.type, destination.category);
-        message = target.kind === 'category' ? `Merged “${source.name}” into “${target.name}”.` : `Moved “${source.name}” to ${target.section || (target.type === 'income' ? 'Income' : 'Expenses')}.`;
-      }
-      if (listsChanged) scope.save();
-      saveTransactions();
-      renderLedger();
-      showToast(message);
-    }
     // ---- The year card's renames: they change every month of the year, for the currency they are made in, exactly as
     // renaming in each month would. A name already used in a month by other entries is refused (rename there first). ----
     function saveYearCategoryRename(form) {
@@ -992,11 +815,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.preventDefault();
           const { yearJump: mKey, property, category } = yearJump.dataset;
           return openSearchResult({ year: Number(mKey.slice(0, 4)), mKey, property, category });
-        }
-        const moveButton = event.target.closest('[data-move-entry]');
-        if (moveButton) {
-          event.preventDefault();
-          return openMoveDialog(moveButton.dataset.moveEntry);
         }
         const setupButton = event.target.closest('[data-section-setup]');
         if (setupButton) {
@@ -1401,35 +1219,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (cell) return cell.querySelector(':scope > .ledger-entry-line');
         return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .ledger-panel-head');
       };
-      // What a held row would move: notes, entries and subsections can be dragged; Income/Expenses cannot.
-      const moveSourceFor = row => {
-        if (row.closest('[data-event-id], .month-block.is-year')) return null;
-        const note = row.closest('.ledger-sub-entry[data-note-id]');
-        if (note) return { kind: 'note', id: note.dataset.noteId, label: note.querySelector('.ledger-entry-desc')?.textContent || '' };
-        const toggle = row.querySelector('[data-toggle-entry]');
-        if (toggle) return { kind: 'entry', id: toggle.dataset.entryId, label: toggle.querySelector('.ledger-entry-desc')?.textContent || '' };
-        const cat = row.closest('.ledger-cat');
-        if (cat && row.matches('.ledger-cat > summary')) return { kind: 'category', name: cat.querySelector('.ledger-cat-name').textContent.trim(), type: cat.closest('.ledger-type-section').dataset.type, section: cat.dataset.section, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
-        return null;
-      };
-      // The drop target under a point, limited to the panel the drag started in. A note stands for its entry.
-      const dropTargetAt = (x, y, panel) => {
-        const el = document.elementFromPoint(x, y);
-        if (!el || el.closest('.ledger-panel') !== panel || el.closest('[data-event-id]')) return null;
-        const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)') || el.closest('.ledger-sub-entry')?.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
-        const toggle = cell?.querySelector(':scope > .ledger-entry-line [data-toggle-entry]');
-        if (toggle) return { kind: 'entry', id: toggle.dataset.entryId, label: toggle.querySelector('.ledger-entry-desc')?.textContent || '', el: toggle.closest('.ledger-entry-line') };
-        const cat = el.closest('details.ledger-cat');
-        if (cat) return { kind: 'category', name: cat.querySelector('.ledger-cat-name').textContent.trim(), type: cat.closest('.ledger-type-section').dataset.type, section: cat.dataset.section, el: cat.querySelector(':scope > summary') };
-        const typeHead = el.closest('.ledger-type-section > summary');
-        if (typeHead) return { kind: 'type', type: typeHead.parentElement.dataset.type, section: typeHead.parentElement.dataset.section || '', el: typeHead };
-        return null;
-      };
       let pressedRow = null;
-      let lift = null; // { row, source, panel, month, property, dragging, ghost, target, x, y }
       const pointOf = e => e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
       const startLongPress = (target, e) => {
-        if (isViewer) return; // no hold to add, no drag to move
+        if (isViewer) return; // no hold to add
         suppressClickUntil = 0; // a new press means the previous press's click has happened or never will
         longPressFired = false;
         const row = pressRowFor(target);
@@ -1441,15 +1234,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
           pressedRow?.classList.remove('is-pressing');
-          const source = moveSourceFor(row);
-          if (source && !hasDraft()) {
-            // Lift: the release decides. Let go in place to add as before, or drag to move.
-            lift = { row, source, panel: row.closest('.ledger-panel'), month: row.closest('.month-block').dataset.monthKey, property: row.closest('.ledger-panel').dataset.property, dragging: false };
-            row.classList.add('is-lifted');
-            longPressFired = true;
-            navigator.vibrate?.(12);
-            return;
-          }
           longPressFired = triggerLongPress(longPressTarget);
           if (longPressFired) {
             // The hold re-rendered the row; swallow the click that the release will produce, whenever it comes.
@@ -1459,69 +1243,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         }, LONG_PRESS_DURATION);
       };
 
-      const setDropTarget = target => {
-        if (lift.target?.el !== target?.el) lift.target?.el?.classList.remove('is-drop-target', 'is-drop-invalid');
-        lift.target = target;
-        const verdict = moveVerdict(lift.source, target, lift);
-        lift.verdict = verdict;
-        target?.el?.classList.toggle('is-drop-target', verdict.ok);
-        target?.el?.classList.toggle('is-drop-invalid', !verdict.ok && Boolean(verdict.label));
-        lift.ghost.querySelector('.drag-ghost-action').textContent = verdict.label || (lift.source.kind === 'category' ? 'Drop on a subsection or on Income / Expenses' : 'Drop on an entry or a subsection');
-        lift.ghost.classList.toggle('is-ok', verdict.ok);
-      };
-      const beginDrag = () => {
-        lift.dragging = true;
-        lift.row.classList.add('is-drag-source');
-        document.body.classList.add('is-dragging-row');
-        const ghost = document.createElement('div');
-        ghost.className = 'drag-ghost';
-        ghost.innerHTML = `<span class="drag-ghost-label"></span><span class="drag-ghost-action"></span>`;
-        ghost.querySelector('.drag-ghost-label').textContent = lift.source.label;
-        document.body.append(ghost);
-        lift.ghost = ghost;
-        const step = () => {
-          if (!lift?.dragging) return;
-          // Near the top or bottom edge the page scrolls, so a row can travel the whole month.
-          const edge = 70;
-          const speed = lift.y < edge ? -(edge - lift.y) / 4 : lift.y > innerHeight - edge ? (lift.y - (innerHeight - edge)) / 4 : 0;
-          if (speed) {
-            window.scrollBy(0, speed);
-            setDropTarget(dropTargetAt(lift.x, lift.y, lift.panel));
-          }
-          requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-      };
-      const moveDrag = e => {
-        if (!lift) return;
-        const point = pointOf(e);
-        if (!lift.dragging) {
-          const dx = Math.abs(point.pageX - longPressStart.x);
-          const dy = Math.abs(point.pageY - longPressStart.y);
-          if (dx <= LONG_PRESS_MOVE_THRESHOLD && dy <= LONG_PRESS_MOVE_THRESHOLD) return;
-          beginDrag();
-        }
-        if (e.cancelable) e.preventDefault();
-        lift.x = point.clientX;
-        lift.y = point.clientY;
-        lift.ghost.style.transform = `translate(${point.clientX}px, ${point.clientY}px)`;
-        setDropTarget(dropTargetAt(point.clientX, point.clientY, lift.panel));
-      };
-      const endLift = drop => {
-        const done = lift;
-        lift = null;
-        done.row.classList.remove('is-lifted', 'is-drag-source');
-        done.target?.el?.classList.remove('is-drop-target', 'is-drop-invalid');
-        done.ghost?.remove();
-        document.body.classList.remove('is-dragging-row');
-        suppressClickUntil = Date.now() + 600;
-        if (!drop) return;
-        if (!done.dragging) return triggerLongPress(longPressTarget);
-        if (done.verdict?.ok) applyMove(done.source, done.target, done);
-      };
-
       const endLongPress = () => {
-        if (lift) endLift(true);
         pressedRow?.classList.remove('is-pressing');
         pressedRow = null;
         if (longPressTimer) {
@@ -1535,7 +1257,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
 
       const checkLongPressMove = (e) => {
-        if (lift) return moveDrag(e);
         if (!longPressTimer || !longPressStart) return;
         const dx = Math.abs(pointOf(e).pageX - longPressStart.x);
         const dy = Math.abs(pointOf(e).pageY - longPressStart.y);
@@ -1546,7 +1267,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
 
       ledger.addEventListener('touchstart', (e) => {
         // A second finger on a row: tag it, instead of the hold the first finger started (or a pinch).
-        if (e.touches.length === 2 && !lift && taggableRow(e.target)) {
+        if (e.touches.length === 2 && taggableRow(e.target)) {
           endLongPress();
           e.preventDefault();
           openTagPicker(e.target);
@@ -1564,18 +1285,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         endLongPress();
       };
       window.addEventListener('pointerup', endPointer);
-      window.addEventListener('pointercancel', () => { if (lift) endLift(false); endLongPress(); });
-      // Moves are watched on the window so a drag can leave the row; touchmove must not be passive, so a drag
-      // can stop the page from scrolling under the finger.
-      window.addEventListener('touchmove', checkLongPressMove, { passive: false });
+      window.addEventListener('pointercancel', endLongPress);
+      // A finger or the mouse moving away during the hold cancels it (watched on the window, as the row may re-render).
+      window.addEventListener('touchmove', checkLongPressMove, { passive: true });
       window.addEventListener('mousemove', checkLongPressMove);
-      window.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && lift) {
-          endLift(false);
-          endLongPress();
-          showToast('Move cancelled.');
-        }
-      });
 
       ledger.addEventListener('mousedown', (e) => {
         if (e.button === 0 && Date.now() - lastTouchEnd > 500) startLongPress(e.target, e);
@@ -1584,7 +1297,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       ledger.addEventListener('mouseup', endLongPress);
       // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
       ledger.addEventListener('contextmenu', (e) => {
-        if (longPressTimer || longPressFired || lift || Date.now() < suppressClickUntil) return e.preventDefault();
+        if (longPressTimer || longPressFired || Date.now() < suppressClickUntil) return e.preventDefault();
         // A mouse right-click opens the row menu for whatever it is on (its Tags… item tags an entry or a note).
         const target = Date.now() - lastTouchEnd > 500 && (!e.pointerType || e.pointerType === 'mouse') ? menuTargetFor(e.target) : null;
         if (target) {
@@ -2923,7 +2636,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
           flowAction(target),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
-          ...(isEvent ? [] : [{ icon: 'arrows-move', label: 'Move…', hint: 'another month, year or event', run: () => openMoveDialog(target.id) }]),
           { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
         ]);
       }
@@ -3607,120 +3319,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (tag) setTimeout(() => goToTag(tag));
       }
     }
-    // ---- Move an entry (with its notes) to any month of any year, or into or out of a special event ----
-    // The destination month is loaded first, so saving writes it whole; a subsection missing there is added to its list.
-    let moveState = null; // { entryId }
-    const moveDestination = form => {
-      const target = form.elements.target.value;
-      const date = form.elements.date.value;
-      const valid = /^\d{4}-\d{2}-\d{2}$/.test(date);
-      if (target.startsWith('ev:')) return { kind: 'event', id: target.slice(3), date: valid ? date : null };
-      if (!valid) return { kind: 'month', date: null };
-      const year = Number(date.slice(0, 4));
-      const monthIndex = Number(date.slice(5, 7)) - 1;
-      return { kind: 'month', date, year, monthIndex, mKey: keyOf(year, monthIndex) };
-    };
-    // The destination's subsections of the entry's type; the entry's own subsection is offered (as new) if missing.
-    function renderMoveChoices() {
-      const form = document.querySelector('#move-form');
-      const item = transactions.find(t => t.id === moveState?.entryId);
-      if (!form || !item) return;
-      const dest = moveDestination(form);
-      const hint = document.querySelector('#move-hint');
-      const where = dest.date && dest.kind === 'month' ? monthLabel(new Date(dest.year, dest.monthIndex, 1)) : '';
-      let lists = [];
-      let problem = '';
-      if (!dest.date) problem = 'Pick a date.';
-      else if (dest.kind === 'event') lists = store.eventSections(dest.id, item.property);
-      else if (!store.monthNode(dest.year, dest.monthIndex)) problem = `${where} is not set up. Add ${dest.year} in Year settings first.`;
-      else if (!store.monthCurrencies(dest.year, dest.monthIndex).includes(item.property)) problem = `${regions[item.property]?.code || item.property} is not on in ${where}, so the entry would not show there.`;
-      else lists = store.sections(dest.year, dest.monthIndex, item.property);
-      const names = [...new Set(lists.filter(section => section.type === item.type).flatMap(section => section.subsections))];
-      const previous = form.elements.category.value || item.category;
-      const options = names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
-      if (!names.includes(item.category)) options.unshift(`<option value="${escapeHtml(item.category)}">${escapeHtml(item.category)} (new there)</option>`);
-      form.elements.category.innerHTML = options.join('');
-      form.elements.category.value = [...form.elements.category.options].some(option => option.value === previous) ? previous : item.category;
-      hint.textContent = problem || (dest.kind === 'event' ? `Into ★ ${store.eventName(dest.id)}.` : `Into ${where}.`);
-      hint.classList.toggle('is-error', Boolean(problem));
-      form.querySelector('[type="submit"]').disabled = Boolean(problem);
-    }
-    function openMoveDialog(entryId) {
-      const item = transactions.find(t => t.id === entryId);
-      const dialog = document.querySelector('#move-dialog');
-      if (!item || !dialog || item.parentId) return;
-      if (isViewer) return viewOnly();
-      moveState = { entryId };
-      const form = document.querySelector('#move-form');
-      const notes = childrenOf(item.id).length;
-      const now = item.eventId ? `★ ${store.eventName(item.eventId)}` : monthLabel(new Date(Number(item.date.slice(0, 4)), Number(item.date.slice(5, 7)) - 1, 1));
-      document.querySelector('#move-what').innerHTML = `<b>${escapeHtml(item.description)}</b> · ${formatMoney(store.entryTotal(item.id), item.property)} ${escapeHtml(regions[item.property]?.code || '')}${notes ? ` · with ${notes} ${notes === 1 ? 'note' : 'notes'}` : ''} · now in ${escapeHtml(now)}`;
-      form.elements.target.innerHTML = `<option value="month">A month (by date)</option>${store.eventList().sort((a, b) => b.year - a.year || a.name.localeCompare(b.name)).map(event => `<option value="ev:${escapeHtml(event.id)}">★ ${escapeHtml(event.name)} (${event.year})</option>`).join('')}`;
-      form.elements.target.value = 'month';
-      form.elements.date.value = item.date;
-      form.elements.category.innerHTML = '';
-      renderMoveChoices();
-      dialog.showModal();
-      form.elements.date.focus();
-    }
-    async function saveMove(form) {
-      const item = transactions.find(t => t.id === moveState?.entryId);
-      const dialog = document.querySelector('#move-dialog');
-      if (!item) return dialog.close();
-      const dest = moveDestination(form);
-      const category = form.elements.category.value;
-      const hint = document.querySelector('#move-hint');
-      if (!dest.date || !category || form.querySelector('[type="submit"]').disabled) return;
-      try {
-        // Load the destination month before anything changes, so saving writes it whole.
-        if (dest.kind === 'month' && !store.isLoaded(dest.year, dest.monthIndex)) {
-          hint.textContent = 'Loading that month…';
-          await store.ensureMonth(dest.year, dest.monthIndex);
-        }
-      } catch (error) {
-        hint.textContent = 'Could not load that month from Firebase. Nothing was moved.';
-        hint.classList.add('is-error');
-        return;
-      }
-      const notes = childrenOf(item.id);
-      // The section it goes under: the one listing the subsection, else one of the same name, else the first of its
-      // type; a destination without one gets it.
-      const lists = dest.kind === 'event' ? store.ownEventSections(dest.id, item.property) : store.ownSections(dest.year, dest.monthIndex, item.property);
-      const ofType = lists.filter(section => section.type === item.type);
-      let home = ofType.find(section => section.subsections.includes(category)) || ofType.find(section => section.name === item.section) || ofType[0];
-      if (!home) lists.push(home = { name: item.section || (item.type === 'income' ? 'Income' : 'Expenses'), type: item.type, subsections: [] });
-      if (!home.subsections.includes(category)) home.subsections.push(category);
-      [item, ...notes].forEach(row => {
-        Object.assign(row, { category, section: home.name, type: item.type });
-        if (dest.kind === 'event') row.eventId = dest.id;
-        else delete row.eventId;
-      });
-      item.date = dest.date;
-      // Notes keep their day; in a month they must fall in it to show, so they move into the destination month.
-      const lastDay = new Date(Number(dest.date.slice(0, 4)), Number(dest.date.slice(5, 7)), 0).getDate();
-      notes.forEach(note => {
-        if (dest.kind === 'month' || !note.date) note.date = `${dest.date.slice(0, 7)}-${String(Math.min(Number((note.date || dest.date).slice(8, 10)), lastDay)).padStart(2, '0')}`;
-      });
-      if (dest.kind === 'event') trackSave(store.saveEventMeta(dest.id, { sections: store.events[dest.id].sections }));
-      else saveMonthSections(dest.mKey, item.property);
-      saveTransactions();
-      editDraft = null;
-      moveState = null;
-      dialog.close();
-      await openSearchResult({ year: Number(dest.date.slice(0, 4)), mKey: dest.kind === 'event' ? `ev:${dest.id}` : dest.mKey, property: item.property, entryId: item.id, noteId: null, category });
-      showToast(`Moved “${item.description}” to ${dest.kind === 'event' ? `★ ${store.eventName(dest.id)}` : monthLabel(new Date(dest.year, dest.monthIndex, 1))} › ${category}.`);
-    }
-    function setupMoveDialog() {
-      const form = document.querySelector('#move-form');
-      if (!form) return;
-      form.elements.target.addEventListener('change', renderMoveChoices);
-      form.elements.date.addEventListener('change', renderMoveChoices);
-      form.addEventListener('submit', event => {
-        event.preventDefault();
-        saveMove(form);
-      });
-      document.querySelector('#move-dialog').addEventListener('close', () => { moveState = null; });
-    }
     function setupSearch() {
       const dialog = document.querySelector('#search-dialog');
       const input = document.querySelector('#search-input');
@@ -3838,7 +3436,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupRowMenu();
     setupLedger();
     setupSearch();
-    setupMoveDialog();
     document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
     // Light or dark: remembered per browser; dark is the default.
     const themeButton = document.querySelector('#theme-button');
