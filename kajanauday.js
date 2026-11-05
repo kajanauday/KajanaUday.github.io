@@ -97,6 +97,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // Another device wrote the same part of the ledger after this one last read it. Nothing is merged on its own: the
     // choice is this device's queued change or the newer one already in Firebase.
+    // However this dialog goes away — a button, Esc, the backdrop, anything closing it — it answers. Left unanswered it
+    // would hold the outbox open for good: the flush waiting on it never ends, so nothing after it could save or sync,
+    // and the dot would sit on amber with Sync now doing nothing. Dismissing it keeps this device's change, which loses
+    // nothing; only “Use the other version” drops it.
     function askAboutConflict({ paths, at }) {
       const dialog = document.querySelector('#conflict-dialog');
       if (!dialog) return Promise.resolve('mine');
@@ -105,16 +109,30 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       document.querySelector('#conflict-when').textContent = `Changed here ${new Date(at).toLocaleString()}.`;
       const list = document.querySelector('#conflict-paths');
       list.replaceChildren(...names.map(name => Object.assign(document.createElement('li'), { textContent: name })));
+      // An earlier one still on screen is closed first, before anything here listens for that.
+      if (dialog.open) dialog.close();
       return new Promise(resolve => {
+        let answer = 'mine';
+        const done = () => {
+          dialog.removeEventListener('click', choose);
+          dialog.removeEventListener('close', done);
+          resolve(answer);
+        };
         const choose = event => {
           const button = event.target.closest('[data-conflict]');
           if (!button) return;
-          dialog.removeEventListener('click', choose);
+          answer = button.dataset.conflict;
           dialog.close();
-          resolve(button.dataset.conflict);
         };
         dialog.addEventListener('click', choose);
-        dialog.showModal();
+        dialog.addEventListener('close', done);
+        try {
+          dialog.showModal();
+        } catch (error) {
+          // It could not be put on screen, so there is nobody to ask: this device's change stays.
+          console.warn('Could not ask which version to keep.', error);
+          done();
+        }
       });
     }
     // A Firebase path as something to read: "October 2026", "the 2026 totals", an event's name.
@@ -4200,13 +4218,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         dialog.showModal();
       });
       dialog.addEventListener('click', async event => {
-        const action = event.target.closest('[data-sync]')?.dataset.sync;
+        const button = event.target.closest('[data-sync]');
+        const action = button?.dataset.sync;
         if (!action) return;
         if (!store.sync) return showToast('This browser cannot keep a copy of the ledger.');
-        event.target.closest('[data-sync]').disabled = true;
+        button.disabled = true;
         drawSyncPanel();
-        await syncNow({ everything: action === 'download' });
-        event.target.closest('[data-sync]').disabled = false;
+        // Whatever the sync runs into, the button comes back: one that stayed disabled would leave no way to try again.
+        try {
+          await syncNow({ everything: action === 'download' });
+        } catch (error) {
+          console.error('Could not sync with Firebase.', error);
+          showToast('Could not sync with Firebase. Check your connection and try again.');
+        } finally {
+          button.disabled = false;
+          drawSyncPanel();
+        }
         if (syncState.needsRefresh) {
           dialog.close();
           showToast('Showing the newer data from Firebase…');

@@ -26,6 +26,9 @@
   const OUTBOX = 'outbox';
   const NOTES = 'notes';
   const DEFAULT_BUDGET = 200 * 1024 * 1024;
+  // How many times one flush may go back for whatever was saved while it was running, so a save that keeps on
+  // failing to leave the outbox cannot spin here for ever.
+  const MAX_ROUNDS = 20;
   // The shell is what the app needs to open at all, so it is never evicted; only month documents are.
   const evictable = path => path.startsWith('months/');
   // Firebase keys cannot hold "/", so a path becomes one key under meta/nodes.
@@ -277,9 +280,12 @@
       if (this.readOnly) return null;
       const seen = Object.fromEntries(Object.keys(update).map(path => [stampKey(path), this.stamps[stampKey(path)]?.at || 0]));
       await this.vault.apply(update);
-      await this.vault.queue(update, seen);
+      const id = await this.vault.queue(update, seen);
       this.report();
       await this.flush();
+      // A flush already under way may have read the outbox a moment before this went into it. If this very change is
+      // still waiting afterwards, and there is a connection to try, send it now rather than leave it for the next sync.
+      if (!this.offline && (await this.vault.pending()).some(item => item.id === id)) await this.flush();
       return null;
     }
     // Each update also records, for every path it touches, when it was written and by which device.
@@ -298,10 +304,23 @@
         return stamp && stamp.by !== this.deviceId && Number(stamp.at) > Number(item.seen?.[stampKey(path)] || 0);
       });
     }
-    // Sends the outbox in order. One flush at a time; anything still queued waits for the next connection.
+    // Which version stays, when another device wrote the same path. Asking must always come back with an answer, and
+    // never with a rejection: a flush left waiting on it would hold `flushing` for good, and every later save and sync
+    // queues behind that. Anything but a plain "theirs" keeps this device's change, which loses nothing.
+    async whichStays(clash) {
+      try {
+        return (await this.onConflict(clash)) === 'theirs' ? 'theirs' : 'mine';
+      } catch (error) {
+        console.warn('Could not ask which version to keep; this device\'s change stays.', error);
+        return 'mine';
+      }
+    }
+    // Sends the outbox in order. One flush at a time; anything still queued waits for the next connection. A save made
+    // while a flush is running is picked up by that same flush (rounds below), so it goes out at once instead of
+    // sitting in the outbox — with the dot on amber — until the next three-minute sync.
     flush() {
       if (this.readOnly || this.flushing) return this.flushing || Promise.resolve();
-      this.flushing = (async () => {
+      const send = async (round = 0) => {
         const queue = await this.vault.pending();
         if (!queue.length) return this.report();
         if (navigator.onLine === false) { this.offline = true; return this.report(); }
@@ -316,7 +335,7 @@
         for (const item of queue) {
           const clashes = this.clashes(item, remote);
           if (clashes.length && this.onConflict) {
-            const choice = await this.onConflict({ paths: clashes, at: item.at, remote: remote[stampKey(clashes[0])] });
+            const choice = await this.whichStays({ paths: clashes, at: item.at, remote: remote[stampKey(clashes[0])] });
             if (choice !== 'mine') {
               await this.vault.release(item.id);
               this.stale = true;
@@ -333,8 +352,10 @@
         }
         this.offline = false;
         await this.stampsNow().catch(() => {});
+        if (round < MAX_ROUNDS && (await this.vault.pending()).length) return send(round + 1);
         this.report();
-      })().finally(() => { this.flushing = null; });
+      };
+      this.flushing = send().finally(() => { this.flushing = null; });
       return this.flushing;
     }
   }
