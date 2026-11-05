@@ -42,16 +42,11 @@
     }
   };
   const groupOf = section => GROUPS[section?._meta?.kind] || GROUPS.settlement;
-  // What each subsection of a settlement or a pot stands for; the short word rides beside its name so a glance says
-  // whether a row is money that moved or a note explaining the split.
-  const ROLE_TAGS = {
-    cost: { short: 'paid', title: 'Paid for the group — real money out (or back in)' },
-    share: { short: 'my share', title: 'My own share of the cost — a note, not a movement of money' },
-    settle: { short: 'settled', title: 'Money between me and the other side — they paid me (+) or I paid them (−)' },
-    save: { short: 'in / out', title: 'Put into the pot (+) or taken back out (−)' },
-    return: { short: 'gain', title: 'Interest, dividend or gain the pot earned — counted as real income' }
-  };
-  const RoleTag = role => (ROLE_TAGS[role] ? `<small class="ledger-role is-${role}" title="${ROLE_TAGS[role].title}">${ROLE_TAGS[role].short}</small>` : '');
+  // A subsection's role is not written on its row. It used to ride beside the name as a short word — "paid",
+  // "my share", "settled" — and that word collided with the status a description sets: a row whose description
+  // reads "=paid" then said paid twice, once for the role and once for the status, and neither said which was which.
+  // The role is set and read where it is chosen: on the subsection form and in Set up. What stays on the row is the
+  // status, because that is the part that changes.
 
   // ---- descriptions ---------------------------------------------------------------------------
   // A row that carries a description shows the smallest mark that can still be aimed at: a dot. Clicking it opens the
@@ -84,15 +79,21 @@
     return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
   };
 
-  // What is still open between me and the other side, beside the section's name. Everything else the old figures row
-  // carried is already on the heading: its first two figures are the cash in and out, and the state capsule says
-  // whether it is clear. This is the one thing that was not, so it is the one thing kept.
-  const OwedTag = (meta, property, ctx) => {
-    const s = meta?.settle;
-    if (!s || meta.kind === 'savings' || !s.owed) return '';
-    const mine = s.owed > 0;
-    const share = s.share ? ` · my share ${signed(s.share, property, ctx)}` : '';
-    return `<small class="ledger-owed ${mine ? 'is-in' : 'is-out'}" title="${mine ? 'Still to come back to me' : 'Still for me to pay the other side'}${ctx.esc(share)}">${mine ? 'owed to me' : 'I owe'} ${signed(Math.abs(s.owed), property, ctx)}</small>`;
+  // A settlement's own four figures on its heading, each under the word for what it is: what came in, what went out,
+  // the part that was mine, and what is still open between me and the other side. They take the place of the three
+  // bare numbers a section used to show (income, expenses, balance), which were the same size and colour and said
+  // nothing about which was which, and of the separate "owed to me" tag, which only appeared when something was open.
+  // The last figure turns around when it is the other way: below zero nothing is owed to me, it is what I owe.
+  const SettleTotals = (settle, property, ctx) => {
+    const mine = settle.owed >= 0;
+    const figures = [
+      ['Cash in', settle.cashIn, 'in', 'Everything that brought money in, notes left out'],
+      ['Cash out', settle.cashOut, 'out', 'Everything that took money out, notes left out'],
+      ['My share', settle.share, 'memo', 'My own part of what the group spent — a note, not money that moved'],
+      [mine ? 'Owed to me' : 'I owe', Math.abs(settle.owed), mine ? 'in' : 'out', mine ? 'Still to come back to me' : 'Still for me to pay the other side']
+    ];
+    return `<span class="settle-totals">${figures.map(([label, amount, tone, title]) =>
+      `<span class="settle-figure is-${tone}" title="${ctx.esc(title)}"><small>${label}</small><b>${signed(amount, property, ctx)}</b></span>`).join('')}</span>`;
   };
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
@@ -262,7 +263,7 @@
     return `<details class="ledger-year-items" data-key="${ctx.esc(key)}|items"${renamingKey ? ' open' : ''}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>By description</span><small>${items.length}</small></summary><ul>${rows}</ul></details>`;
   };
 
-  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, role = null, about = '' }, state, ctx) => {
+  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '' }, state, ctx) => {
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
     const order = inYear ? null : state.sortModes?.[key] || null;
@@ -284,7 +285,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${RoleTag(role)}${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -308,7 +309,7 @@
       const eventId = section._meta.event;
       Object.entries(section.categories).forEach(([name, category]) => {
         // Every subsection on the month's list shows, used or not; entries outside the list show too.
-        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, role: section._meta.roles?.[name] || null, about: section._meta.subAbout?.[name] || '' });
+        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, about: section._meta.subAbout?.[name] || '' });
       });
     });
     // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
@@ -325,7 +326,7 @@
     // In the year card each subsection shows its share of its section.
     const categoryRows = (list, whole) => [...list]
       .sort((a, b) => b.category._meta.total - a.category._meta.total)
-      .map(({ name, category, sectionName, eventId, role, about }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, role, about, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
+      .map(({ name, category, sectionName, eventId, about }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
       .join('');
     // A year card's Income or Expenses block that holds several sections shows each under its own heading, with its share
     // of the block (a double-click renames it); with one section, its subsections stand straight under the block.
@@ -379,7 +380,10 @@
     const emptyNote = heading
       ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
       : 'Nothing recorded';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${meta && type === 'net' ? OwedTag(meta, property, ctx) : ''}${aboutBadge}${blockTools}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    // A settlement states its cash both ways, my share and what is outstanding. A savings pot and every other block
+    // keep the figures they had: those four are a settlement's story, not theirs.
+    const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle ? SettleTotals(meta.settle, property, ctx) : '';
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${blockTools}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -507,5 +511,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, GROUPS, ROLE_CHOICES, RoleTag, StatusCapsule, AboutMark, AboutTags, StateCapsule, OwedTag, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
