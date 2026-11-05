@@ -84,29 +84,15 @@
     return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
   };
 
-  // The figures that say what a settlement or a pot really amounts to, under its own heading. For a settlement the
-  // last cell is the one that matters: nothing outstanding means it can be closed.
-  const StatStrip = (meta, property, ctx) => {
-    const s = meta.settle;
-    if (!s) return '';
-    const cells = meta.kind === 'savings'
-      ? [
-        ['Put in', s.byRole?.save?.in || 0, 'income', 'Money moved into the pot'],
-        ['Taken out', s.byRole?.save?.out || 0, 'expense', 'Money taken back out of the pot'],
-        ['Gain', s.returns, 'income', 'Interest, dividend or gain — counted as income'],
-        ['Pot', s.saved + s.returns, 'balance', 'What this pot grew by']
-      ]
-      : [
-        ['Cash in', s.cashIn, 'income', 'Everything that came in — counted as income'],
-        ['Cash out', s.cashOut, 'expense', 'Everything that went out — counted as an expense'],
-        ['My share', s.share, 'expense', 'My own part of what the group spent'],
-        [s.owed < 0 ? 'I owe' : 'Owed to me', Math.abs(s.owed), s.owed < 0 ? 'expense' : 'income', s.owed === 0 ? 'Nothing outstanding — this one is clear' : s.owed < 0 ? 'Still to pay the other side' : 'Still to come back to me']
-      ];
-    const state = meta.kind === 'savings' ? '' : s.cleared
-      ? '<span class="ledger-stat-flag is-clear" title="Nothing outstanding"><i class="ti ti-circle-check" aria-hidden="true"></i>Clear</span>'
-      : '<span class="ledger-stat-flag is-open" title="Still outstanding"><i class="ti ti-circle-dashed" aria-hidden="true"></i>Open</span>';
-    if (cells.every(([, amount]) => !amount)) return '';
-    return `<div class="ledger-stat-strip">${cells.map(([label, amount, tone, title]) => `<span class="ledger-stat" title="${ctx.esc(title)}"><small>${label}</small><b class="${tone}">${signed(amount, property, ctx)}</b></span>`).join('')}${state}</div>`;
+  // What is still open between me and the other side, beside the section's name. Everything else the old figures row
+  // carried is already on the heading: its first two figures are the cash in and out, and the state capsule says
+  // whether it is clear. This is the one thing that was not, so it is the one thing kept.
+  const OwedTag = (meta, property, ctx) => {
+    const s = meta?.settle;
+    if (!s || meta.kind === 'savings' || !s.owed) return '';
+    const mine = s.owed > 0;
+    const share = s.share ? ` · my share ${signed(s.share, property, ctx)}` : '';
+    return `<small class="ledger-owed ${mine ? 'is-in' : 'is-out'}" title="${mine ? 'Still to come back to me' : 'Still for me to pay the other side'}${ctx.esc(share)}">${mine ? 'owed to me' : 'I owe'} ${signed(Math.abs(s.owed), property, ctx)}</small>`;
   };
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
@@ -382,7 +368,6 @@
       ? `<button type="button" class="mini-btn section-open-btn" data-section-close="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" data-to="open" title="Open ${ctx.esc(title)} again so it takes entries"><i class="ti ti-lock-open" aria-hidden="true"></i><span>Reopen</span></button>`
       : `<button type="button" class="mini-btn section-close-btn${meta.settle?.cleared === false ? ' is-unsettled' : ''}" data-section-close="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" data-to="closed" title="${meta.settle?.cleared === false ? 'Still outstanding — closing will ask first' : 'Nothing outstanding — close it off'}"><i class="ti ti-lock" aria-hidden="true"></i><span>Close</span></button>`) : '';
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
-    const statStrip = meta && type === 'net' ? StatStrip(meta, property, ctx) : '';
     const blockTools = setupButton || closeButton ? `<div class="ledger-block-tools">${setupButton}${closeButton}</div>` : '';
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
@@ -394,7 +379,7 @@
     const emptyNote = heading
       ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
       : 'Nothing recorded';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${blockTools}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${ownRename}${statStrip}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${meta && type === 'net' ? OwedTag(meta, property, ctx) : ''}${aboutBadge}${blockTools}${type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -522,5 +507,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, GROUPS, ROLE_CHOICES, RoleTag, StatStrip, StatusCapsule, AboutMark, AboutTags, StateCapsule, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, GROUPS, ROLE_CHOICES, RoleTag, StatusCapsule, AboutMark, AboutTags, StateCapsule, OwedTag, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

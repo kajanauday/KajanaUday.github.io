@@ -255,6 +255,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (yearFolds.has(item.dataset.key) && !item.querySelector('form')) item.open = yearFolds.get(item.dataset.key);
       });
       revealKey = null;
+      markPicks();
       focusDrafts(host);
       fitSummaryColumns();
       applySyncMarks();
@@ -2726,6 +2727,70 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       clipboard = { kind: 'entry', id, property: item.property, type: item.type, label: item.description };
       showToast(`Copied the entry “${item.description}”. Paste it on a subsection.`);
     }
+    // ---- Picking several rows at once ----------------------------------------------------------
+    // Sections, subsections or entries can be picked one by one from their row menus and then copied or cut together.
+    // A pick list holds one kind of row, from one month and currency: entries only ever copy within a currency, and a
+    // list mixing a section with the entries inside it has no sensible meaning when it lands somewhere else. Picking a
+    // row of another kind, or in another panel, starts a new list rather than silently dropping what was there.
+    const picks = { kind: null, mKey: null, property: null, type: null, items: [] };
+    const PICK_NAMES = { section: ['section', 'sections'], subsection: ['subsection', 'subsections'], entry: ['entry', 'entries'] };
+    const pickKey = item => (item.kind === 'entry' ? `entry:${item.id}` : `${item.kind}:${item.type}|${item.section || ''}|${item.category || ''}`);
+    const pickCount = () => picks.items.length;
+    const pickLabel = (n = pickCount()) => `${n} ${PICK_NAMES[picks.kind][n === 1 ? 0 : 1]}`;
+    // The pick a row stands for, or null where picking makes no sense (an event's read-only rows, Income / Expenses
+    // as a whole, a block heading).
+    function pickFor(target) {
+      if (!['section', 'subsection', 'entry'].includes(target.kind)) return null;
+      if (target.kind === 'entry') {
+        const item = transactions.find(row => row.id === target.id);
+        return item ? { kind: 'entry', id: target.id, type: item.type, label: item.description } : null;
+      }
+      if (!target.section) return null; // Income / Expenses as a whole is not a row to pick
+      if (target.kind === 'section') return { kind: 'section', type: target.type, section: target.section, label: target.section };
+      return { kind: 'subsection', type: target.type, section: target.section, category: target.category, label: target.category };
+    }
+    const isPicked = pick => pick && picks.items.some(item => pickKey(item) === pickKey(pick));
+    function clearPicks(quiet = false) {
+      const had = pickCount();
+      Object.assign(picks, { kind: null, mKey: null, property: null, type: null, items: [] });
+      if (had && !quiet) { markPicks(); showToast('Selection cleared.'); }
+      else markPicks();
+    }
+    // Adds or removes one row. A row of another kind, or from another panel, starts the list again.
+    function togglePick(target) {
+      const pick = pickFor(target);
+      if (!pick) return showToast('That row cannot be picked.');
+      const fresh = picks.kind !== pick.kind || picks.mKey !== target.mKey || picks.property !== target.property;
+      if (fresh) Object.assign(picks, { kind: pick.kind, mKey: target.mKey, property: target.property, type: pick.type, items: [] });
+      const at = picks.items.findIndex(item => pickKey(item) === pickKey(pick));
+      if (at >= 0) picks.items.splice(at, 1); else picks.items.push(pick);
+      if (!picks.items.length) return clearPicks(true);
+      markPicks();
+      showToast(fresh && pickCount() === 1 ? `Picked “${pick.label}”. Pick more, then Copy or Cut.` : `${pickLabel()} picked.`);
+    }
+    // Marks the picked rows in the ledger. Called after every redraw, so a pick survives saving an entry.
+    function markPicks() {
+      document.querySelectorAll('#ledger .is-picked').forEach(el => el.classList.remove('is-picked'));
+      if (!pickCount()) return;
+      const panel = document.querySelector(`.month-block[data-month-key="${CSS.escape(picks.mKey)}"] .ledger-panel[data-property="${CSS.escape(picks.property)}"]`);
+      if (!panel) return;
+      picks.items.forEach(item => {
+        const row = item.kind === 'entry'
+          ? panel.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(item.id)}"]`)?.closest('.ledger-entry-cell')
+          : item.kind === 'subsection'
+            ? [...panel.querySelectorAll(`.ledger-cat[data-section="${CSS.escape(item.section)}"]`)]
+              .find(cat => cat.querySelector('.ledger-cat-name')?.textContent.trim() === item.category)
+            : panel.querySelector(`.ledger-type-section[data-section="${CSS.escape(item.section)}"]`);
+        row?.classList.add('is-picked');
+      });
+    }
+    // Copy keeps the originals; cut takes them away, but only once the paste has landed.
+    function takePicks(mode) {
+      if (!pickCount()) return showToast('Pick some rows first.');
+      clipboard = { kind: 'picks', mode, itemKind: picks.kind, mKey: picks.mKey, property: picks.property,
+        type: picks.type, items: picks.items.map(item => ({ ...item })), label: pickLabel() };
+      showToast(`${mode === 'cut' ? 'Cut' : 'Copied'} ${pickLabel()}. Right-click where they should go, then Paste.`);
+    }
     // Whether the clipboard can go to a target ({ kind: 'panel' | 'section' | 'subsection', mKey, property, type, ... }), and
     // whether it may bring its entries along there.
     function pasteFits(target) {
@@ -2738,12 +2803,116 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       if (clipboard.kind === 'subsection' && ['section', 'subsection'].includes(target.kind)) return { entries: sameMoney && clipboard.type === target.type };
       if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney && clipboard.type === target.type ? { entries: true, only: true } : null;
+      // A pick list lands where one of its kind would, and a cut never leaves its currency: the entries would have to
+      // change money on the way, which is not a paste but a conversion.
+      if (clipboard.kind === 'picks') {
+        if (clipboard.mode === 'cut' && (!sameMoney || isEvent !== clipboard.mKey.startsWith('ev:'))) return null;
+        if (clipboard.itemKind === 'entry') return target.kind === 'subsection' && sameMoney && clipboard.type === target.type ? { entries: true, only: true } : null;
+        if (clipboard.itemKind === 'subsection') return ['section', 'subsection'].includes(target.kind) ? { entries: sameMoney && clipboard.type === target.type } : null;
+        if (clipboard.itemKind === 'section') {
+          if (!['panel', 'section'].includes(target.kind)) return null;
+          if (isEvent && clipboard.type === 'net') return null;
+          return { entries: sameMoney };
+        }
+      }
       return null;
+    }
+    // Moves one entry (and its notes) to another panel, section and subsection: the same rows, re-pointed, so their
+    // ids, notes, tags and flow stay with them. Used by a cut; a copy clones instead (see cloneEntry).
+    function moveEntry(item, mKey, property, section, category) {
+      const scope = panelScope(mKey, property);
+      Object.assign(item, { property, date: dateIn(mKey, item.date), section, category, ...scope.fields });
+      if (!scope.isEvent) delete item.eventId;
+      transactions.filter(note => note.parentId === item.id).forEach(note => {
+        Object.assign(note, { property, date: dateIn(mKey, note.date), category, ...scope.fields });
+        if (!scope.isEvent) delete note.eventId;
+      });
+      return 1;
+    }
+    // Pastes a pick list. A copy leaves the originals alone; a cut takes each one away only after it has landed, so a
+    // paste that cannot be made never loses anything.
+    function pastePicks(target, withEntries) {
+      const { mKey, property } = target;
+      const scope = panelScope(mKey, property);
+      const own = scope.own();
+      const from = panelScope(clipboard.mKey, clipboard.property);
+      const cut = clipboard.mode === 'cut';
+      const sectionFor = name => own.find(item => item.type === clipboard.type && item.name === name) || own.find(item => item.type === clipboard.type);
+      let added = 0;
+      let moved = 0;
+      if (clipboard.itemKind === 'entry') {
+        const into = sectionFor(target.section);
+        if (!into) return showToast('That has no section to put them in.');
+        if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        clipboard.items.forEach(pick => {
+          const item = transactions.find(row => row.id === pick.id);
+          if (!item) return;
+          moved += cut ? moveEntry(item, mKey, property, into.name, target.category) : cloneEntry(item, mKey, property, into.name, target.category);
+        });
+        if (moved) saveTransactions();
+      } else if (clipboard.itemKind === 'subsection') {
+        const into = sectionFor(target.section);
+        if (!into) return showToast('That has no section to put them in.');
+        if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        clipboard.items.forEach(pick => {
+          const source = from.own().find(item => item.type === clipboard.type && item.name === pick.section);
+          if (!into.subsections.includes(pick.category)) {
+            into.subsections.push(pick.category);
+            if (into.type === 'net') {
+              (into.roles ||= {})[pick.category] = source ? ExpenseStore.subsectionRole(source, pick.category) : ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(into)];
+              const note = source?.subAbout?.[pick.category];
+              if (note) (into.subAbout ||= {})[pick.category] = note;
+            }
+            added += 1;
+          }
+          const rows = entriesOf(clipboard.mKey, clipboard.property, clipboard.type, pick.section, pick.category);
+          if (withEntries || cut) rows.forEach(item => { moved += cut ? moveEntry(item, mKey, property, into.name, pick.category) : cloneEntry(item, mKey, property, into.name, pick.category); });
+          // A cut leaves nothing behind: the name goes from the section it came from, with what it stood for.
+          if (cut && source && source !== into) {
+            source.subsections = source.subsections.filter(name => name !== pick.category);
+            delete source.roles?.[pick.category];
+            delete source.subAbout?.[pick.category];
+          }
+        });
+        if (added || cut) { scope.save(); if (cut) from.save(); }
+        if (moved) saveTransactions();
+      } else {
+        clipboard.items.forEach(pick => {
+          const source = from.own().find(item => item.type === clipboard.type && item.name === pick.section);
+          if (!source) return;
+          let into = own.find(item => item.type === source.type && item.name === source.name);
+          if (!into) {
+            const { closed, closedOn, mergedFrom, about, ...rest } = JSON.parse(JSON.stringify(source));
+            into = { ...rest, subsections: [] };
+            own.push(into);
+            added += 1;
+          }
+          source.subsections.forEach(sub => {
+            if (into.subsections.includes(sub)) return;
+            into.subsections.push(sub);
+            if (into.type === 'net') {
+              (into.roles ||= {})[sub] = ExpenseStore.subsectionRole(source, sub);
+              if (source.subAbout?.[sub]) (into.subAbout ||= {})[sub] = source.subAbout[sub];
+            }
+            added += 1;
+          });
+          const rows = entriesOf(clipboard.mKey, clipboard.property, source.type, source.name);
+          if (withEntries || cut) rows.forEach(item => { moved += cut ? moveEntry(item, mKey, property, into.name, item.category) : cloneEntry(item, mKey, property, into.name, item.category); });
+          if (cut && source !== into) from.own().splice(from.own().indexOf(source), 1);
+        });
+        if (added || cut) { scope.save(); if (cut) from.save(); }
+        if (moved) saveTransactions();
+      }
+      if (cut) { clipboard = null; clearPicks(true); }
+      renderLedger();
+      const what = [added && `${added} ${added === 1 ? 'name' : 'names'}`, moved && `${moved} ${moved === 1 ? 'entry' : 'entries'}`].filter(Boolean).join(' and ');
+      showToast(what ? `${cut ? 'Moved' : 'Pasted'} ${what} into ${scopeName(mKey, property)}.` : 'Already there: nothing new to paste.');
     }
     function paste(target, withEntries) {
       if (target.closed) return showToast(`“${target.section || target.label}” is closed. Reopen it first.`);
       if (isViewer) return viewOnly();
       if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+      if (clipboard.kind === 'picks') return pastePicks(target, withEntries);
       const { mKey, property } = target;
       const scope = panelScope(mKey, property);
       const own = scope.own();
@@ -2847,8 +3016,29 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
       const add = () => helpers.triggerLongPress(target.row);
       const fits = pasteFits(target);
-      const pasteAction = fits ? [{ icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
+      const pasteAction = fits ? [clipboard.kind === 'picks'
+        ? { icon: clipboard.mode === 'cut' ? 'cut' : 'clipboard', label: `${clipboard.mode === 'cut' ? 'Move' : 'Paste'} ${clipboard.label} here`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }
+        : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
+      // Pick this row, and — once something is picked — copy, cut or drop the lot. Shown on sections, subsections and
+      // entries; the Copy and Cut lines only appear on a row that is itself in the list, so they always read as acting
+      // on what is highlighted rather than on the row under the pointer.
+      const pickItems = () => {
+        const pick = pickFor(target);
+        if (!pick || isEvent) return [];
+        const on = isPicked(pick);
+        const mine = on && picks.mKey === mKey && picks.property === property;
+        const one = PICK_NAMES[pick.kind][0];
+        return [
+          { icon: on ? 'square-minus' : 'square-plus', label: on ? `Unpick this ${one}` : `Pick this ${one}`,
+            hint: on ? `${pickLabel()} picked` : 'to copy or cut several at once', run: () => togglePick(target) },
+          ...(mine ? [
+            { icon: 'copy', label: `Copy ${pickLabel()}`, hint: 'the originals stay', run: () => takePicks('copy') },
+            { icon: 'cut', label: `Cut ${pickLabel()}`, hint: 'they move when you paste', run: () => takePicks('cut') },
+            { icon: 'square-x', label: 'Unpick all', read: true, run: () => clearPicks() }
+          ] : [])
+        ];
+      };
       if (kind === 'month') {
         const panels = [...document.querySelectorAll(`.month-block[data-month-key="${CSS.escape(mKey)}"] .ledger-panel`)].map(panel => panel.dataset.property);
         const pastes = clipboard ? panels.map(cur => ({ cur, fits: pasteFits({ kind: 'panel', mKey, property: cur }) })).filter(item => item.fits)
@@ -2895,6 +3085,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
           { icon: 'plus', label: 'Add subsection', run: add },
           ...[aboutAction(target)].filter(Boolean),
+          ...pickItems(),
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
@@ -2917,6 +3108,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return write([
           { icon: 'plus', label: 'Add entry', run: add },
           ...[aboutAction(target)].filter(Boolean),
+          ...pickItems(),
           ...roleItems,
           { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
           { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name, target.category) },
@@ -2929,6 +3121,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
           { icon: 'corner-down-right', label: 'Add note', run: add },
           ...[aboutAction(target)].filter(Boolean),
+          ...pickItems(),
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
           flowAction(target),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
@@ -3045,7 +3238,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (action.paste) {
           const target = action.target || rowMenu.target;
           // Entries can come along only where they fit (same currency, same kind); then ask which.
-          if (action.paste.only) { closeRowMenu(); return paste(target, true); }
+          if (action.paste.only || (clipboard.kind === 'picks' && clipboard.mode === 'cut')) { closeRowMenu(); return paste(target, true); }
           if (!action.paste.entries) { closeRowMenu(); return paste(target, false); }
           rowMenu.pasteTarget = target;
           return drawRowMenu([
@@ -3075,7 +3268,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       document.addEventListener('pointerdown', event => {
         if (rowMenu.open && !el.contains(event.target) && !el.classList.contains('is-sheet')) closeRowMenu();
       }, true);
-      addEventListener('scroll', () => { if (rowMenu.open && !el.classList.contains('is-sheet')) closeRowMenu(); }, true);
+      // The ledger scrolling away under the menu closes it; the menu's own list scrolling does not. The list has a
+      // max height and scrolls once there are enough items, and that scroll was closing the menu mid-reach.
+      addEventListener('scroll', event => {
+        if (rowMenu.open && !el.classList.contains('is-sheet') && !el.contains(event.target)) closeRowMenu();
+      }, true);
       addEventListener('resize', closeRowMenu);
       // On a phone, the sheet follows a finger dragging it down, and closes past a short distance.
       let drag = null;
