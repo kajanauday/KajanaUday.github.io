@@ -231,6 +231,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
       const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
+      const keepSettled = new Set([...host.querySelectorAll('details.ledger-settled[open]')].map(fold => fold.dataset.key));
       // The year card's section groups (open by default), description lists and months (closed by default) stay as they were.
       const yearFolds = new Map([...host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items, .month-block.is-year details.ledger-year-month')].map(item => [item.dataset.key, item.open]));
       const typingFilter = document.activeElement?.matches?.('[data-hub-filter]');
@@ -243,7 +244,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       host.querySelectorAll('.ledger-cat').forEach(cat => { if (keepOpen.includes(cat.dataset.key) || cat.dataset.key === revealKey) cat.open = true; });
       // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
       host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
+      host.querySelectorAll('details.ledger-settled').forEach(fold => { if (keepSettled.has(fold.dataset.key)) fold.open = true; });
       host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing').forEach(cat => { const section = cat.closest('details.ledger-type-section'); if (section) section.open = true; });
+      // A settlement inside Settlements (or a pot inside Savings) keeps the block around it open too, so reopening
+      // one row never hides the rest of it.
+      host.querySelectorAll('details.ledger-type-section[open], details.ledger-settled[open], .ledger-type-section form').forEach(item => {
+        for (let parent = item.parentElement?.closest('details'); parent; parent = parent.parentElement?.closest('details')) parent.open = true;
+      });
       host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items, .month-block.is-year details.ledger-year-month').forEach(item => {
         if (yearFolds.has(item.dataset.key) && !item.querySelector('form')) item.open = yearFolds.get(item.dataset.key);
       });
@@ -434,10 +441,26 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       const sections = scope.own();
       const section = sections.find(item => item.name === ledgerDraft.section);
-      const existing = sections.filter(item => item.type === section.type).flatMap(item => item.subsections).find(item => item.toLowerCase() === name.toLowerCase());
+      if (section.closed) {
+        hint.textContent = `“${section.name}” is closed. Reopen it to add to it.`;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      // A settlement's subsections are kept to that settlement: "My share" means something different in each one, so
+      // the same name in two of them is two different rows, not one shared between them.
+      const grouped = section.type === 'net';
+      const pool = grouped ? [section] : sections.filter(item => item.type === section.type);
+      const existing = pool.flatMap(item => item.subsections).find(item => item.toLowerCase() === name.toLowerCase());
       const category = existing || name;
-      const holder = existing ? sections.find(item => item.type === section.type && item.subsections.includes(existing)) : section;
+      const holder = existing ? pool.find(item => item.subsections.includes(existing)) : section;
       if (!existing) section.subsections.push(name);
+      // What the new subsection stands for inside a settlement or a pot: money that moved, or a note about the split.
+      if (!existing && grouped) {
+        const kind = ExpenseStore.sectionKind(section);
+        const picked = form.elements.role?.value;
+        section.roles ||= {};
+        section.roles[name] = ExpenseStore.SECTION_ROLES.roles[kind].includes(picked) ? picked : ExpenseStore.SECTION_ROLES.fallback[kind];
+      }
       // A new subsection in a custom section gets its id (E1, E2…) for the section's equations now, so it keeps it.
       if (!existing && section.type === 'net') ExpenseStore.ensureCalc(section);
       scope.save();
@@ -450,15 +473,19 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // A custom section whose equations name subsections by id does not count a new one until it is put in, so ask.
       if (!existing && section.type === 'net' && usesSubsectionIds(section)) openSectionSetup(month, property, section.name, name);
     }
-    // Adds a balance section beside Income and Expenses to this month and currency, then asks for its first subsection.
-    // Its entries may be negative; its balance counts as income when zero or more, else as an expense.
+    // Adds a section inside Settlements or Savings for this month and currency, then asks for its first subsection.
+    // Its entries may be negative, and it comes counting realistically from the start: for a settlement everything that
+    // came in is income and everything that went out is an expense, so +X and -X never cancel each other out; for a
+    // pot, only what it earned is income, because moving your own money into savings is neither.
     function saveDraftSection(form) {
       const input = form.elements.name;
       const name = input.value.trim().replace(/\s+/g, ' ');
       const hint = form.querySelector('.ledger-form-hint');
       const { month, property } = ledgerDraft;
+      const kind = ['settlement', 'savings'].includes(form.elements.kind?.value) ? form.elements.kind.value : 'settlement';
+      const one = kind === 'savings' ? 'savings pot' : 'settlement';
       const scope = panelScope(month, property);
-      const reserved = ['income', 'expenses', 'other income', 'other expenses'];
+      const reserved = ['income', 'expenses', 'other income', 'other expenses', 'other balance', 'settlements', 'savings'];
       const problem = !name ? 'Type a name first.'
         : reserved.includes(name.toLowerCase()) || scope.sections().some(item => item.name.toLowerCase() === name.toLowerCase()) ? `There is already a section called "${name}" here.` : '';
       if (problem) {
@@ -466,16 +493,85 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      const mode = (type, fallback) => ({ mode: ['count', 'show', 'off'].includes(form.elements[type]?.value) ? form.elements[type].value : fallback, formula: '' });
-      scope.own().push({ name, type: 'net', subsections: [], block: true, calc: { v: 2, vars: [], lines: [], expense: mode('expense', 'count'), income: mode('income', 'off') } });
+      scope.own().push({ name, type: 'net', kind, subsections: [], roles: {}, block: true, calc: ExpenseStore.defaultCalc(kind) });
       scope.save();
-      ledgerDraft = { month, property, section: name };
+      ledgerDraft = { month, property, section: name, role: kind === 'savings' ? 'save' : 'cost' };
       renderLedger();
-      showToast(`Added the section "${name}" for this month. Name its first subsection.`);
+      showToast(`Added the ${one} "${name}". Name its first subsection.`);
+    }
+    // A settlement is finished when nothing is outstanding; closing it keeps every figure it ever had and stops it
+    // taking new entries. Closing one that is still open asks first, because that is almost always a slip.
+    function setSectionClosed(mKey, property, name, closed) {
+      if (isViewer) return viewOnly();
+      const scope = panelScope(mKey, property);
+      const section = scope.own().find(item => item.type === 'net' && item.name === name);
+      if (!section) return showToast('That section is no longer set up here.');
+      if (closed) {
+        const owed = sectionSettle(mKey, property, section)?.owed || 0;
+        if (owed && !window.confirm(`“${name}” still has ${formatMoney(Math.abs(owed), property)} ${owed > 0 ? 'owed to you' : 'for you to pay'}.\n\nClose it anyway?`)) return;
+        section.closed = true;
+        section.closedOn = todayKey().slice(0, 10);
+      } else {
+        delete section.closed;
+        delete section.closedOn;
+      }
+      scope.save();
+      renderLedger();
+      showToast(closed ? `Closed “${name}”.` : `“${name}” is open again.`);
+    }
+    // One section's own figures right now (what is outstanding, what moved either way), worked out from its entries.
+    function sectionSettle(mKey, property, section) {
+      const scope = panelScope(mKey, property);
+      const amounts = Object.fromEntries((section.subsections || []).map(sub => [sub, []]));
+      transactions.filter(item => !item.parentId && scope.match(item) && item.type === 'net'
+        && (item.section === section.name || (!item.section && (section.subsections || []).includes(item.category))))
+        .forEach(item => (amounts[item.category] ||= []).push(store.entryTotal(item.id)));
+      return ExpenseStore.runCalc(section, amounts).settle;
+    }
+    // Closed sections of one kind, brought together into one. Their subsections move across (a name already taken is
+    // kept apart by its section's name), every entry is re-pointed at the section it lands in, and the sections it came
+    // from are recorded on it. Only closed ones merge: a settlement still in progress has somewhere else to go.
+    function mergeSections(mKey, property, kind, names, targetName) {
+      const scope = panelScope(mKey, property);
+      const own = scope.own();
+      const sources = names.map(name => own.find(item => item.type === 'net' && item.name === name)).filter(Boolean);
+      if (sources.length < 2) return showToast('Pick at least two closed sections to merge.');
+      const target = sources.find(item => item.name === targetName) || sources[0];
+      const rest = sources.filter(item => item !== target);
+      target.roles ||= {};
+      target.mergedFrom = [...new Set([...(target.mergedFrom || []), ...rest.flatMap(item => [...(item.mergedFrom || []), item.name])])];
+      rest.forEach(source => {
+        (source.subsections || []).forEach(sub => {
+          const taken = target.subsections.some(item => ExpenseStore.nameKey(item) === ExpenseStore.nameKey(sub));
+          const landed = taken ? `${sub} (${source.name})` : sub;
+          target.subsections.push(landed);
+          target.roles[landed] = ExpenseStore.subsectionRole(source, sub);
+          const note = source.subAbout?.[sub];
+          if (note) (target.subAbout ||= {})[landed] = note;
+          transactions.filter(item => scope.match(item) && item.type === 'net' && item.category === sub
+            && (item.section === source.name || (!item.section && (source.subsections || []).includes(item.category))))
+            .forEach(item => Object.assign(item, { section: target.name, category: landed }));
+        });
+        own.splice(own.indexOf(source), 1);
+      });
+      // Ids follow the subsections that moved in, so any equation already written on the target still means the same.
+      ExpenseStore.ensureCalc(target);
+      target.closed = true;
+      target.closedOn = todayKey().slice(0, 10);
+      saveTransactions();
+      scope.save();
+      renderLedger();
+      showToast(`Merged ${sources.length} into “${target.name}”.`);
     }
     function saveEntryDraft(form) {
       const fields = form.elements;
       const { month, property, section, type, category } = form.dataset;
+      const holder = section ? panelScope(month, property).sections().find(item => item.name === section) : null;
+      if (holder?.closed) {
+        entryDraft = null;
+        renderLedger();
+        return showToast(`“${section}” is closed. Reopen it to add to it.`);
+      }
       const date = dateFromForm(fields, month);
       const parsed = ExpenseStore.readAmount(fields.amount.value);
       const amount = parsed.value;
@@ -529,19 +625,24 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // Deletes one ledger row and everything under it, limited to the month and currency the row is shown in.
     // Deleting a subsection also takes it off that month's own section list.
-    function deleteRow({ deleteRow: kind, entryId, month, property, type, category }) {
+    // `section`, when given, keeps a subsection's removal inside that one section: two settlements may each have a
+    // row called "My share", and clearing one must not take the other with it.
+    function deleteRow({ deleteRow: kind, entryId, month, property, type, section, category }) {
+      const within = type === 'net' && section ? section : null;
       const inRow = {
         note: item => item.id === entryId,
         entry: item => item.id === entryId,
-        category: item => !item.parentId && panelScope(month, property).match(item) && item.type === type && item.category === category
+        category: item => !item.parentId && panelScope(month, property).match(item) && item.type === type && item.category === category && (!within || item.section === within)
       }[kind];
       const rows = transactions.filter(inRow);
       const rowScope = month ? panelScope(month, property) : null;
-      const emptyListed = kind === 'category' && !rows.length && rowScope.sections().some(section => section.type === type && section.subsections.includes(category));
+      const emptyListed = kind === 'category' && !rows.length && rowScope.sections().some(item => item.type === type && (!within || item.name === within) && item.subsections.includes(category));
       if (emptyListed) {
         if (!window.confirm(`Remove the empty subsection "${category}" from ${rowScope.label}?`)) return;
-        rowScope.own().filter(section => section.type === type).forEach(section => {
-          section.subsections = section.subsections.filter(name => name !== category);
+        rowScope.own().filter(item => item.type === type && (!within || item.name === within)).forEach(item => {
+          item.subsections = item.subsections.filter(name => name !== category);
+          delete item.roles?.[category];
+          delete item.subAbout?.[category];
         });
         rowScope.save();
         editDraft = null;
@@ -567,8 +668,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${rowScope.label}` : '';
       if (!window.confirm(`Delete ${label}${scope}${where}? This cannot be undone.`)) return;
       if (kind === 'category') {
-        rowScope.own().filter(section => section.type === type).forEach(section => {
-          section.subsections = section.subsections.filter(name => name !== category);
+        rowScope.own().filter(item => item.type === type && (!within || item.name === within)).forEach(item => {
+          item.subsections = item.subsections.filter(name => name !== category);
+          delete item.roles?.[category];
+          delete item.subAbout?.[category];
         });
         rowScope.save();
       }
@@ -697,11 +800,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // Renames a subsection in one month (or event) and currency: its entries and the panel's own list. Renaming onto an
     // empty subsection already listed merges into it, keeping its spelling and section. Saving is left to the caller.
-    function renameCategoryIn(scope, type, category, name) {
-      const inPanel = item => scope.match(item) && item.type === type;
+    // `within`, when given, keeps the rename inside one section: a settlement's or a pot's subsections belong to it
+    // alone ("My share" means a different thing in each), so one is never folded into another section's row.
+    function renameCategoryIn(scope, type, category, name, within = null) {
+      const inPanel = item => scope.match(item) && item.type === type && (!within || item.section === within);
       const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
       // Copy the month's list before moving entries, so the copy still holds the old name.
-      const sections = scope.own().filter(section => section.type === type);
+      const sections = scope.own().filter(section => section.type === type && (!within || section.name === within));
       const target = sections.find(section => section.subsections.some(sameName));
       const finalName = target ? target.subsections.find(sameName) : name;
       const moved = transactions.filter(item => inPanel(item) && item.category === category);
@@ -712,10 +817,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       sections.forEach(section => {
         const index = section.subsections.indexOf(category);
         if (index < 0) return;
-        // A custom section's subsection keeps its id (E1, E2…) under its new name, so its equations stay right.
+        // A custom section's subsection keeps its id (E1, E2…) and what it counts as under its new name, so its
+        // equations and its figures stay right.
         if (section.type === 'net' && !target) {
           const item = ExpenseStore.ensureCalc(section).vars.find(entry => entry.name === category);
           if (item) item.name = finalName;
+          if (section.roles && category in section.roles) {
+            section.roles[finalName] = section.roles[category];
+            delete section.roles[category];
+          }
+          if (section.subAbout && category in section.subAbout) {
+            section.subAbout[finalName] = section.subAbout[category];
+            delete section.subAbout[category];
+          }
+        } else if (section.type === 'net' && target) {
+          delete section.roles?.[category];
+          delete section.subAbout?.[category];
         }
         if (target) section.subsections.splice(index, 1);
         else section.subsections[index] = name;
@@ -725,9 +842,70 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       return finalName;
     }
+    // Renaming a settlement or a pot in place. It changes this month and currency only — the same reach as renaming a
+    // subsection here — and its entries are re-pointed at the new name so nothing is orphaned.
+    function saveSectionRename(form) {
+      const { month, property, section: was } = form.dataset;
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const scope = panelScope(month, property);
+      if (name === was) {
+        editDraft = null;
+        return renderLedger();
+      }
+      const reserved = ['income', 'expenses', 'other income', 'other expenses', 'other balance'];
+      const blocks = Object.values(store.blockNames(...yearMonthOf(month), property)).map(item => item.toLowerCase());
+      const problem = !name ? 'Type a name first.'
+        : reserved.includes(name.toLowerCase()) || blocks.includes(name.toLowerCase()) ? `"${name}" is the name of a block here.`
+          : scope.sections().some(item => item.name !== was && item.name.toLowerCase() === name.toLowerCase()) ? `There is already a section called "${name}" here.` : '';
+      if (problem) {
+        hint.textContent = problem;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      const own = scope.own().find(item => item.type === 'net' && item.name === was);
+      if (!own) {
+        editDraft = null;
+        renderLedger();
+        return showToast('That section is no longer set up here.');
+      }
+      own.name = name;
+      transactions.forEach(item => { if (scope.match(item) && item.type === 'net' && item.section === was) item.section = name; });
+      scope.save();
+      saveTransactions();
+      editDraft = null;
+      renderLedger();
+      showToast(`Renamed "${was}" to "${name}" for this month.`);
+    }
+    // Renaming a block heading (Settlements / Savings). Only its name changes: nothing moves, and a month still has
+    // exactly one of each. Emptying the field puts the default name back.
+    function saveBlockRename(form) {
+      const { month, property, block } = form.dataset;
+      const input = form.elements.name;
+      const hint = form.querySelector('.ledger-form-hint');
+      const name = input.value.trim().replace(/\s+/g, ' ');
+      const [year, monthIndex] = yearMonthOf(month);
+      const other = ExpenseStore.SECTION_ROLES.kinds.find(kind => kind !== block);
+      const names = store.blockNames(year, monthIndex, property);
+      const scope = panelScope(month, property);
+      const clash = name && (
+        ['income', 'expenses'].includes(name.toLowerCase()) ? 'Income and Expenses are taken.'
+          : name.toLowerCase() === names[other].toLowerCase() ? `The other block is already called "${name}".`
+            : scope.sections().some(item => item.name.toLowerCase() === name.toLowerCase()) ? `A section here is already called "${name}".` : '');
+      if (clash) {
+        hint.textContent = clash;
+        input.setAttribute('aria-invalid', 'true');
+        return input.focus();
+      }
+      trackSave(store.saveBlockName(year, monthIndex, property, block, name));
+      editDraft = null;
+      renderLedger();
+      showToast(name ? `This block is now called "${name}".` : `Back to "${ExpenseStore.BLOCK_NAMES[block]}".`);
+    }
     // Renaming a subsection changes only the month and currency it is shown in: its entries and that month's own list.
     function saveCategoryRename(form) {
-      const { month, property, type, category } = form.dataset;
+      const { month, property, type, category, section: inSection } = form.dataset;
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
       const name = input.value.trim().replace(/\s+/g, ' ');
@@ -736,7 +914,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         editDraft = null;
         return renderLedger();
       }
-      const inPanel = item => scope.match(item) && item.type === type;
+      const within = type === 'net' && inSection ? inSection : null;
+      const inPanel = item => scope.match(item) && item.type === type && (!within || item.section === within);
       const sameName = other => other !== category && other.toLowerCase() === name.toLowerCase();
       const taken = transactions.some(item => inPanel(item) && sameName(item.category));
       const problem = !name ? 'Type a name first.' : taken ? `"${name}" is already used here.` : '';
@@ -745,7 +924,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         input.setAttribute('aria-invalid', 'true');
         return input.focus();
       }
-      const finalName = renameCategoryIn(scope, type, category, name);
+      const finalName = renameCategoryIn(scope, type, category, name, within);
       scope.save();
       saveTransactions();
       editDraft = null;
@@ -753,6 +932,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(`Renamed "${category}" to "${finalName}"${scope.isEvent ? '' : ' for this month'}.`);
     }
+    // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
+    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-setup], [data-section-close], [data-group-merge], [data-about]';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
@@ -769,7 +950,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       ledger.addEventListener('pointerdown', event => { lastPointerType = event.pointerType || 'mouse'; }, true);
       const rowKeyFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
+        if (!el || el.closest('form') || el.closest(ROW_BUTTONS)) return null;
         // The year card's section headings and descriptions rename for the whole year.
         const yearSection = el.closest('.ledger-year-group > summary[data-year-section]');
         if (yearSection) return `ysec:${yearSection.parentElement.dataset.key}`;
@@ -829,6 +1010,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.preventDefault();
           return openSectionSetup(setupButton.dataset.month, setupButton.dataset.property, setupButton.dataset.sectionSetup);
         }
+        const groupMerge = event.target.closest('[data-group-merge]');
+        if (groupMerge) {
+          event.preventDefault();
+          const { groupMerge: kind, month, property } = groupMerge.dataset;
+          return openMergeDialog(month, property, kind);
+        }
+        const closeButton = event.target.closest('[data-section-close]');
+        if (closeButton) {
+          event.preventDefault();
+          const { sectionClose: name, month, property, to } = closeButton.dataset;
+          return setSectionClosed(month, property, name, to === 'closed');
+        }
         const deleteButton = event.target.closest('[data-delete-row]');
         if (deleteButton) {
           event.preventDefault();
@@ -846,7 +1039,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
               if (target.kind === 'entry') {
                 const toggle = target.row.querySelector('[data-toggle-entry]');
                 if (toggle) setEntryOpen(toggle, !expandedEntries.has(target.id));
-              } else if (['section', 'subsection'].includes(target.kind)) target.row.parentElement.open = !target.row.parentElement.open;
+              } else if (['group', 'section', 'subsection'].includes(target.kind)) target.row.parentElement.open = !target.row.parentElement.open;
               return openRowMenu(target, null, true, { triggerLongPress });
             }
             return triggerEdit(event.target, rowKey);
@@ -990,6 +1183,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (form.dataset.ledgerForm === 'edit-entry' || form.dataset.ledgerForm === 'edit-note') return saveEditDraft(form);
         if (form.dataset.ledgerForm === 'rename-category') return form.dataset.month.startsWith('yr:') ? saveYearCategoryRename(form) : saveCategoryRename(form);
         if (form.dataset.ledgerForm === 'rename-year-section') return saveYearSectionRename(form);
+        if (form.dataset.ledgerForm === 'rename-section') return saveSectionRename(form);
+        if (form.dataset.ledgerForm === 'rename-block') return saveBlockRename(form);
         if (form.dataset.ledgerForm === 'rename-year-item') return saveYearItemRename(form);
         if (form.dataset.ledgerForm === 'sub-entry') {
           const description = form.elements.description.value.trim();
@@ -1049,7 +1244,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (event.key === 'Escape') {
           if (form.dataset.ledgerForm === 'entry') entryDraft = null;
           else if (form.dataset.ledgerForm === 'sub-entry') subEntryDraftParentId = null;
-          else if (['edit-entry', 'edit-note', 'rename-category', 'rename-year-section', 'rename-year-item'].includes(form.dataset.ledgerForm)) editDraft = null;
+          else if (['edit-entry', 'edit-note', 'rename-category', 'rename-year-section', 'rename-year-item', 'rename-section', 'rename-block'].includes(form.dataset.ledgerForm)) editDraft = null;
           else ledgerDraft = null;
           renderLedger();
           return;
@@ -1121,11 +1316,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           showToast('Save or cancel the current inline edit first.');
           return true;
         }
-        // A month's currency header adds a section beside Income and Expenses (an event's header stands for its own section).
+        // A month's currency header adds a settlement (an event's header stands for its own section). Savings and the
+        // Settlements block each have their own Add button, and the row menu offers both.
         if (!mKey.startsWith('ev:') && element.closest('.ledger-panel-head')) {
-          ledgerDraft = { month: mKey, property, newSection: true };
+          ledgerDraft = { month: mKey, property, newSection: 'settlement' };
           renderLedger();
-          showToast(`Add a section to ${panel.querySelector('.ledger-panel-head h3')?.textContent.trim() || 'this currency'}.`);
+          showToast('Name the settlement.');
+          return true;
+        }
+        // Holding the Settlements or Savings heading adds one of that kind. Only the block's own heading: a hold on a
+        // section inside it finds that section first, and goes on adding a subsection as it always did.
+        const nearestBlock = element.closest('.ledger-type-section');
+        const groupBlock = nearestBlock?.classList.contains('is-group') ? nearestBlock : null;
+        if (groupBlock && !mKey.startsWith('ev:')) {
+          ledgerDraft = { month: mKey, property, newSection: groupBlock.dataset.group };
+          renderLedger();
+          showToast(groupBlock.dataset.group === 'savings' ? 'Name the savings pot.' : 'Name the settlement.');
           return true;
         }
         const entryCell = element.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -1153,6 +1359,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             showToast('Add a section for this month first: double-click the month name.');
             return true;
           }
+          if (section.closed) {
+            showToast(`“${section.name}” is closed. Reopen it to add to it.`);
+            return true;
+          }
           entryDraft = { month: mKey, property, section: section.name, type, category: categoryName };
           revealKey = catKey(mKey, property, type, categoryName);
           renderLedger();
@@ -1165,7 +1375,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             showToast('Add a section for this month first: double-click the month name.');
             return true;
           }
-          ledgerDraft = { month: mKey, property, section: section.name };
+          if (section.closed) {
+            showToast(`“${section.name}” is closed. Reopen it to add to it.`);
+            return true;
+          }
+          ledgerDraft = { month: mKey, property, section: section.name, role: ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(section)] };
           renderLedger();
           showToast(`Add a subsection to ${section.name}.`);
           return true;
@@ -1210,9 +1424,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
-          if (monthBlock.dataset.monthKey.startsWith('yr:')) return startYearSectionRename(monthBlock.dataset.monthKey, panel.dataset.property, section);
-          if (monthBlock.dataset.monthKey.startsWith('ev:')) return showToast('Press and hold the section name to add a subsection.');
-          return openMonthSettings(...yearMonthOf(monthBlock.dataset.monthKey));
+          const mKey = monthBlock.dataset.monthKey;
+          if (mKey.startsWith('yr:')) return startYearSectionRename(mKey, panel.dataset.property, section);
+          if (mKey.startsWith('ev:')) return showToast('Press and hold the section name to add a subsection.');
+          // A block heading and a settlement or pot inside it are renamed right here; Income and Expenses are named
+          // in Month settings, where the rest of a month's taxonomy lives.
+          if (section?.classList.contains('is-group')) {
+            editDraft = { kind: 'block', month: mKey, property: panel.dataset.property, block: section.dataset.group };
+            section.open = true;
+          } else if (section?.dataset.kind && section.dataset.section) {
+            editDraft = { kind: 'section', month: mKey, property: panel.dataset.property, section: section.dataset.section };
+            section.open = true;
+          } else {
+            return openMonthSettings(...yearMonthOf(mKey));
+          }
         }
         renderLedger();
       };
@@ -1220,7 +1445,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or a panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
-        if (!el || el.closest('form') || el.closest('[data-sort-cat], [data-panel-expand]')) return null;
+        if (!el || el.closest('form') || el.closest(ROW_BUTTONS)) return null;
         const note = el.closest('.ledger-sub-entry[data-note-id]');
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -1566,13 +1791,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           box.className = `config-section ${section.type}`;
           box.dataset.sectionIndex = index;
           const entries = items(key).filter(item => item.type === section.type && (item.section === section.originalName || (!item.section && section.subsections.includes(item.category)))).length;
+          const sectionKind = section.type === 'net' ? ExpenseStore.sectionKind(section) : null;
+          // Which block a custom section belongs to, whether it has been closed off, and what each of its subsections
+          // stands for — all of it editable here as well as from the ledger itself.
+          const kindToggle = !sectionKind ? '' : `<div class="type-toggle" role="group" aria-label="Which block this belongs to"><button type="button" data-section-kind="settlement" aria-pressed="${sectionKind === 'settlement'}">Settlement</button><button type="button" data-section-kind="savings" aria-pressed="${sectionKind === 'savings'}">Savings</button></div>`;
+          const closedToggle = !sectionKind ? '' : `<label class="check-field config-closed"><input type="checkbox" data-section-closed${section.closed ? ' checked' : ''}><span>Closed${section.closedOn ? ` <em>on ${escapeHtml(section.closedOn)}</em>` : ' <em>no more entries; its figures stay</em>'}</span></label>`;
+          const roleRows = !sectionKind || !section.subsections.length ? '' : `<div class="config-roles"><span class="kv-key">What each one counts as</span>${section.subsections.map(sub => `<label class="config-role"><span>${escapeHtml(sub)}</span><select data-section-role="${escapeHtml(sub)}" aria-label="What ${escapeHtml(sub)} counts as">${window.LedgerBlueprints.ROLE_CHOICES[sectionKind].map(([value, label]) => `<option value="${value}"${value === ExpenseStore.subsectionRole(section, sub) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`).join('')}</div>`;
           box.innerHTML = `<div class="config-section-head">
               <input class="config-section-name" name="section-name" value="${escapeHtml(section.name)}" placeholder="Section name" aria-label="Section name" maxlength="40">
-              ${section.type === 'net' ? '' : `<div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>`}
+              ${section.type === 'net' ? kindToggle : `<div class="type-toggle" role="group" aria-label="Section type"><button type="button" data-section-type="expense" aria-pressed="${section.type === 'expense'}">Expense</button><button type="button" data-section-type="income" aria-pressed="${section.type === 'income'}">Income</button></div>`}
               <span class="config-usage">${entries ? `${entries} ${entries === 1 ? 'entry' : 'entries'}` : ''}</span>
               <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
             </div>
+            ${closedToggle}
             ${section.type === 'net' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.sectionCalc(section), { esc: escapeHtml }) : ''}
+            ${roleRows}
             <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
           box.querySelector('.kv-row').append(chipInput({
             values: section.subsections,
@@ -1611,12 +1844,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // ---- Section setup: how a custom section (L1) and each of its subsections (L2) count ----
     // Opened from the section heading's settings button, and right after a subsection is added to a custom section.
-    const setupState = { month: null, property: null, name: null, draft: null, focus: null };
+    const setupState = { month: null, property: null, name: null, draft: null, focus: null, section: null };
     // This section's entry amounts by subsection, for the preview (an entry counts as the sum of its notes).
     function setupAmounts() {
       const { month, property, name } = setupState;
       const scope = panelScope(month, property);
       const section = scope.sections().find(item => item.name === name);
+      setupState.section = section || null;
       const amounts = Object.fromEntries((section?.subsections || []).map(sub => [sub, []]));
       transactions.filter(item => !item.parentId && scope.match(item) && item.type === 'net' && (item.section === name || (!item.section && section?.subsections.includes(item.category))))
         .forEach(item => (amounts[item.category] ||= []).push(store.entryTotal(item.id)));
@@ -1670,13 +1904,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function updateSetupPreview() {
       const { property, name, draft } = setupState;
       const amounts = setupAmounts();
-      const summary = ExpenseStore.runCalc({ name, subsections: Object.keys(amounts), calc: draft }, amounts);
+      const live = setupState.section;
+      const summary = ExpenseStore.runCalc({ name, subsections: Object.keys(amounts), kind: ExpenseStore.sectionKind(live), roles: live?.roles || {}, calc: draft }, amounts);
       setupState.summary = summary;
       const money = minor => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
       const chip = (id, label, minor, tone, title = `Put ${id} in the equation`) => `<button type="button" class="calc-chip ${tone}" data-insert="${id}" title="${escapeHtml(title)}"><b>${id}</b>${label ? `<span>${escapeHtml(label)}</span>` : ''}${minor === undefined ? '<em class="is-unset">not set</em>' : `<em class="${minor < 0 ? 'expense' : 'income'}">${money(minor)}</em>`}</button>`;
       // Subsections; the entries' own totals; then GI / GE / GB, shown in the heading only once a line sets them.
+      const minorOf = key => Math.round((summary.base[key] || 0) * 100);
+      const totalChip = (id, title) => chip(id, '', minorOf(id), 'is-total', title);
+      const roleChips = ExpenseStore.sectionKind(setupState.section) === 'savings'
+        ? totalChip('SV', 'Put into the pot less what was taken out') + totalChip('RT', 'Interest, dividend or gain the pot earned')
+        : totalChip('OWED', 'Still outstanding: above zero is owed to you, below zero is what you owe') + totalChip('MS', 'Your own share of what the group spent');
       document.querySelector('#calc-chips').innerHTML = summary.subs.map(sub => chip(sub.id, sub.name, sub.sum, `v${colorOf(sub.id)}`)).join('')
-        + chip('TI', '', Math.round(summary.base.TI * 100), 'is-total', 'All positive entries') + chip('TE', '', Math.round(summary.base.TE * 100), 'is-total', 'All negative entries, as a positive sum')
+        + totalChip('CI', 'Cash in: every entry that brought money in, leaving notes out')
+        + totalChip('CO', 'Cash out: every entry that took money out, leaving notes out')
+        + roleChips
+        + totalChip('TI', 'All positive entries, notes included') + totalChip('TE', 'All negative entries, notes included, as a positive sum')
         + chip('GI', '', summary.stats.income, 'g-i', 'Income in the heading: set it with a line GI = …')
         + chip('GE', '', summary.stats.expenses, 'g-e', 'Expenses in the heading: set it with a line GE = …')
         + chip('GB', '', summary.stats.balance, 'g-b', 'Balance in the heading: set it with a line GB = …');
@@ -1703,7 +1946,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (isViewer) return showToast('This account can view the ledger but not change it.');
       const section = panelScope(month, property).sections().find(item => item.name === name);
       if (!section) return showToast('That section is no longer set up here.');
-      Object.assign(setupState, { month, property, name, focus, target: null, draft: JSON.parse(JSON.stringify(ExpenseStore.sectionCalc(section))) });
+      Object.assign(setupState, { month, property, name, focus, target: null, section, draft: JSON.parse(JSON.stringify(ExpenseStore.sectionCalc(section))) });
       document.querySelector('#section-setup-error').hidden = true;
       renderSectionSetup();
       document.querySelector('#section-setup-dialog').showModal();
@@ -1789,11 +2032,80 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (!section) return dialog.close();
         ExpenseStore.ensureCalc(section);
         const result = type => ({ mode: draft[type].mode, formula: draft[type].formula.trim() });
-        section.calc = { v: 2, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
+        section.calc = { v: 3, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
         scope.save();
         dialog.close();
         renderLedger();
         showToast(`Saved how “${name}” counts.`);
+      });
+    }
+    // ---- Merging closed sections ----
+    // Only closed ones are offered: while something is still outstanding it belongs on its own, where it can be
+    // followed. Once two or more are settled and were really the same running thing — the same trip, the same person,
+    // the same pot — they can be folded into one so the month stops carrying a row per occasion.
+    const mergeState = { month: null, property: null, kind: null, picked: new Set() };
+    function mergeCandidates() {
+      const { month, property, kind } = mergeState;
+      return panelScope(month, property).sections()
+        .filter(item => item.type === 'net' && item.closed && ExpenseStore.sectionKind(item) === kind);
+    }
+    // The list is drawn once, when the dialog opens. Ticking a box only refreshes the "keep it all under" choice:
+    // redrawing the list under the pointer would throw away the tick that was just made.
+    function renderMergeDialog() {
+      const { property, picked } = mergeState;
+      const one = mergeState.kind === 'savings' ? 'pot' : 'settlement';
+      document.querySelector('#merge-blurb').textContent = `Pick the closed ${one}s that were really the same thing. Their subsections and every entry move across; nothing is lost and no figure changes.`;
+      document.querySelector('#merge-list').innerHTML = mergeCandidates().map(section => {
+        const settle = sectionSettle(mergeState.month, property, section);
+        const sum = `${formatMoney(settle.cashIn, property)} in · ${formatMoney(settle.cashOut, property)} out`;
+        return `<label class="check-field merge-row"><input type="checkbox" data-merge-pick="${escapeHtml(section.name)}"${picked.has(section.name) ? ' checked' : ''}><span>${escapeHtml(section.name)}<em>${escapeHtml(sum)}${section.closedOn ? ` · closed ${escapeHtml(section.closedOn)}` : ''}</em></span></label>`;
+      }).join('') || '<p class="config-muted">Nothing closed here yet.</p>';
+      renderMergeTarget();
+    }
+    function renderMergeTarget() {
+      const target = document.querySelector('#merge-target');
+      const chosen = mergeCandidates().filter(section => mergeState.picked.has(section.name));
+      const was = target.value;
+      target.innerHTML = chosen.map(section => `<option value="${escapeHtml(section.name)}">${escapeHtml(section.name)}</option>`).join('')
+        || '<option value="">Pick two or more first</option>';
+      if (chosen.some(section => section.name === was)) target.value = was;
+      target.disabled = chosen.length < 2;
+    }
+    function openMergeDialog(month, property, kind) {
+      if (isViewer) return viewOnly();
+      Object.assign(mergeState, { month, property, kind, picked: new Set() });
+      const list = mergeCandidates();
+      if (list.length < 2) return showToast('Close at least two of them first.');
+      document.querySelector('#merge-dialog-title').textContent = kind === 'savings' ? 'Merge settled pots' : 'Merge settled settlements';
+      document.querySelector('#merge-where').textContent = `${regions[property].code} · ${panelScope(month, property).label}`;
+      document.querySelector('#merge-error').hidden = true;
+      renderMergeDialog();
+      document.querySelector('#merge-dialog').showModal();
+    }
+    function setupMergeDialog() {
+      const dialog = document.querySelector('#merge-dialog');
+      if (!dialog) return;
+      const form = document.querySelector('#merge-form');
+      form.addEventListener('change', event => {
+        const pick = event.target.closest('[data-merge-pick]');
+        if (!pick) return;
+        const name = pick.dataset.mergePick;
+        if (pick.checked) mergeState.picked.add(name); else mergeState.picked.delete(name);
+        document.querySelector('#merge-error').hidden = true;
+        renderMergeTarget();
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const error = document.querySelector('#merge-error');
+        const names = mergeCandidates().map(section => section.name).filter(name => mergeState.picked.has(name));
+        if (names.length < 2) {
+          error.textContent = 'Pick at least two.';
+          error.hidden = false;
+          return;
+        }
+        const target = document.querySelector('#merge-target').value || names[0];
+        mergeSections(mergeState.month, mergeState.property, mergeState.kind, names, target);
+        dialog.close();
       });
     }
     function setupMonthSettings() {
@@ -1813,6 +2125,30 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ExpenseStore.ensureCalc(section)[rule.dataset.sideMode].mode = rule.value;
           monthState.dirty.add(block.dataset.currency);
         }
+        const sectionOf = element => {
+          const holder = element.closest('[data-currency]');
+          const box = element.closest('.config-section');
+          if (!holder || !box) return null;
+          monthState.dirty.add(holder.dataset.currency);
+          return monthSectionsFor(holder.dataset.currency)[Number(box.dataset.sectionIndex)];
+        };
+        // What a subsection of a settlement or a pot stands for.
+        const roleField = event.target.closest('[data-section-role]');
+        if (roleField) {
+          const section = sectionOf(roleField);
+          if (section) {
+            section.roles ||= {};
+            section.roles[roleField.dataset.sectionRole] = roleField.value;
+          }
+        }
+        // Closing one off, or opening it again.
+        const closedBox = event.target.closest('[data-section-closed]');
+        if (closedBox) {
+          const section = sectionOf(closedBox);
+          if (section && closedBox.checked) Object.assign(section, { closed: true, closedOn: section.closedOn || todayKey().slice(0, 10) });
+          else if (section) { delete section.closed; delete section.closedOn; }
+          if (section) renderMonthSections();
+        }
       });
       form.addEventListener('input', event => {
         const name = event.target.closest('.config-section-name');
@@ -1828,9 +2164,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const list = monthSectionsFor(key);
         const box = event.target.closest('.config-section');
         const typeButton = event.target.closest('[data-section-type]');
-        const changed = (typeButton && box) || (event.target.closest('[data-remove-section]') && box) || event.target.closest('[data-month-add-section]');
+        const changed = (typeButton && box) || (event.target.closest('[data-section-kind]') && box) || (event.target.closest('[data-remove-section]') && box) || event.target.closest('[data-month-add-section]');
         if (!changed) return;
-        if (typeButton) list[Number(box.dataset.sectionIndex)].type = typeButton.dataset.sectionType;
+        const kindButton = event.target.closest('[data-section-kind]');
+        if (kindButton && box) {
+          const section = list[Number(box.dataset.sectionIndex)];
+          const was = ExpenseStore.sectionKind(section);
+          section.kind = kindButton.dataset.sectionKind;
+          if (was !== section.kind) {
+            section.roles = {};
+            section.calc = ExpenseStore.defaultCalc(section.kind);
+          }
+        } else if (typeButton) list[Number(box.dataset.sectionIndex)].type = typeButton.dataset.sectionType;
         else if (box) list.splice(Number(box.dataset.sectionIndex), 1);
         else list.push({ name: '', originalName: null, type: 'expense', subsections: [] });
         monthState.dirty.add(key);
@@ -1870,6 +2215,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             });
           });
           // Keep every setting a section has (custom sections' block flag and counting rule), not just its name and type.
+          // A subsection added or renamed here gets its role settled now, so nothing is left without one.
+          list.filter(section => section.type === 'net').forEach(section => ExpenseStore.ensureCalc(section));
           trackSave(store.saveMonthSections(year, month, key, list.map(({ originalName, ...section }) => ({ ...section, name: section.name.trim(), subsections: [...section.subsections] }))));
         });
         if (renamed) saveTransactions();
@@ -2367,7 +2714,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       showToast(`Copied “${clipboard.label}” (${list.reduce((sum, item) => sum + item.subsections.length, 0)} subsections). Right-click or double-tap where it should go, then Paste.`);
     }
     function copySubsection(mKey, property, type, section, name) {
-      clipboard = { kind: 'subsection', mKey, property, type, section, name, label: name };
+      const home = panelScope(mKey, property).sections().find(item => item.type === type && item.name === section);
+      const role = home?.type === 'net' ? ExpenseStore.subsectionRole(home, name) : null;
+      const about = home?.subAbout?.[name] || '';
+      clipboard = { kind: 'subsection', mKey, property, type, section, name, role, about, label: name };
       showToast(`Copied the subsection “${name}”. Paste it on a section in any month or event.`);
     }
     function copyEntry(id) {
@@ -2391,6 +2741,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return null;
     }
     function paste(target, withEntries) {
+      if (target.closed) return showToast(`“${target.section || target.label}” is closed. Reopen it first.`);
       if (isViewer) return viewOnly();
       if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
       const { mKey, property } = target;
@@ -2407,17 +2758,36 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           let into = own.find(item => item.type === source.type && item.name === source.name)
             || (source.type === 'net' ? null : own.find(item => item.type === source.type));
           if (!into) {
-            into = { ...JSON.parse(JSON.stringify(source)), subsections: [] };
+            // A copy arrives open, whatever the original's state: it is a fresh start here, not a finished settlement.
+            const { closed, closedOn, mergedFrom, about, ...rest } = JSON.parse(JSON.stringify(source));
+            into = { ...rest, subsections: [] };
             own.push(into);
             added += 1;
           }
-          source.subsections.forEach(sub => { if (!into.subsections.includes(sub)) { into.subsections.push(sub); added += 1; } });
+          source.subsections.forEach(sub => {
+            if (into.subsections.includes(sub)) return;
+            into.subsections.push(sub);
+            // A subsection keeps what it stood for in the section it came from.
+            if (into.type === 'net') {
+              (into.roles ||= {})[sub] = ExpenseStore.subsectionRole(source, sub);
+              if (source.subAbout?.[sub]) (into.subAbout ||= {})[sub] = source.subAbout[sub];
+            }
+            added += 1;
+          });
           if (withEntries) entriesOf(clipboard.mKey, clipboard.property, source.type, source.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, item.category); });
         });
       } else if (clipboard.kind === 'subsection') {
         const into = sectionFor(target.type, target.section);
         if (!into) return showToast(`${scope.label} has no ${target.type === 'income' ? 'income' : 'expense'} section yet: add one first.`);
-        if (!into.subsections.includes(clipboard.name)) { into.subsections.push(clipboard.name); added += 1; }
+        if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        if (!into.subsections.includes(clipboard.name)) {
+          into.subsections.push(clipboard.name);
+          if (into.type === 'net') {
+            (into.roles ||= {})[clipboard.name] = clipboard.role || ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(into)];
+            if (clipboard.about) (into.subAbout ||= {})[clipboard.name] = clipboard.about;
+          }
+          added += 1;
+        }
         if (withEntries) entriesOf(clipboard.mKey, clipboard.property, clipboard.type, clipboard.section, clipboard.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, clipboard.name); });
       } else if (clipboard.kind === 'entry') {
         const item = transactions.find(row => row.id === clipboard.id);
@@ -2455,10 +2825,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const blockType = ['income', 'net'].includes(typeBlock?.dataset.type) ? typeBlock.dataset.type : 'expense';
       if (catSummary) {
         const cat = catSummary.parentElement;
-        return { kind: 'subsection', mKey, property, type: blockType, section: cat.dataset.section || null, category: cat.querySelector('.ledger-cat-name').textContent.trim(), row: catSummary, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
+        return { kind: 'subsection', mKey, property, type: blockType, section: cat.dataset.section || null, kindOf: typeBlock?.dataset.kind || null, closed: typeBlock?.dataset.closed === 'true', category: cat.querySelector('.ledger-cat-name').textContent.trim(), row: catSummary, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
       }
       const typeSummary = el.closest('.ledger-type-section > summary');
-      if (typeSummary) return { kind: 'section', mKey, property, type: blockType, section: typeBlock.dataset.section || null, row: typeSummary, label: typeSummary.querySelector('strong')?.textContent.trim() || '' };
+      if (typeSummary && typeBlock.classList.contains('is-group')) return { kind: 'group', mKey, property, group: typeBlock.dataset.group, row: typeSummary, label: typeSummary.querySelector('strong')?.textContent.trim() || '' };
+      if (typeSummary) return { kind: 'section', mKey, property, type: blockType, section: typeBlock.dataset.section || null, kindOf: typeBlock.dataset.kind || null, closed: typeBlock.dataset.closed === 'true', row: typeSummary, label: typeSummary.querySelector('strong')?.textContent.trim() || '' };
       if (el.closest('.ledger-panel-head') && panel) return { kind: 'panel', mKey, property, row: el.closest('.ledger-panel-head'), label: regions[property]?.code || property };
       if (el.closest('.month-ledger-head')) return { kind: 'month', mKey, row: el.closest('.month-ledger-head'), label: block.querySelector('.month-name')?.textContent.trim() || '' };
       return null;
@@ -2488,37 +2859,76 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         ]);
       }
       if (kind === 'panel') {
+        const startBlock = which => () => {
+          if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+          ledgerDraft = { month: mKey, property, newSection: which };
+          renderLedger();
+          showToast(which === 'savings' ? 'Name the savings pot.' : 'Name the settlement.');
+        };
         return write([
-          { icon: 'plus', label: isEvent ? 'Add subsection' : 'Add section', hint: 'beside Income and Expenses', run: add },
+          ...(isEvent ? [{ icon: 'plus', label: 'Add subsection', run: add }] : [
+            { icon: 'arrows-exchange', label: 'Add settlement', hint: 'money shared with someone', run: startBlock('settlement') },
+            { icon: 'pig-money', label: 'Add savings pot', hint: 'what you set aside', run: startBlock('savings') }
+          ]),
           ...pasteAction,
           { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.querySelector('[data-panel-expand]')?.click() },
           { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
+      if (kind === 'group') {
+        const one = target.group === 'savings' ? 'savings pot' : 'settlement';
+        const closed = panelScope(mKey, property).sections().filter(item => item.type === 'net' && item.closed && ExpenseStore.sectionKind(item) === target.group);
+        return write([
+          { icon: 'plus', label: `Add ${one}`, run: add },
+          { icon: 'pencil', label: 'Rename this block…', hint: 'here, in this month', run: edit({ kind: 'block', month: mKey, property, block: target.group }) },
+          ...(closed.length > 1 ? [{ icon: 'arrow-merge', label: `Merge settled (${closed.length})…`, hint: 'bring closed ones together', run: () => openMergeDialog(mKey, property, target.group) }] : []),
+          { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.closest('.ledger-panel')?.querySelector('[data-panel-expand]')?.click() },
+          { icon: 'settings', label: settingsLabel, run: settings }
+        ]);
+      }
       if (kind === 'section') {
         const custom = target.section && target.type === 'net';
+        const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
         return write([
+          ...(custom && !isEvent ? [target.closed
+            ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
+            : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
           { icon: 'plus', label: 'Add subsection', run: add },
+          ...[aboutAction(target)].filter(Boolean),
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
-          ...(target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
+          ...(custom && !isEvent ? [{ icon: 'pencil', label: 'Rename…', hint: 'here, in this month', run: edit({ kind: 'section', month: mKey, property, section: target.section }) }]
+            : target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
           ...(custom ? [{ icon: 'trash', label: 'Delete section', danger: true, run: () => deleteSection(target) }] : [])
         ]);
       }
       if (kind === 'subsection') {
+        const roleItems = !target.kindOf || isEvent ? [] : (() => {
+          const section = panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === target.section);
+          if (!section) return [];
+          const kindKey = ExpenseStore.sectionKind(section);
+          const now = ExpenseStore.subsectionRole(section, target.category);
+          return ExpenseStore.SECTION_ROLES.roles[kindKey].filter(role => role !== now).map(role => ({
+            icon: 'tag', label: `Count it as: ${ExpenseStore.SECTION_ROLES.labels[role]}`,
+            hint: ROLE_HINTS[role], run: () => setSubsectionRole(mKey, property, target.section, target.category, role)
+          }));
+        })();
         return write([
           { icon: 'plus', label: 'Add entry', run: add },
+          ...[aboutAction(target)].filter(Boolean),
+          ...roleItems,
           { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
           { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name, target.category) },
           ...pasteAction,
-          { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, category: target.category }) }
+          { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, section: target.section, category: target.category }) }
         ]);
       }
       if (kind === 'entry') {
         return write([
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
           { icon: 'corner-down-right', label: 'Add note', run: add },
+          ...[aboutAction(target)].filter(Boolean),
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
           flowAction(target),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
@@ -2527,10 +2937,43 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       return write([
         { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
+        ...[aboutAction(target)].filter(Boolean),
         { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
         flowAction(target),
         { icon: 'trash', label: 'Delete note', danger: true, run: () => deleteRow({ deleteRow: 'note', entryId: target.id }) }
       ]);
+    }
+    // "Description…" for any row the menu can be opened on. It says Add when there is none yet, and opens straight
+    // into the editor then; an existing one opens read-only, behind its padlock.
+    function aboutAction(target) {
+      const scope = { entry: () => ({ kind: 'entry', id: target.id }), note: () => ({ kind: 'note', id: target.id }),
+        section: () => (target.section ? { kind: 'section', mKey: target.mKey, property: target.property, type: target.type, section: target.section } : null),
+        subsection: () => ({ kind: 'subsection', mKey: target.mKey, property: target.property, type: target.type, section: target.section, category: target.category })
+      }[target.kind]?.();
+      if (!scope || !aboutHome(scope)) return null;
+      const has = Boolean(aboutHome(scope).read());
+      return { icon: 'notes', label: has ? 'Description…' : 'Add description…', hint: has ? 'read it, or unlock to edit' : 'a longer note, kept off the row',
+        read: has, run: () => openAboutPop(scope, target.row, !has) };
+    }
+    const ROLE_HINTS = {
+      cost: 'real money out for the group, or back in',
+      share: 'a note about the split — not a movement of money',
+      settle: 'money between you and the other side',
+      save: 'into the pot, or back out of it',
+      return: 'what the pot earned — counted as income'
+    };
+    // Changes what one subsection of a settlement or a pot stands for. Nothing about the entries changes; what changes
+    // is how they are read, so the figures and what is outstanding are worked out again from the same amounts.
+    function setSubsectionRole(mKey, property, sectionName, category, role) {
+      if (isViewer) return viewOnly();
+      const scope = panelScope(mKey, property);
+      const section = scope.own().find(item => item.type === 'net' && item.name === sectionName);
+      if (!section) return showToast('That section is no longer set up here.');
+      section.roles ||= {};
+      section.roles[category] = role;
+      scope.save();
+      renderLedger();
+      showToast(`“${category}” now counts as ${ExpenseStore.SECTION_ROLES.labels[role].toLowerCase()}.`);
     }
     // A custom section goes only when it is empty here (its entries would otherwise lose their place).
     function deleteSection(target) {
@@ -2552,7 +2995,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       el.querySelector('.row-menu-list').innerHTML = list.map((item, index) => `<button type="button" role="menuitem" class="row-menu-item${item.danger ? ' is-danger' : ''}" data-menu-index="${index}"><i class="ti ti-${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}${item.hint ? `<small>${escapeHtml(item.hint)}</small>` : ''}</span></button>`).join('')
         || '<p class="row-menu-empty">Nothing to do here.</p>';
     }
-    const KIND_NAMES = { month: 'Month', panel: 'Currency', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
+    const KIND_NAMES = { month: 'Month', panel: 'Currency', group: 'Block', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
     function openRowMenu(target, point, touch, helpers) {
       const { el } = rowMenu;
       rowMenu.target = target;
@@ -2760,6 +3203,178 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }, true);
       addEventListener('scroll', () => { if (!pop.hidden) placeTagPicker(); }, true);
     }
+    // ---- Descriptions ---------------------------------------------------------------------------
+    // Any section, subsection, entry or note can carry a longer description. It is kept off the row itself — the row
+    // shows only a dot — and opens beside it, read-only. Editing needs the padlock: the ledger is worked by holding and
+    // double-clicking rows, and a description is the one thing there that is prose rather than a figure, so it is the
+    // easiest thing to overwrite by accident. Locked by default means a stray gesture can never cost you one.
+    //
+    // A line of the description that reads "=paid" also sets the row's status; the word shows as a capsule, coloured by what it
+    // means (see ExpenseStore.readStatus), on the row and in the popover.
+    const aboutPop = { pop: null, scope: null, row: null, unlocked: false };
+    // Where a description lives, by the scope the mark carries.
+    function aboutHome(scope) {
+      if (!scope) return null;
+      if (scope.kind === 'entry' || scope.kind === 'note') {
+        const item = transactions.find(row => row.id === scope.id);
+        return item ? { label: item.description, read: () => item.about || '', write: text => { if (text) item.about = text; else delete item.about; saveTransactions(); } } : null;
+      }
+      const scoped = panelScope(scope.mKey, scope.property);
+      const section = scoped.own().find(item => item.name === scope.section);
+      if (!section) return null;
+      if (scope.kind === 'section') {
+        return { label: section.name, read: () => section.about || '', write: text => { if (text) section.about = text; else delete section.about; scoped.save(); } };
+      }
+      return {
+        label: scope.category,
+        read: () => section.subAbout?.[scope.category] || '',
+        write: text => {
+          if (text) (section.subAbout ||= {})[scope.category] = text;
+          else if (section.subAbout) delete section.subAbout[scope.category];
+          scoped.save();
+        }
+      };
+    }
+    const ABOUT_KINDS = { section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
+    function drawAboutPop() {
+      const { pop, scope, unlocked } = aboutPop;
+      const home = aboutHome(scope);
+      if (!home) return closeAboutPop();
+      const text = home.read();
+      const status = ExpenseStore.readStatus(text);
+      const body = ExpenseStore.statusless(text);
+      pop.querySelector('.about-pop-kind').textContent = ABOUT_KINDS[scope.kind] || '';
+      pop.querySelector('.about-pop-title').textContent = home.label || '';
+      pop.querySelector('.about-pop-status').innerHTML = status
+        ? `<small class="ledger-status is-${status.tone}" title="Set by the line “=${escapeHtml(status.word)}” in the description">${escapeHtml(status.word)}</small>` : '';
+      const lock = pop.querySelector('[data-about-lock]');
+      lock.setAttribute('aria-pressed', String(unlocked));
+      lock.title = unlocked ? 'Lock it again, leaving it as it was' : 'Unlock to edit this description';
+      lock.innerHTML = `<i class="ti ti-${unlocked ? 'lock-open' : 'lock'}" aria-hidden="true"></i><span>${unlocked ? 'Editing' : 'Locked'}</span>`;
+      lock.hidden = isViewer;
+      pop.querySelector('.about-pop-read').innerHTML = body
+        ? LedgerSearch.markTags(escapeHtml(body)).replace(/\n/g, '<br>')
+        : '<em class="about-pop-empty">No description yet.</em>';
+      pop.querySelector('.about-pop-read').hidden = unlocked;
+      const edit = pop.querySelector('.about-pop-edit');
+      edit.hidden = !unlocked;
+      if (unlocked) {
+        const field = edit.querySelector('textarea');
+        if (document.activeElement !== field) field.value = text;
+      }
+      pop.querySelector('.about-pop-hint').textContent = unlocked
+        ? 'A line of its own reading “=paid” (or done, pending, due…) sets the status · Esc to cancel'
+        : 'Read-only. Press the padlock to edit.';
+    }
+    function placeAboutPop() {
+      const { pop, row } = aboutPop;
+      if (!row?.isConnected) return;
+      const r = row.getBoundingClientRect();
+      const below = innerHeight - r.bottom > pop.offsetHeight + 12 || r.top < pop.offsetHeight + 12;
+      pop.style.top = `${below ? r.bottom + 4 : r.top - pop.offsetHeight - 4}px`;
+      pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
+    }
+    // `startEditing` opens it straight into the editor: that is what "Add description" from the row menu does, since
+    // there is nothing to read yet.
+    function openAboutPop(scope, row, startEditing = false) {
+      if (!aboutHome(scope)) return showToast('That row is no longer here. Refresh and try again.');
+      if (startEditing && isViewer) return viewOnly();
+      Object.assign(aboutPop, { scope, row: row || aboutPop.row, unlocked: Boolean(startEditing) && !isViewer });
+      aboutPop.pop.hidden = false;
+      drawAboutPop();
+      placeAboutPop();
+      if (aboutPop.unlocked) {
+        const field = aboutPop.pop.querySelector('textarea');
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+      }
+    }
+    function closeAboutPop() {
+      if (!aboutPop.pop || aboutPop.pop.hidden) return;
+      aboutPop.pop.hidden = true;
+      Object.assign(aboutPop, { scope: null, row: null, unlocked: false });
+    }
+    function saveAboutPop() {
+      const { pop, scope } = aboutPop;
+      const home = aboutHome(scope);
+      if (!home) return closeAboutPop();
+      const text = pop.querySelector('textarea').value.trim();
+      const had = home.read();
+      home.write(text);
+      aboutPop.unlocked = false;
+      renderLedger();
+      // The row was drawn again: find it so the popover stays put over it.
+      aboutPop.row = aboutRowFor(scope);
+      if (!aboutPop.row || !text) closeAboutPop();
+      else { drawAboutPop(); placeAboutPop(); }
+      showToast(text ? (had ? 'Description updated.' : 'Description added.') : 'Description removed.');
+    }
+    // The element a scope's popover sits over, after a redraw.
+    function aboutRowFor(scope) {
+      const mark = [...document.querySelectorAll('#ledger [data-about]')]
+        .find(item => { try { return sameScope(JSON.parse(item.dataset.about), scope); } catch (error) { return false; } });
+      return mark ? (mark.closest('.ledger-entry-cell, .ledger-cat, .ledger-type-section') || mark) : null;
+    }
+    const sameScope = (a, b) => a && b && a.kind === b.kind && (a.id ? a.id === b.id
+      : a.mKey === b.mKey && a.property === b.property && a.section === b.section && a.category === b.category);
+    function setupAboutPop() {
+      const pop = document.createElement('div');
+      pop.className = 'about-pop';
+      pop.hidden = true;
+      pop.innerHTML = `<div class="about-pop-head"><span class="about-pop-kind"></span><b class="about-pop-title"></b><span class="about-pop-status"></span>
+          <button type="button" class="mini-btn about-pop-lock" data-about-lock aria-pressed="false"></button></div>
+        <div class="about-pop-read"></div>
+        <div class="about-pop-edit" hidden><textarea rows="4" aria-label="Description" placeholder="What this is about… then a line reading =paid to set a status" spellcheck="false"></textarea>
+          <div class="about-pop-actions"><button type="button" class="quiet-button" data-about-cancel>Cancel</button><button type="button" class="primary-button" data-about-save>Save</button></div></div>
+        <p class="about-pop-hint"></p>`;
+      document.body.append(pop);
+      aboutPop.pop = pop;
+      pop.addEventListener('click', event => {
+        if (event.target.closest('[data-about-lock]')) {
+          if (isViewer) return viewOnly();
+          aboutPop.unlocked = !aboutPop.unlocked;
+          drawAboutPop();
+          placeAboutPop();
+          if (aboutPop.unlocked) pop.querySelector('textarea').focus();
+          return;
+        }
+        if (event.target.closest('[data-about-save]')) return saveAboutPop();
+        if (event.target.closest('[data-about-cancel]')) {
+          aboutPop.unlocked = false;
+          if (!aboutHome(aboutPop.scope)?.read()) return closeAboutPop();
+          drawAboutPop();
+          placeAboutPop();
+        }
+      });
+      pop.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); closeAboutPop(); }
+        // Ctrl/Cmd+Enter saves; plain Enter keeps writing, since a description is prose.
+        else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); saveAboutPop(); }
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!pop.hidden && !pop.contains(event.target) && !event.target.closest?.('[data-about]')) closeAboutPop();
+      }, true);
+      // Esc closes it from anywhere: saving hands focus back to the ledger, so the popover rarely holds it.
+      document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || pop.hidden) return;
+        event.preventDefault();
+        closeAboutPop();
+      }, true);
+      // The dot on a row opens its description, without opening, editing or toggling the row it sits in.
+      document.querySelector('#ledger').addEventListener('click', event => {
+        const mark = event.target.closest('[data-about]');
+        if (!mark) return;
+        event.preventDefault();
+        event.stopPropagation();
+        let scope;
+        try { scope = JSON.parse(mark.dataset.about); } catch (error) { return; }
+        const row = mark.closest('.ledger-entry-cell, .ledger-cat, .ledger-type-section') || mark;
+        if (!pop.hidden && sameScope(aboutPop.scope, scope)) return closeAboutPop();
+        openAboutPop(scope, row);
+      }, true);
+      addEventListener('scroll', () => { if (!pop.hidden) placeAboutPop(); }, true);
+    }
+
     // ---- Flows: money that goes out and comes back, or comes in and goes back (a loan and its repayments, an advance and
     // its refund). Any entries and notes, in any month, year or special card, can be put in one flow; the flow adds them up
     // per currency, income in and expenses out (a custom section's amount by its sign), and shows what is still open:
@@ -3407,6 +4022,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupYearConfig();
     setupMonthSettings();
     setupSectionSetup();
+    setupMergeDialog();
+    setupAboutPop();
     setupHub();
     setupTagPicker();
     setupFlowPicker();

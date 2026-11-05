@@ -1254,3 +1254,170 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .sync-note { margin: 0 0 6px; color: var(--muted); font-size: 12px; }
 .sync-note.is-refresh { color: var(--brand); }
 .sync-dialog .modal-actions { flex-wrap: wrap; }
+
+/* ---- Settlements and Savings -------------------------------------------------------------- */
+/* The two blocks that hold every custom section. Each one is a little heavier than Income and Expenses, so the eye
+   reads the panel as Expenses / Income / Settlements / Savings and the sections inside them as one level down. */
+.ledger-type-section.is-group > summary { gap: 8px; }
+.ledger-group-icon { flex: none; color: var(--brand); font-size: 14px; }
+.ledger-type-section.is-savings > summary .ledger-group-icon { color: var(--income-2); }
+.ledger-group-count { flex: none; min-width: 17px; padding: 0 5px; border-radius: 99px; background: var(--surface-soft); color: var(--muted); font: 500 10px/16px var(--mono); text-align: center; }
+.ledger-type-section.is-group > div { gap: 0; padding-bottom: 10px; }
+/* A section inside a block is set in from its heading and carries a hairline, so its rows never read as the block's own. */
+.ledger-type-section.is-group > div > .ledger-type-section.is-named,
+.ledger-type-section.is-group .ledger-settled > div > .ledger-type-section.is-named { margin-left: 10px; padding-left: 10px; border-left: 2px solid var(--line); }
+.ledger-type-section.is-group > div > .ledger-type-section.is-named + .ledger-type-section.is-named { border-top: 1px solid var(--line-soft); }
+.ledger-type-section.is-group .ledger-type-section.is-settlement { border-left-color: var(--brand-soft); }
+.ledger-type-section.is-group .ledger-type-section.is-savings { border-left-color: rgba(94, 234, 176, .22); }
+.ledger-type-section.is-closed { opacity: .72; }
+.ledger-type-section.is-closed:hover, .ledger-type-section.is-closed[open] { opacity: 1; }
+
+/* What a settlement or a pot really amounts to: cash both ways, my own share, and what is still open. */
+.ledger-stat-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 0 8px; border-bottom: 1px dashed var(--line); }
+.ledger-stat { display: inline-grid; gap: 1px; }
+.ledger-stat small { color: var(--faint); font: 500 9.5px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.ledger-stat b { font: 500 13px var(--mono); font-variant-numeric: tabular-nums; }
+.ledger-stat b.income { color: var(--income-2); }
+.ledger-stat b.expense { color: var(--expense); }
+.ledger-stat b.balance { color: var(--ink); }
+.ledger-stat-flag { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 1px 8px; border-radius: 99px; font: 600 10.5px var(--display); }
+.ledger-stat-flag.is-clear { background: rgba(94, 234, 176, .12); color: var(--income-2); }
+.ledger-stat-flag.is-open { background: var(--brand-soft); color: var(--brand); }
+.ledger-stat-flag i { font-size: 11px; }
+
+/* Closing one off, and the closed ones folded away together. */
+.section-close-btn.is-unsettled { color: var(--brand); }
+.ledger-merged-note { display: flex; align-items: center; gap: 5px; margin: 6px 0 0; color: var(--faint); font-size: 11.5px; font-style: italic; }
+.ledger-settled { margin: 6px 0 0; }
+.ledger-settled > summary { display: flex; align-items: center; gap: 7px; padding: 5px 0; color: var(--muted); cursor: pointer; list-style: none; font: 500 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.ledger-settled > summary::-webkit-details-marker { display: none; }
+.ledger-settled > summary > i { transition: transform .15s; font-size: 12px; }
+.ledger-settled[open] > summary > i { transform: rotate(90deg); }
+.ledger-settled > summary small { padding: 0 6px; border-radius: 99px; background: var(--surface-soft); font: 500 10px/16px var(--mono); letter-spacing: 0; }
+
+/* What each subsection stands for, beside its name: money that moved, or a note explaining the split. */
+.ledger-role { flex: none; padding: 0 6px; border-radius: 99px; background: var(--surface-soft); color: var(--faint); font: 500 9.5px/15px var(--mono); letter-spacing: .02em; text-transform: lowercase; white-space: nowrap; }
+.ledger-role.is-share { background: transparent; border: 1px dashed var(--line-strong); font-style: italic; }
+.ledger-role.is-settle { color: var(--brand); background: var(--brand-soft); }
+.ledger-role.is-return { color: var(--income-2); background: rgba(94, 234, 176, .1); }
+.sub-form .role-select { height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 11.5px; }
+
+/* Merging closed sections. */
+.merge-blurb { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.merge-list { display: grid; gap: 6px; max-height: 44vh; overflow: auto; }
+.merge-row { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); }
+.merge-row:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); }
+.merge-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.merge-target select { height: 34px; flex: 1; min-width: 150px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font-size: 12.5px; }
+
+/* Month settings: which block a section belongs to, whether it is closed, and what each subsection counts as. */
+.config-closed { padding: 2px 0; }
+.config-roles { display: grid; gap: 5px; }
+.config-role { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.config-role > span { flex: 1; min-width: 90px; color: var(--ink); font-size: 12px; }
+.config-role select { height: 29px; min-width: 150px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 11.5px; }
+.config-section.net { border-left-color: var(--brand); }
+
+/* ---- Status words, lifecycle states and descriptions ---------------------------------------- */
+/* A capsule is a tint of its own colour behind that colour's text, in both themes: in the dark one the tint is the
+   dark surface lifted toward the tone, in the light one it is the pale wash the tone sits on. Same shape as the
+   Clear / Open flags above, so every badge in the ledger reads as one family. */
+:root {
+  --st-done: #4ec98f;      --st-done-bg: rgba(78, 201, 143, .14);
+  --st-waiting: #f5b95a;   --st-waiting-bg: rgba(245, 185, 90, .14);
+  --st-overdue: #ef6f6f;   --st-overdue-bg: rgba(239, 111, 111, .14);
+  --st-dropped: #9ca1b3;   --st-dropped-bg: rgba(156, 161, 179, .13);
+  --st-plain: #c9cedd;     --st-plain-bg: rgba(201, 206, 221, .1);
+}
+:root[data-theme="light"] {
+  --st-done: #15704a;      --st-done-bg: #d9f2e4;
+  --st-waiting: #8a5a09;   --st-waiting-bg: #fdeecd;
+  --st-overdue: #a32626;   --st-overdue-bg: #fadede;
+  --st-dropped: #5c574d;   --st-dropped-bg: #e8e4da;
+  --st-plain: #403c35;     --st-plain-bg: #ebe7dd;
+}
+
+/* A description line reading "=paid" → a capsule on the row it belongs to. */
+.ledger-status { flex: none; padding: 1px 8px; border-radius: 99px; background: var(--st-plain-bg); color: var(--st-plain);
+  font: 700 9.5px/16px var(--display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.ledger-status.is-done { background: var(--st-done-bg); color: var(--st-done); }
+.ledger-status.is-waiting { background: var(--st-waiting-bg); color: var(--st-waiting); }
+.ledger-status.is-overdue { background: var(--st-overdue-bg); color: var(--st-overdue); }
+.ledger-status.is-dropped { background: var(--st-dropped-bg); color: var(--st-dropped); }
+
+/* Where a settlement or a pot stands: Draft → Open → Clear → Settled → Merged. */
+.ledger-state { flex: none; padding: 1px 8px; border-radius: 99px; background: var(--st-dropped-bg); color: var(--st-dropped);
+  font: 700 9.5px/16px var(--display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.ledger-state.is-open { background: var(--st-waiting-bg); color: var(--st-waiting); }
+.ledger-state.is-clear { background: var(--st-done-bg); color: var(--st-done); }
+.ledger-state.is-settled { background: rgba(91, 157, 255, .14); color: var(--tag0); }
+.ledger-state.is-merged { background: rgba(177, 140, 255, .14); color: var(--tag1); }
+/* The section itself carries its state in its left edge, so the list reads before anything is opened. */
+.ledger-type-section.is-group .ledger-type-section[data-state="open"] { border-left-color: var(--st-waiting); }
+.ledger-type-section.is-group .ledger-type-section[data-state="clear"] { border-left-color: var(--st-done); }
+.ledger-type-section.is-group .ledger-type-section[data-state="settled"] { border-left-color: var(--tag0); }
+.ledger-type-section.is-group .ledger-type-section[data-state="merged"] { border-left-color: var(--tag1); }
+.ledger-type-section.is-group .ledger-type-section[data-state="draft"] { border-left-style: dashed; }
+
+/* The description mark: the smallest thing that can still be aimed at. It takes its status's colour when there is one. */
+.about-mark { flex: none; width: 7px; height: 7px; margin: 0 2px; border-radius: 50%; background: var(--st-plain); opacity: .75; cursor: pointer; }
+.about-mark:hover { opacity: 1; box-shadow: 0 0 0 3px var(--st-plain-bg); }
+.about-mark.is-done { background: var(--st-done); } .about-mark.is-done:hover { box-shadow: 0 0 0 3px var(--st-done-bg); }
+.about-mark.is-waiting { background: var(--st-waiting); } .about-mark.is-waiting:hover { box-shadow: 0 0 0 3px var(--st-waiting-bg); }
+.about-mark.is-overdue { background: var(--st-overdue); } .about-mark.is-overdue:hover { box-shadow: 0 0 0 3px var(--st-overdue-bg); }
+.about-mark.is-dropped { background: var(--st-dropped); }
+/* A description cell that carries a capsule or a dot: the text still truncates, the badges never do. */
+.ledger-entry-desc.has-tail { display: flex; align-items: center; gap: 5px; }
+.ledger-entry-desc.has-tail > .entry-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The description itself, beside the row it belongs to. Read-only until the padlock is pressed. */
+.about-pop { position: fixed; z-index: 30; width: min(340px, calc(100vw - 16px)); display: grid; gap: 8px; padding: 11px 13px 9px;
+  border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.about-pop-head { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
+.about-pop-kind { color: var(--faint); font: 500 9.5px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.about-pop-title { flex: 1; min-width: 0; overflow: hidden; color: var(--ink); font: 700 13px var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.about-pop-lock { width: auto; height: 23px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid var(--line); border-radius: 99px; font: 600 10.5px var(--display); }
+.about-pop-lock[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+.about-pop-read { max-height: 40vh; overflow: auto; color: var(--ink); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.about-pop-empty { color: var(--muted); }
+.about-pop-edit { display: grid; gap: 7px; }
+.about-pop-edit textarea { width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink);
+  font: 12.5px/1.5 var(--sans); resize: vertical; }
+.about-pop-edit textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
+.about-pop-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.about-pop-actions .quiet-button, .about-pop-actions .primary-button { min-height: 28px; padding: 0 11px; font-size: 11.5px; }
+.about-pop-hint { margin: 0; color: var(--faint); font-size: 10.5px; }
+
+/* A section heading pushes its first <span> to the right to seat the figures there. The state, the status and the dot
+   belong beside the name instead, so they opt out of that. */
+.ledger-type-section > summary > .ledger-state,
+.ledger-type-section > summary > .ledger-status,
+.ledger-type-section > summary > .about-mark { margin-left: 0; }
+
+/* A section heading now carries a name, its state, its status, the dot and three figures. On a narrow screen that is
+   more than one line's worth, so it wraps instead of forcing the whole ledger to scroll sideways. */
+.ledger-type-section > summary { flex-wrap: wrap; min-width: 0; }
+.ledger-type-section > summary > strong { min-width: 0; overflow-wrap: anywhere; }
+
+/* Which block a custom section belongs to, in Month settings. The pressed rules above only cover the Expense / Income
+   toggle, so the Settlement / Savings one needs its own, in the colours its block carries in the ledger. */
+.type-toggle button[aria-pressed="true"][data-section-kind="settlement"] { background: var(--surface-raised); color: var(--brand); box-shadow: var(--shadow-sm); }
+.type-toggle button[aria-pressed="true"][data-section-kind="savings"] { background: var(--surface-raised); color: var(--income-2); box-shadow: var(--shadow-sm); }
+
+/* Renaming a block heading or a settlement, in place. Same field as the year card's section rename. */
+.block-rename-form, .section-rename-form { padding: 4px 0 6px; }
+.block-rename-form input, .section-rename-form input { font: 700 13px var(--display); }
+
+/* Set up / Close (and Merge settled) now sit on the heading line. The tools take the free space, so the figures beside
+   them stop claiming it — otherwise the two would split it and drift apart. */
+.ledger-type-section > summary > .ledger-block-tools { flex: none; margin-left: auto; margin-right: 10px; padding: 0; }
+.ledger-type-section > summary:has(> .ledger-block-tools) > span { margin-left: 0; }
+.ledger-type-section > summary > .ledger-block-tools .mini-btn { height: 22px; font-size: 11px; }
+
+/* On a narrow screen a name, its state, two buttons and three figures cannot share one line. The figures stay with
+   the name — they are what the heading is for — and the buttons take a right-aligned line of their own underneath,
+   rather than all three wrapping into a jumble. */
+@media (max-width: 700px) {
+  .ledger-type-section > summary > .ledger-block-tools { order: 1; width: 100%; margin: 2px 0 0; justify-content: flex-end; }
+  .ledger-type-section > summary:has(> .ledger-block-tools) > span { margin-left: auto; }
+}

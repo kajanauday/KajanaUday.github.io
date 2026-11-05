@@ -18,15 +18,15 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261110b">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261112b">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110a" defer></script>
-  <script src="../data-layer.js?v=20261109a" defer></script>
+  <script src="../data-layer.js?v=20261112b" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261110b" defer></script>
-  <script src="../renderer-engine.js?v=20261108c" defer></script>
-  <script src="../kajanauday.js?v=20261110b" defer></script>
+  <script src="../component-blueprints.js?v=20261112b" defer></script>
+  <script src="../renderer-engine.js?v=20261112a" defer></script>
+  <script src="../kajanauday.js?v=20261112b" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -109,9 +109,19 @@
       <div class="calc-lines" id="calc-lines"></div>
       <div class="calc-head"><h3>To the month</h3></div>
       <div class="calc-out" id="calc-out"></div>
-      <p class="calc-hint">E1, E2… subsections · TI / TE all positive / negative entries · set GI, GE, GB to show income, expenses, balance in the heading · abs() min() max() round()</p>
+      <p class="calc-hint">E1, E2… subsections · CI / CO cash in and out · OWED still outstanding · MS your own share · SV / RT a pot and its gain · TI / TE every positive / negative entry · set GI, GE, GB to show income, expenses, balance in the heading · abs() min() max() round()</p>
       <p class="settings-error" id="section-setup-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog merge-dialog" id="merge-dialog" aria-labelledby="merge-dialog-title">
+    <form id="merge-form" novalidate>
+      <div class="modal-header"><div><p id="merge-where">Merge settled</p><h2 id="merge-dialog-title">Merge</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="merge-blurb" id="merge-blurb"></p>
+      <div class="merge-list" id="merge-list" role="group" aria-label="Closed sections to merge"></div>
+      <label class="merge-target"><span>Keep it all under</span><select id="merge-target" name="target" aria-label="The section everything is kept under"></select></label>
+      <p class="settings-error" id="merge-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Merge</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog" id="month-settings-dialog" aria-labelledby="month-settings-title">

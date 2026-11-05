@@ -180,8 +180,10 @@
       const tagsOf = row => (row.tags?.length ? { tags: [...row.tags] } : {});
       // The flow an entry or note belongs to (see years/<year>/flows).
       const flowOf = row => (row.flow ? { flow: row.flow } : {});
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item) };
+      // A row's own description (see readStatus): kept only when there is one.
+      const aboutOf = row => (row.about ? { about: String(row.about) } : {});
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -245,8 +247,103 @@
   const SIDE_MODES = ['count', 'show', 'off'];
   const CALC_FUNCTIONS = { ABS: Math.abs, MIN: Math.min, MAX: Math.max, ROUND: Math.round };
   const GRAND = ['GI', 'GE', 'GB'];
-  const ENTRY_TOTALS = ['TI', 'TE'];
+  // Read-only figures an equation may use. TI / TE are every entry, positive and negative; the rest come from the roles
+  // each subsection carries (see ROLES) and are what make a settlement or a savings pot work out realistically:
+  //   CI / CO   cash in and cash out: every entry whose role is a real movement of money (a memo role is left out), so
+  //             a shared cost of 1000 recovered 500 reads as CI 500 and CO 1000, never as a single netted 500.
+  //   OWED      what is still outstanding, signed: more than zero is owed to me, less than zero is what I owe.
+  //   MS        my own share of what the group spent, as a positive cost.
+  //   SV / RT   a savings pot: what was put in less what was taken out, and the interest or gain credited to it.
+  const ENTRY_TOTALS = ['TI', 'TE', 'CI', 'CO', 'OWED', 'MS', 'SV', 'RT'];
   const SUB_ID = /^E\d+$/;
+  // A custom section is either a settlement (money shared with someone: a split bill, a loan, someone investing in me)
+  // or a savings pot. Both live inside their own single block; a month never has more than one of each block.
+  const SECTION_KINDS = ['settlement', 'savings'];
+  // What a subsection of one stands for. Only a cash role moves money; a memo role explains it.
+  //   settlement  cost    what I laid out for the group (negative) or had back for it (positive) — cash
+  //               share   my own portion of that cost, written as a negative — memo, never a movement of money
+  //               settle  money passing between me and the other side: they paid me (positive), I paid them
+  //                       (negative). A loan given, or someone investing in me, is this with no cost beside it — cash
+  //   savings     save    put into the pot (positive) or taken back out (negative) — cash, but a transfer between my
+  //                       own pockets, so by itself it is neither income nor an expense
+  //               return  interest, dividend or gain credited to the pot — cash, and real income
+  const ROLES = { settlement: ['cost', 'share', 'settle'], savings: ['save', 'return'] };
+  const MEMO_ROLES = new Set(['share']);
+  const DEFAULT_ROLE = { settlement: 'cost', savings: 'save' };
+  const ROLE_LABELS = {
+    cost: 'Paid for the group', share: 'My share', settle: 'Settled up',
+    save: 'Put in or taken out', return: 'Interest or gain'
+  };
+  // ---- descriptions, their status words, and a section's lifecycle ----------------------------
+  // Any section, subsection, entry or note may carry a description (`about`): a longer note kept out of the row itself,
+  // behind a small mark, and locked until it is deliberately unlocked so a stray double-click never rewrites it.
+  //
+  // A description may set a status on a line of its own that starts with "=": "=paid". The word is shown as a capsule,
+  // coloured by what it means rather than by how it is spelled, so "paid" is green wherever it is written.
+  // It has to be the whole line, so an "=" inside a sentence ("split = 500 each") is left alone as ordinary prose.
+  const STATUS_TONES = {
+    done: ['paid', 'done', 'closed', 'settled', 'complete', 'completed', 'received', 'cleared', 'delivered', 'approved', 'ok', 'yes'],
+    waiting: ['pending', 'waiting', 'partial', 'progress', 'ongoing', 'hold', 'onhold', 'review', 'draft', 'later'],
+    overdue: ['due', 'overdue', 'unpaid', 'missed', 'failed', 'rejected', 'late', 'owed', 'no'],
+    dropped: ['cancelled', 'canceled', 'dropped', 'void', 'ignored', 'na', 'none', 'closedlost']
+  };
+  const STATUS_TONE = new Map(Object.entries(STATUS_TONES).flatMap(([tone, words]) => words.map(word => [word, tone])));
+  // A whole line that is "=" and one word. The word must start with a letter or digit, so "= 500" is not a status.
+  const STATUS_MARK = /^[ \t]*=[ \t]*([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)[ \t]*$/imu;
+  // The status a description sets, or null. `tone` is what it means; an unknown word still shows, in a plain capsule.
+  // The last such line wins, so adding "=paid" under an earlier "=pending" moves the row on.
+  function readStatus(text) {
+    const lines = String(text ?? '').split('\n');
+    for (let at = lines.length - 1; at >= 0; at--) {
+      const found = STATUS_MARK.exec(lines[at]);
+      if (found) return { word: found[1], tone: STATUS_TONE.get(found[1].toLocaleLowerCase()) || 'plain', line: at };
+    }
+    return null;
+  }
+  // The description without its status line, for showing the two apart.
+  const statusless = text => String(text ?? '').split('\n').filter(line => !STATUS_MARK.test(line)).join('\n').trim();
+
+  // Where a settlement or a pot stands. One of five, worked out from what it holds rather than stored, so it can never
+  // disagree with the entries: nothing in it yet, money still outstanding, nothing outstanding, closed off, or closed
+  // after other closed ones were folded into it.
+  const SECTION_STATES = {
+    draft: { label: 'Draft', savings: 'Draft', title: 'Named, but nothing recorded in it yet' },
+    open: { label: 'Open', savings: 'Open', title: 'Money is still outstanding' },
+    clear: { label: 'Clear', savings: 'Active', title: 'Nothing outstanding' },
+    settled: { label: 'Settled', savings: 'Settled', title: 'Closed off — it still counts, but takes no new entries' },
+    merged: { label: 'Merged', savings: 'Merged', title: 'Closed, and other closed ones were folded into it' }
+  };
+  // `meta` is a built section's _meta (kind, settle, closed, mergedFrom, categories): the same shape a month and the
+  // year card both hold, so one section reads the same wherever it is drawn.
+  function sectionState(meta = {}) {
+    const kind = meta.kind === 'savings' ? 'savings' : 'settlement';
+    const key = meta.closed
+      ? (meta.mergedFrom?.length ? 'merged' : 'settled')
+      : !meta.entries ? 'draft'
+        : kind === 'settlement' && meta.settle && meta.settle.owed !== 0 ? 'open' : 'clear';
+    const state = SECTION_STATES[key];
+    return { key, kind, label: kind === 'savings' ? state.savings : state.label, title: state.title };
+  }
+
+  // Each block has a name of its own, kept per month and currency beside that month's section list. A month holds
+  // exactly one of each kind, so the name belongs to the kind, not to a section.
+  const BLOCK_NAMES = { settlement: 'Settlements', savings: 'Savings' };
+  const blockNameOf = (names, kind) => {
+    const given = String(names?.[kind] ?? '').trim();
+    return given || BLOCK_NAMES[kind] || BLOCK_NAMES.settlement;
+  };
+  const sectionKind = section => (SECTION_KINDS.includes(section?.kind) ? section.kind : 'settlement');
+  const subsectionRole = (section, name) => {
+    const kind = sectionKind(section);
+    const role = section?.roles?.[name];
+    return ROLES[kind].includes(role) ? role : DEFAULT_ROLE[kind];
+  };
+  // How a brand-new section counts. A settlement reports gross: everything that came in is income, everything that went
+  // out is an expense, so +X and -X never cancel each other out and the month shows what really moved. A savings pot
+  // counts only its gain as income, because moving your own money into savings neither earns nor spends anything.
+  const defaultCalc = kind => (kind === 'savings'
+    ? { v: 3, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } }
+    : { v: 3, vars: [], lines: ['GI = CI', 'GE = CO', 'GB = GI - GE'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'count', formula: 'GE' } });
   // Reads an expression into { refs, run(get) } or { error }; names are upper-cased.
   function parseCalc(text) {
     const tokens = String(text ?? '').match(/[A-Za-z_][A-Za-z0-9_]*|\d+\.?\d*|\.\d+|\S/g) || [];
@@ -372,11 +469,18 @@
     }
     return { parts };
   }
+  // A rule nobody ever wrote anything into: no lines, and each side either empty or the plain balance. Those are the
+  // ones that used to net +X and -X down to a single figure, so they are the ones moved to the realistic default (v3);
+  // anything with an equation in it is left exactly as its owner wrote it.
+  const plainSide = text => { const value = String(text ?? '').trim().toUpperCase(); return !value || value === 'GB'; };
+  const untouchedCalc = calc => !listOf(calc?.lines).some(line => String(line).trim()) && plainSide(calc?.income?.formula) && plainSide(calc?.expense?.formula);
+  const untouchedLegacy = section => !section || (!section.calc && !section.to && !section.count && !section.formula && !section.expense && !section.income && !section.positive);
   // A section's calc: its own, or one made from an older rule (same results).
   function sectionCalc(section) {
     const names = section?.subsections || [];
     if (section?.calc) {
       const { calc } = section;
+      if (Number(calc.v) < 3 && untouchedCalc(calc)) return { ...defaultCalc(sectionKind(section)), vars: calcVars(calc.vars, names) };
       return handSetGrand({
         vars: calcVars(calc.vars, names),
         lines: listOf(calc.lines).map(String),
@@ -385,6 +489,7 @@
         v: calc.v
       });
     }
+    if (untouchedLegacy(section)) return { ...defaultCalc(sectionKind(section)), vars: calcVars([], names) };
     const vars = calcVars([], names);
     const rule = legacyRule(section);
     const totals = { Income: 'GI', Expenses: 'GE', Balance: 'GB' };
@@ -408,7 +513,7 @@
   // An older calc used GI / GE / GB as the entries' totals without setting them, and sent GB for an empty formula: it gets
   // the lines that set the ones it uses, so it works out as before (and shows just those in its heading).
   function handSetGrand(calc) {
-    if (calc.v === 2) return calc;
+    if (Number(calc.v) >= 2) return calc;
     ['income', 'expense'].forEach(type => {
       if (calc[type].mode !== 'off' && !calc[type].formula) calc[type].formula = 'GB';
     });
@@ -429,7 +534,38 @@
     const all = names.flatMap(name => amountsBySub[name] || []);
     const income = all.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
     const expenses = -all.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
-    const base = { TI: major(income), TE: major(expenses) };
+    // Each subsection counted under the role it was given, so money that really moved is told apart from a memo.
+    // A role is a plain sum of its entries; `in` and `out` keep the two directions apart, because a settlement has to
+    // show both — 1000 paid out and 500 had back is not the same story as 500 spent.
+    const kind = sectionKind(section);
+    const byRole = Object.fromEntries(ROLES[kind].map(role => [role, { in: 0, out: 0, net: 0 }]));
+    let cashIn = 0;
+    let cashOut = 0;
+    names.forEach(name => {
+      const role = subsectionRole(section, name);
+      const tally = byRole[role] || (byRole[role] = { in: 0, out: 0, net: 0 });
+      (amountsBySub[name] || []).forEach(amount => {
+        tally.net += amount;
+        if (amount > 0) tally.in += amount; else tally.out -= amount;
+        if (MEMO_ROLES.has(role)) return;
+        if (amount > 0) cashIn += amount; else cashOut -= amount;
+      });
+    });
+    const cost = byRole.cost?.net || 0;
+    const share = byRole.share?.net || 0;
+    const settled = byRole.settle?.net || 0;
+    const saved = byRole.save?.net || 0;
+    const returns = byRole.return?.net || 0;
+    // What is still open between me and the other side. Everything I laid out is owed back to me, less the part that was
+    // mine to begin with, less whatever has already changed hands. Zero means the settlement is clear.
+    const owed = -cost + share - settled;
+    const settle = { kind, cashIn, cashOut, owed, share: -share, saved, returns, byRole, cleared: owed === 0 };
+    const base = {
+      TI: major(income), TE: major(expenses),
+      CI: major(cashIn), CO: major(cashOut),
+      OWED: major(owed), MS: major(-share),
+      SV: major(saved), RT: major(returns)
+    };
     const subs = vars.filter(item => names.includes(item.name)).map(item => {
       const sum = (amountsBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
       base[item.id] = major(sum);
@@ -497,20 +633,27 @@
       out.push({ type, label, amount, counted: mode === 'count' });
       if (mode === 'count') adds[type === 'income' ? 'income' : 'expenses'] += amount;
     });
-    return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds };
+    return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
   }
   const netSectionSummary = (section, amountsBySub) => runCalc(section, amountsBySub);
   const CALC_NAMES = { functions: Object.keys(CALC_FUNCTIONS), grand: GRAND, totals: ENTRY_TOTALS };
+  const SECTION_ROLES = { kinds: SECTION_KINDS, roles: ROLES, labels: ROLE_LABELS, fallback: DEFAULT_ROLE, memo: [...MEMO_ROLES] };
   // Gives a section its calc (turning an older rule into one) and returns it, for changes made to it.
   function ensureCalc(section) {
     const calc = sectionCalc(section);
     ['to', 'positive', 'count', 'formula', 'subRules', 'expense', 'income'].forEach(key => delete section[key]);
+    section.kind = sectionKind(section);
+    section.roles = Object.fromEntries((section.subsections || []).map(name => [name, subsectionRole(section, name)]));
     section.calc = calc;
     return calc;
   }
   function docTotals(buckets, rules = new Map()) {
     const totals = zeroTotals();
     const balances = new Map();
+    // An entry written before sections had names carries only its subsection; it belongs to whichever section lists
+    // that subsection, so it is counted under that section's roles rather than falling back to the bare defaults.
+    const homeOf = new Map();
+    rules.forEach((section, name) => (section?.subsections || []).forEach(sub => { if (!homeOf.has(nameKey(sub))) homeOf.set(nameKey(sub), name); }));
     BUCKETS.forEach(([bucket]) => (buckets?.[bucket] || []).forEach(group => {
       totals.entries += group.count;
       if (bucket !== 'net') {
@@ -518,7 +661,8 @@
         return;
       }
       (group.entries || []).forEach(entry => {
-        const bySub = (balances.get(entry.section || '') || balances.set(entry.section || '', {}).get(entry.section || ''));
+        const key = entry.section || homeOf.get(nameKey(group.category)) || '';
+        const bySub = balances.get(key) || balances.set(key, {}).get(key);
         (bySub[group.category] ||= []).push(noteTotal(entry.amount, entry.notes || []));
       });
     }));
@@ -605,6 +749,25 @@
       return this.year(year)?.monthSections[monthIdOf(year, monthIndex)]?.[currency]?.sections || [];
     }
     // An editable copy of a month's sections, for the month settings dialog.
+    // The two block headings of a month and currency: what they are called, falling back to Settlements / Savings.
+    blockNames(year, monthIndex, currency) {
+      const names = this.year(year)?.monthSections[monthIdOf(year, monthIndex)]?.[currency]?.names;
+      return Object.fromEntries(SECTION_KINDS.map(kind => [kind, blockNameOf(names, kind)]));
+    }
+    // Renames one block for this month and currency only, as renaming anything else here does. A name matching the
+    // default is stored as nothing, so the heading follows the default if it ever changes.
+    saveBlockName(year, monthIndex, currency, kind, name) {
+      if (!SECTION_KINDS.includes(kind)) return Promise.resolve();
+      const month = this.year(year).monthSections[monthIdOf(year, monthIndex)] ||= {};
+      const node = month[currency] ||= { own: true, sections: [] };
+      const clean = String(name ?? '').trim().replace(/\s+/g, ' ');
+      const names = { ...(node.names || {}) };
+      if (!clean || nameKey(clean) === nameKey(BLOCK_NAMES[kind])) delete names[kind];
+      else names[kind] = clean;
+      if (Object.keys(names).length) node.names = names; else delete node.names;
+      const update = this.recomputeFrom(String(year));
+      return this.queue(() => this.db.patch(update));
+    }
     sectionsDraft(year, monthIndex, currency) {
       return this.sections(year, monthIndex, currency).map(section => ({ ...section, subsections: [...section.subsections] }));
     }
@@ -616,7 +779,9 @@
     }
     saveMonthSections(year, monthIndex, currency, sections) {
       const node = this.year(year);
-      (node.monthSections[monthIdOf(year, monthIndex)] ||= {})[currency] = { own: true, sections: normalizeSections(sections) };
+      const month = node.monthSections[monthIdOf(year, monthIndex)] ||= {};
+      const names = month[currency]?.names;
+      month[currency] = { own: true, sections: normalizeSections(sections), ...(names ? { names } : {}) };
       const update = this.recomputeFrom(String(year));
       return this.queue(() => this.db.patch(update));
     }
@@ -959,7 +1124,7 @@
         const monthId = monthIdOf(year, monthIndex);
         Object.values(slice.sections).forEach(section => {
           const { id: name, type } = section._meta;
-          const sectionKey = section._meta.event ? `event:${section._meta.event}:${type}` : `${section._meta.block ? 'block' : 'section'}:${type}:${nameKey(name)}`;
+          const sectionKey = section._meta.event ? `event:${section._meta.event}:${type}` : `${section._meta.block ? `block:${section._meta.kind || 'settlement'}` : 'section'}:${type}:${nameKey(name)}`;
           let into = sections.get(sectionKey);
           if (!into) {
             into = { _meta: { id: name, type, subsections: [], names: [], categories: new Map() }, categories: {} };
@@ -972,6 +1137,28 @@
           if (section._meta.stats) {
             const stats = into._meta.stats ||= {};
             Object.entries(section._meta.stats).forEach(([field, amount]) => { if (amount !== undefined) stats[field] = (stats[field] || 0) + amount; });
+          }
+          // A settlement or savings section over the whole year: its cash both ways, my share and what is still open
+          // are the months added up, so the year card answers "is this cleared?" without opening a single month.
+          if (section._meta.settle) {
+            into._meta.kind = section._meta.kind;
+            const totals = into._meta.settle ||= { kind: section._meta.kind, cashIn: 0, cashOut: 0, owed: 0, share: 0, saved: 0, returns: 0, byRole: {}, cleared: true };
+            ['cashIn', 'cashOut', 'owed', 'share', 'saved', 'returns'].forEach(field => { totals[field] += section._meta.settle[field] || 0; });
+            Object.entries(section._meta.settle.byRole || {}).forEach(([role, tally]) => {
+              const into_ = totals.byRole[role] ||= { in: 0, out: 0, net: 0 };
+              ['in', 'out', 'net'].forEach(field => { into_[field] += tally[field] || 0; });
+            });
+            totals.cleared = totals.owed === 0;
+            into._meta.entries = (into._meta.entries || 0) + (section._meta.entries || 0);
+            if (section._meta.about && !into._meta.about) into._meta.about = section._meta.about;
+            into._meta.subAbout = { ...(section._meta.subAbout || {}), ...(into._meta.subAbout || {}) };
+            // Closed for the year only when every month it appears in has been closed off.
+            into._meta.closed = (into._meta.closed !== false) && Boolean(section._meta.closed);
+            if (section._meta.closedOn && section._meta.closedOn > (into._meta.closedOn || '')) into._meta.closedOn = section._meta.closedOn;
+            (section._meta.mergedFrom || []).forEach(from => {
+              into._meta.mergedFrom ||= [];
+              if (!into._meta.mergedFrom.includes(from)) into._meta.mergedFrom.push(from);
+            });
           }
           (section._meta.adds?.lines || []).forEach(line => {
             const lines = (into._meta.adds ||= { lines: [] }).lines;
@@ -1024,7 +1211,8 @@
       const first = months.length ? this.monthNode(year, months[0]).metadata[currency] : null;
       const region = this.currencies[currency];
       const book = {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months },
+        // The block headings as the year's latest month calls them, so the year card reads like the months it sums.
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency) },
         sections: out
       };
       this.books.set(key, { sig, book });
@@ -1205,7 +1393,7 @@
         sections[`event:${id}:${type}`] = section;
       }));
       return {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency) },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency), blockNames: this.blockNames(year, monthIndex, currency) },
         sections
       };
     }
@@ -1228,14 +1416,32 @@
             const summary = netSectionSummary(section, amountsBySub);
             built._meta.adds = summary.adds;
             built._meta.stats = summary.stats;
-                      }
+            // Which block it belongs in (Settlements or Savings), what each subsection stands for, how much is still
+            // open, and whether it has been closed off. A closed section still counts: history does not change.
+            built._meta.kind = summary.kind;
+            built._meta.settle = summary.settle;
+            built._meta.roles = Object.fromEntries(Object.keys(built.categories).map(name => [name, subsectionRole(section, name)]));
+            built._meta.closed = Boolean(section.closed);
+            built._meta.closedOn = section.closedOn || '';
+            built._meta.mergedFrom = [...(section.mergedFrom || [])];
+            built._meta.entries = Object.values(built.categories).reduce((sum, category) => sum + category._meta.entries, 0);
+            // The section's own description and each subsection's, kept with the section so they travel with it.
+            built._meta.about = section.about || '';
+            built._meta.subAbout = { ...(section.subAbout || {}) };
+          }
         });
       ['income', 'expense', 'net'].forEach(type => {
         const leftover = items.filter(item => item.type === type && !claimed.has(item));
         if (leftover.length) {
           const name = otherSectionName(type);
           sections[name] = this.buildSection(name, type, [], leftover);
-          if (type === 'net') sections[name]._meta.block = true;
+          if (type === 'net') {
+            const built = sections[name];
+            built._meta.block = true;
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([sub, category]) => [sub, category.entries.map(entry => entry._meta.total)]));
+            const summary = netSectionSummary({ name, subsections: Object.keys(built.categories) }, amountsBySub);
+            Object.assign(built._meta, { adds: summary.adds, stats: summary.stats, kind: summary.kind, settle: summary.settle, roles: {}, closed: false, closedOn: '', mergedFrom: [] });
+          }
         }
       });
       return sections;
@@ -1255,14 +1461,14 @@
     buildEntry(item) {
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
-        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [], flow: item.flow || null,
+        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [], flow: item.flow || null, about: item.about || '',
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
-        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null }))
+        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))
       };
     }
   }
 
-  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, netSectionSummary, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
