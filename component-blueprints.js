@@ -79,11 +79,8 @@
     return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
   };
 
-  // A settlement's own four figures on its heading, each under the word for what it is: what came in, what went out,
-  // the part that was mine, and what is still open between me and the other side. They take the place of the three
-  // bare numbers a section used to show (income, expenses, balance), which were the same size and colour and said
-  // nothing about which was which, and of the separate "owed to me" tag, which only appeared when something was open.
-  // The last figure turns around when it is the other way: below zero nothing is owed to me, it is what I owe.
+  // A settlement's four figures on its heading: cash in, cash out, my share and what remains owed. Their meanings stay
+  // available to assistive technology and on hover, without taking room from the numbers.
   const SettleTotals = (settle, property, ctx) => {
     const mine = settle.owed >= 0;
     const figures = [
@@ -93,7 +90,7 @@
       [mine ? 'Owed to me' : 'I owe', Math.abs(settle.owed), mine ? 'in' : 'out', mine ? 'Still to come back to me' : 'Still for me to pay the other side']
     ];
     return `<span class="settle-totals">${figures.map(([label, amount, tone, title]) =>
-      `<span class="settle-figure is-${tone}" title="${ctx.esc(title)}"><small>${label}</small><b>${signed(amount, property, ctx)}</b></span>`).join('')}</span>`;
+      `<span class="settle-figure is-${tone}" title="${ctx.esc(`${label}: ${title}`)}" aria-label="${ctx.esc(`${label}: ${signed(amount, property, ctx)}`)}"><b>${signed(amount, property, ctx)}</b></span>`).join('')}</span>`;
   };
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
@@ -189,6 +186,17 @@
     const flow = id && ctx.flow ? ctx.flow(id) : null;
     return flow ? `<span class="flow-mark tag-c${flow.colour}" data-flow-mark="${ctx.esc(id)}" title="Flow: ${ctx.esc(flow.name)} · click to open it"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span class="sr-only">Flow ${ctx.esc(flow.name)}</span></span>` : '';
   };
+  // What an entry in a settlement said was mine, as a small tag on the row. Only entries that carry a split show one:
+  // a row with nothing recorded stays as bare as it was, so the tag means "this was divided", not "this exists".
+  const SplitMark = (split, ctx) => {
+    const text = store()?.splitLabel ? store().splitLabel(split) : '';
+    if (!text) return '';
+    const tone = split.m === 'mine' ? 'is-all' : split.m === 'none' ? 'is-none' : 'is-part';
+    const says = split.m === 'equal' ? `Shared equally, ${Math.max(1, Math.round(Number(split.n) || 1))} ways`
+      : split.m === 'mine' ? 'All of it was mine — nothing owed either way'
+        : split.m === 'none' ? 'None of it was mine — the whole amount is owed' : 'Part of it was mine';
+    return `<span class="split-mark ${tone}" data-split-mark title="${ctx.esc(`${says} · right-click the row to change it`)}">${ctx.esc(text)}</span>`;
+  };
   const tagged = (text, ctx) => (global.LedgerSearch ? global.LedgerSearch.markTags(ctx.esc(text)) : ctx.esc(text));
   // `tail` (a status capsule and the description dot) goes inside the description cell, not beside it: the row is a
   // grid whose columns are exactly time / description / comment / amount, and an extra child would shift them all.
@@ -221,7 +229,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx))}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -314,7 +322,15 @@
     });
     // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
     const carryHtml = carry ? `<div class="ledger-carry" title="Previous balance brought into this ${isYearKey(mKey) ? 'year' : 'month'}"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i><span>Brought forward from ${ctx.esc(carry.from)}</span><strong class="${type}">${ctx.fmt(carry.amount, property)}</strong></div>` : '';
-    const balancesHtml = balances.map(({ label, amount, counted = true }) => `<div class="ledger-carry is-balance${counted ? '' : ' is-shown-only'}" title="${ctx.esc(label)}, ${counted ? `counted as ${type === 'income' ? 'income' : 'an expense'}` : 'shown only, not added to the total'}"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${ctx.esc(label)}</span><strong class="${type}">${amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(amount), property)}</strong></div>`).join('');
+    // Where the figure came from: the line carries its settlement (or its block, when the whole block posts as one), so
+    // a click opens that section below instead of leaving the reader to match names by eye.
+    const balancesHtml = balances.map(({ label, amount, counted = true, section = null, kind = null, from = null }) => {
+      const where = section ? ` data-posted-section="${ctx.esc(section)}"` : kind ? ` data-posted-block="${ctx.esc(kind)}"` : '';
+      const made = from?.length ? ` · ${from.length} ${from.length === 1 ? 'section' : 'sections'}: ${from.join(', ')}` : '';
+      const how = counted ? `counted as ${type === 'income' ? 'income' : 'an expense'}` : 'shown only, not added to the total';
+      const tip = `${label}, ${how}${made}${where ? ' · click to show it below' : ''}`;
+      return `<div class="ledger-carry is-balance${counted ? '' : ' is-shown-only'}${where ? ' is-posted' : ''}"${where} title="${ctx.esc(tip)}"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${ctx.esc(label)}</span><strong class="${type}">${amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(amount), property)}</strong></div>`;
+    }).join('');
     const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0) + (carry ? carry.amount : 0) + balances.reduce((sum, { amount, counted = true }) => sum + (counted ? amount : 0), 0);
     const inYear = isYearKey(mKey);
     const typeKey = [mKey, property, type, heading?.section || ''].join('|');
@@ -351,10 +367,6 @@
     // the app reopens the blocks that were open before a redraw (data-key).
     const renaming = e?.kind === 'year-section' && e.month === mKey && e.property === property && e.type === type && !e.group && e.block === (heading?.section || '');
     const renameForm = renaming ? YearSectionForm(e.section) : '';
-    // Set up and Close sit on the heading itself, beside the name, rather than on a line of their own underneath.
-    // A <summary> is awkward ground for a button — the keyboard reaches the summary, not what is inside it — so the
-    // same two actions are also in this row's menu (right-click or double-tap), which is the keyboard-reachable way in.
-    // A subsection's sort buttons already live in a <summary> here, so this is the pattern the ledger already uses.
     const meta = heading?.meta || null;
     const live = type === 'net' && heading && !isYearKey(mKey);
     // In a month, a settlement or a pot is renamed in place: its entries follow it, here and nowhere else.
@@ -362,14 +374,19 @@
       ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${meta.kind === 'savings' ? 'savings pot' : 'settlement'}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
       : '';
     const open = Boolean(subForm) || Boolean(renameForm) || Boolean(ownRename) || categoriesHtml.includes('data-ledger-form=');
-    const setupButton = live ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i><span>Set up</span></button>` : '';
-    // Closing one off is the point of a settlement: it is done, it stays in the figures, and it stops taking entries
-    // until it is opened again. Whether it is clear or still outstanding is on the button, so closing is never blind.
-    const closeButton = live && meta ? (meta.closed
-      ? `<button type="button" class="mini-btn section-open-btn" data-section-close="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" data-to="open" title="Open ${ctx.esc(title)} again so it takes entries"><i class="ti ti-lock-open" aria-hidden="true"></i><span>Reopen</span></button>`
-      : `<button type="button" class="mini-btn section-close-btn${meta.settle?.cleared === false ? ' is-unsettled' : ''}" data-section-close="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" data-to="closed" title="${meta.settle?.cleared === false ? 'Still outstanding — closing will ask first' : 'Nothing outstanding — close it off'}"><i class="ti ti-lock" aria-hidden="true"></i><span>Close</span></button>`) : '';
+    // The gear sits on the heading itself, beside the name and what the section is up to, rather than on a line of its
+    // own underneath: it is how a settlement's or a pot's counting is set up.
+    // It is a real <button> inside a <summary>, which an accessibility audit will flag ("an interactive element was
+    // found within a <summary>"). Keep it a button anyway. The warning is about assistive technology that flattens a
+    // summary into one node; it is not invalid markup (a button is phrasing content, which is what summary takes), and
+    // this ledger depends on these buttons being focusable: the sort arrows in a subsection heading restore focus to
+    // themselves after their re-render (see the [data-sort-cat] handler), and this gear opens Section setup with
+    // showModal(), which hands focus back here when the dialog closes. Turning them into spans with data attributes —
+    // the way AboutMark does, because a dot has nothing to activate — would silence the audit and take both away.
+    // The click handler already calls preventDefault(), so pressing it never toggles the section open.
+    // The same action is in this row's menu too (right-click, double-tap, or the Menu key on the focused heading).
+    const setupButton = live ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>` : '';
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
-    const blockTools = setupButton || closeButton ? `<div class="ledger-block-tools">${setupButton}${closeButton}</div>` : '';
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
@@ -383,7 +400,7 @@
     // A settlement states its cash both ways, my share and what is outstanding. A savings pot and every other block
     // keep the figures they had: those four are a settlement's story, not theirs.
     const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle ? SettleTotals(meta.settle, property, ctx) : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${blockTools}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${setupButton}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -443,7 +460,39 @@
     // What each custom section adds to Income and Expenses this month, as its rules work it out (see
     // ExpenseStore.runCalc): one line per side it is sent to, shown only or added to the total.
     const lines = blocks.filter(section => section._meta.type === 'net' && section._meta.adds).flatMap(section => section._meta.adds.lines);
-    const balancesFor = type => lines.filter(line => line.type === type && line.amount);
+    // How much of a settlement or a pot the main blocks spell out. A control account posts one figure and keeps its
+    // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so the
+    // reader picks the depth that suits what they are doing: the whole block as one figure, one figure per settlement
+    // (the default), or every subsection posted on its own line. It is a way of reading, not a fact about the month,
+    // so it is kept with the reader (see postingMode) and never written to the ledger.
+    const postingMode = ['total', 'section', 'sub'].includes(state.postingMode) ? state.postingMode : 'section';
+    const blockTitleOf = kind => (kind === 'savings'
+      ? (m.blockNames?.savings || GROUPS.savings.title)
+      : (m.blockNames?.settlement || GROUPS.settlement.title));
+    const balancesFor = type => {
+      const own = lines.filter(line => line.type === type && line.amount);
+      // One figure per block. Counted and shown-only never go in the same total: one is money the month claims, the
+      // other is only being reported, and adding them would say the month holds more than it does.
+      if (postingMode === 'total') {
+        const groups = new Map();
+        own.forEach(line => {
+          const kind = line.kind === 'savings' ? 'savings' : 'settlement';
+          const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
+          const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [] }).get(key);
+          group.amount += line.amount;
+          group.from.push(line.section);
+        });
+        return [...groups.values()];
+      }
+      // Line by line, naming the settlement and the subsection it came from. A section whose equations reshape its
+      // figure has no honest breakdown (parts is null there), so it stays whole rather than being split by guesswork.
+      if (postingMode === 'sub') {
+        return own.flatMap(line => (line.parts
+          ? line.parts.map(part => ({ ...line, label: `${line.section} · ${part.label}`, amount: part.amount }))
+          : [line]));
+      }
+      return own;
+    };
     // Every custom section belongs to one of the two blocks, so the panel holds four at most: Expenses, Income,
     // Settlements, Savings. An event's own sections are drawn as before — an event is not a month.
     const settlements = blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === 'settlement');
@@ -511,5 +560,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SplitMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

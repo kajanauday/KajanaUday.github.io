@@ -24,6 +24,40 @@
   const VERSION = 1;
   const NODES = 'nodes';
   const OUTBOX = 'outbox';
+  // Firebase refuses these in a key, and refuses the whole update with them anywhere in it — so one bad name stops
+  // every later save too, for good, and the only sign of it is a request that keeps failing. Names typed by hand reach
+  // keys in a few places (a section's roles and its subsection descriptions are kept per subsection name), so an
+  // update is looked over before it is sent and the offending name is named.
+  const BAD_KEY = /[.$#[\]/\u0000-\u001f\u007f]/;
+  // The same swap data-layer.js makes when it loads and when it renames (see safeKey there), repeated here for what is
+  // already waiting in the outbox: an update queued before names were made safe still carries the old spelling and
+  // would be refused for ever, taking every save behind it down with it. Swapped on the way out, it can leave, and it
+  // lands spelled the way everything loaded since already agrees on. The keys of the update itself are paths, so they
+  // are left alone; everything below them is data.
+  const KEY_SWAPS = { '.': '․', $: '＄', '#': '＃', '[': '［', ']': '］', '/': '／' };
+  const safeKey = name => String(name).replace(/[.$#[\]/]/g, character => KEY_SWAPS[character]);
+  const safeKeysDeep = (value, top = false) => {
+    if (!value || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(item => safeKeysDeep(item));
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [top ? key : safeKey(key), safeKeysDeep(inner)]));
+  };
+  const badKeyIn = (value, top = false, trail = []) => {
+    if (!value || typeof value !== 'object') return null;
+    if (Array.isArray(value)) {
+      for (let at = 0; at < value.length; at += 1) {
+        const found = badKeyIn(value[at], false, [...trail, at]);
+        if (found) return found;
+      }
+      return null;
+    }
+    for (const [key, inner] of Object.entries(value)) {
+      // The keys of the update itself are paths, so a slash belongs there; everything below is data.
+      if (!top && BAD_KEY.test(key)) return { key, at: [...trail, key].join(' → ') };
+      const found = badKeyIn(inner, false, [...trail, key]);
+      if (found) return found;
+    }
+    return null;
+  };
   const NOTES = 'notes';
   const DEFAULT_BUDGET = 200 * 1024 * 1024;
   // How many times one flush may go back for whatever was saved while it was running, so a save that keeps on
@@ -194,6 +228,7 @@
       this.offline = false;
       this.flushing = null;
       this.stale = false; // a clash was settled in the other device's favour; the page has to be read again
+      this.lastError = null; // why the last send failed, kept so the Sync panel can say it rather than only the console
     }
     // The stamps every path carried when last read, so a clash can be told from this device's own earlier write.
     async stampsNow() {
@@ -260,7 +295,7 @@
           newer.push(path);
         }
       });
-      return { pending, queued: queue.length, outdated: [...outdated], newer, kept: [...kept.keys()], bytes: rows.reduce((sum, row) => sum + (row.bytes || 0), 0), offline: this.offline };
+      return { pending, queued: queue.length, outdated: [...outdated], newer, kept: [...kept.keys()], bytes: rows.reduce((sum, row) => sum + (row.bytes || 0), 0), offline: this.offline, error: this.lastError || null };
     }
     // Fetches paths again, one at a time, so this device holds what Firebase holds now. Stops at a lost connection.
     async pull(paths, onProgress = () => {}) {
@@ -333,6 +368,14 @@
           return this.report(this.offline ? 'offline' : 'error');
         }
         for (const item of queue) {
+          // Names Firebase cannot store are swapped for ones it can, here as everywhere else. Anything still unusable
+          // after that is reported by name rather than retried for ever, since nothing here could put it right.
+          const payload = safeKeysDeep(item.update, true);
+          const bad = badKeyIn(payload, true);
+          if (bad) {
+            this.lastError = `Firebase cannot store the name “${bad.key}” — a name cannot contain . $ # [ ] or /. Rename it (at ${bad.at}), then sync again.`;
+            return this.report('error');
+          }
           const clashes = this.clashes(item, remote);
           if (clashes.length && this.onConflict) {
             const choice = await this.whichStays({ paths: clashes, at: item.at, remote: remote[stampKey(clashes[0])] });
@@ -343,13 +386,17 @@
             }
           }
           try {
-            await this.raw.patch(this.stamped(item.update));
+            await this.raw.patch(this.stamped(payload));
             await this.vault.release(item.id);
           } catch (error) {
             this.offline = isOffline(error);
+            // Why it failed, kept where the Sync panel can show it: a send that fails silently looks exactly like one
+            // that never happened, and leaves nothing to act on.
+            this.lastError = this.offline ? null : (error?.message || String(error));
             return this.report(this.offline ? 'offline' : 'error');
           }
         }
+        this.lastError = null;
         this.offline = false;
         await this.stampsNow().catch(() => {});
         if (round < MAX_ROUNDS && (await this.vault.pending()).length) return send(round + 1);

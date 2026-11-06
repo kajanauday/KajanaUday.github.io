@@ -125,7 +125,24 @@
   }
 
   // Firebase drops empty arrays and objects, so restore them before the UI reads a year.
-  const normalizeSections = sections => (sections || []).map(section => ({ ...section, subsections: section.subsections || [] }));
+  // Firebase will not take . $ # [ ] or / in a key, and a name typed by hand becomes one: a section keeps its roles and
+  // its subsection descriptions per subsection name. One such name makes Firebase refuse the whole update, so that year
+  // and every save behind it stop going out, for good. Rather than refuse what someone typed, each of the six is
+  // swapped for the character that looks like it and is allowed, so the name reads as written and the ledger saves.
+  // Swapping twice changes nothing, which is what lets this sit on every door the data comes through — loading,
+  // renaming, pasting and sending — and have them all agree on one spelling.
+  const KEY_SWAPS = { '.': '․', $: '＄', '#': '＃', '[': '［', ']': '］', '/': '／' };
+  const safeKey = name => String(name ?? '').replace(/[.$#[\]/]/g, character => KEY_SWAPS[character]);
+  const safeKeysOf = map => (map && typeof map === 'object' && !Array.isArray(map)
+    ? Object.fromEntries(Object.entries(map).map(([name, value]) => [safeKey(name), value]))
+    : map);
+  const normalizeSections = sections => (sections || []).map(section => ({
+    ...section,
+    name: section.name === undefined ? section.name : safeKey(section.name),
+    subsections: (section.subsections || []).map(safeKey),
+    ...(section.roles ? { roles: safeKeysOf(section.roles) } : {}),
+    ...(section.subAbout ? { subAbout: safeKeysOf(section.subAbout) } : {})
+  }));
   function normalizeYear(year = {}) {
     year.currencies ||= {};
     if (year.sections) year.sections = normalizeSections(year.sections);
@@ -154,8 +171,11 @@
       BUCKETS.forEach(([bucket, type]) => {
         (buckets[bucket] || []).forEach(({ category, entries = [] }) => entries.forEach(({ day, notes = [], ...entry }) => {
           const id = `${currency}-${dateKey}-${++index}`;
-          list.push({ ...entry, id, date: `${dateKey}-${pad(day)}`, property: currency, type, category });
-          notes.forEach(({ day: noteDay, ...note }, n) => list.push({ ...note, id: `${id}-note-${n + 1}`, parentId: id, date: `${dateKey}-${pad(noteDay ?? day)}`, property: currency, type, category }));
+          // The same swap the sections get, so an entry still points at the subsection it belongs to.
+          const safeCategory = safeKey(category);
+          const home = entry.section === undefined ? {} : { section: safeKey(entry.section) };
+          list.push({ ...entry, ...home, id, date: `${dateKey}-${pad(day)}`, property: currency, type, category: safeCategory });
+          notes.forEach(({ day: noteDay, ...note }, n) => list.push({ ...note, id: `${id}-note-${n + 1}`, parentId: id, date: `${dateKey}-${pad(noteDay ?? day)}`, property: currency, type, category: safeCategory }));
         }));
       });
     });
@@ -182,8 +202,20 @@
       const flowOf = row => (row.flow ? { flow: row.flow } : {});
       // A row's own description (see readStatus): kept only when there is one.
       const aboutOf = row => (row.about ? { about: String(row.about) } : {});
+      // What part of a settlement entry was mine (see splitShare), kept only when one was recorded and always in a
+      // settled shape, so a malformed split never reaches the ledger. Anything an entry can hold has to be written
+      // here: saveTransactions decides whether to write at all by comparing this document with the last copy sent, so
+      // a field missing from here makes a real change look like no change — it is never saved, never synced, and
+      // disappears on the next reload.
+      const splitOf = row => {
+        const split = row.split;
+        if (!split || !SPLIT_MODES.includes(split.m)) return {};
+        if (split.m === 'equal') return { split: { m: 'equal', n: Math.max(1, Math.round(Number(split.n) || 1)) } };
+        if (split.m === 'amount') return { split: { m: 'amount', a: Math.abs(Math.round(Number(split.a) || 0)) } };
+        return { split: { m: split.m } };
+      };
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item) };
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -269,6 +301,37 @@
   //               return  interest, dividend or gain credited to the pot — cash, and real income
   const ROLES = { settlement: ['cost', 'share', 'settle'], savings: ['save', 'return'] };
   const MEMO_ROLES = new Set(['share']);
+  // Only money laid out for the group is divided, so that is the role a split belongs to. A repayment under "Settled
+  // up" moves money between the two sides; it is not a cost with a share of its own.
+  const SPLIT_ROLE = 'cost';
+  // How one entry says what part of it was mine, so the split sits on the entry that was shared instead of in a second
+  // subsection kept beside it by hand:
+  //   { m: 'mine' }             all of it was mine — nothing is owed either way
+  //   { m: 'equal', n: 3 }      shared equally, three ways
+  //   { m: 'none' }             none of it was mine: I paid the lot for them, or took the lot and owe it back
+  //   { m: 'amount', a: 1250 }  exactly this much of it was mine
+  // No split means nothing was recorded, which is what every entry held before this existed. It adds nothing, so a
+  // ledger written before splits reads exactly as it always did.
+  const SPLIT_MODES = ['mine', 'equal', 'none', 'amount'];
+  function splitShare(amount, split) {
+    const value = Number(amount) || 0;
+    const mode = split?.m;
+    if (!value || !SPLIT_MODES.includes(mode) || mode === 'none') return 0;
+    if (mode === 'mine') return value;
+    if (mode === 'equal') return Math.round(value / Math.max(1, Math.round(Number(split.n) || 1)));
+    // An exact share never runs past the entry it belongs to, and always points the same way as it.
+    const mine = Math.min(Math.abs(Math.round(Number(split.a) || 0)), Math.abs(value));
+    return value < 0 ? -mine : mine;
+  }
+  // What a split says, in words, for the row it sits on and for the picker that sets it.
+  function splitLabel(split, ways = null) {
+    const mode = split?.m;
+    if (!SPLIT_MODES.includes(mode)) return '';
+    if (mode === 'mine') return 'All mine';
+    if (mode === 'none') return 'None mine';
+    if (mode === 'equal') { const n = ways || Math.max(1, Math.round(Number(split.n) || 1)); return n === 2 ? 'Half mine' : `1/${n} mine`; }
+    return 'Part mine';
+  }
   const DEFAULT_ROLE = { settlement: 'cost', savings: 'save' };
   const ROLE_LABELS = {
     cost: 'Paid for the group', share: 'My share', settle: 'Settled up',
@@ -531,7 +594,17 @@
     const names = [...new Set([...(section?.subsections || []), ...Object.keys(amountsBySub)])];
     const vars = calcVars(calc.vars, names);
     const major = minor => minor / 100;
-    const all = names.flatMap(name => amountsBySub[name] || []);
+    // A subsection hands over either plain amounts or { amount, split } — the split being what part of that one entry
+    // was mine (see splitShare). Both shapes are read the same way here, so a caller that knows nothing about splits
+    // goes on working and an old ledger keeps every figure it had.
+    const valuesBySub = {};
+    const splitsBySub = {};
+    names.forEach(name => {
+      const list = amountsBySub[name] || [];
+      valuesBySub[name] = list.map(item => (item && typeof item === 'object' ? Number(item.amount) || 0 : Number(item) || 0));
+      splitsBySub[name] = list.map(item => (item && typeof item === 'object' ? item.split || null : null));
+    });
+    const all = names.flatMap(name => valuesBySub[name]);
     const income = all.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
     const expenses = -all.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
     // Each subsection counted under the role it was given, so money that really moved is told apart from a memo.
@@ -541,18 +614,24 @@
     const byRole = Object.fromEntries(ROLES[kind].map(role => [role, { in: 0, out: 0, net: 0 }]));
     let cashIn = 0;
     let cashOut = 0;
+    // What each entry said was mine, added up. Only money laid out for the group carries a split: a repayment moves
+    // money between the two sides rather than being a cost to divide, and the old "My share" subsection is a memo
+    // that already states its own figure.
+    let splitMine = 0;
     names.forEach(name => {
       const role = subsectionRole(section, name);
       const tally = byRole[role] || (byRole[role] = { in: 0, out: 0, net: 0 });
-      (amountsBySub[name] || []).forEach(amount => {
+      valuesBySub[name].forEach((amount, at) => {
         tally.net += amount;
         if (amount > 0) tally.in += amount; else tally.out -= amount;
+        if (role === SPLIT_ROLE) splitMine += splitShare(amount, splitsBySub[name][at]);
         if (MEMO_ROLES.has(role)) return;
         if (amount > 0) cashIn += amount; else cashOut -= amount;
       });
     });
     const cost = byRole.cost?.net || 0;
-    const share = byRole.share?.net || 0;
+    // My own part: whatever the "My share" subsection states, plus what the entries themselves said was mine.
+    const share = (byRole.share?.net || 0) + splitMine;
     const settled = byRole.settle?.net || 0;
     const saved = byRole.save?.net || 0;
     const returns = byRole.return?.net || 0;
@@ -567,7 +646,7 @@
       SV: major(saved), RT: major(returns)
     };
     const subs = vars.filter(item => names.includes(item.name)).map(item => {
-      const sum = (amountsBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
+      const sum = (valuesBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
       base[item.id] = major(sum);
       return { ...item, sum };
     });
@@ -623,6 +702,16 @@
     const sides = {};
     const out = [];
     const adds = { income: 0, expenses: 0, lines: out };
+    // What each subsection on its own puts into the money that moved, so the ledger can post a section either as one
+    // figure or line by line. A memo role (My share) is left out: it is a note about the split, never money.
+    const postings = names.map(name => {
+      const role = subsectionRole(section, name);
+      if (MEMO_ROLES.has(role)) return { name, role, memo: true, in: 0, out: 0 };
+      let into = 0;
+      let outOf = 0;
+      (valuesBySub[name] || []).forEach(amount => { if (amount > 0) into += amount; else outOf -= amount; });
+      return { name, role, memo: false, in: into, out: outOf };
+    });
     ['income', 'expense'].forEach(type => {
       const { mode, formula } = calc[type];
       const parsed = parseCalc(formula);
@@ -630,7 +719,13 @@
       const amount = result.error ? 0 : Math.round(result.value * 100);
       sides[type] = { mode, formula, result: amount, error: result.error, fatal: result.fatal, empty: !formula.trim() };
       if (mode === 'off' || !formula.trim()) return;
-      out.push({ type, label, amount, counted: mode === 'count' });
+      // The subsections behind this one figure, but only when they add up to it exactly. A section whose own equations
+      // reshape the figure (anything but the plain cash in / cash out) cannot be split without inventing numbers, so it
+      // keeps its single line and the ledger falls back to that wherever the breakdown is asked for.
+      const side = type === 'income' ? 'in' : 'out';
+      const parts = postings.filter(item => !item.memo && item[side]).map(item => ({ label: item.name, role: item.role, amount: Math.round(item[side]) }));
+      const splits = parts.length > 0 && parts.reduce((sum, item) => sum + item.amount, 0) === amount;
+      out.push({ type, label, section: label, kind, amount, counted: mode === 'count', parts: splits ? parts : null });
       if (mode === 'count') adds[type === 'income' ? 'income' : 'expenses'] += amount;
     });
     return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
@@ -663,7 +758,7 @@
       (group.entries || []).forEach(entry => {
         const key = entry.section || homeOf.get(nameKey(group.category)) || '';
         const bySub = balances.get(key) || balances.set(key, {}).get(key);
-        (bySub[group.category] ||= []).push(noteTotal(entry.amount, entry.notes || []));
+        (bySub[group.category] ||= []).push({ amount: noteTotal(entry.amount, entry.notes || []), split: entry.split || null });
       });
     }));
     balances.forEach((amountsBySub, key) => {
@@ -1412,7 +1507,7 @@
           if (section.type === 'net') {
             // What each subsection counts as and what the section adds to the month, by its rules (as stored totals count it).
             const built = sections[section.name];
-            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => entry._meta.total)]));
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null }))]));
             const summary = netSectionSummary(section, amountsBySub);
             built._meta.adds = summary.adds;
             built._meta.stats = summary.stats;
@@ -1438,7 +1533,7 @@
           if (type === 'net') {
             const built = sections[name];
             built._meta.block = true;
-            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([sub, category]) => [sub, category.entries.map(entry => entry._meta.total)]));
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([sub, category]) => [sub, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null }))]));
             const summary = netSectionSummary({ name, subsections: Object.keys(built.categories) }, amountsBySub);
             Object.assign(built._meta, { adds: summary.adds, stats: summary.stats, kind: summary.kind, settle: summary.settle, roles: {}, closed: false, closedOn: '', mergedFrom: [] });
           }
@@ -1469,6 +1564,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey });
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

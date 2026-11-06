@@ -22,7 +22,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // This device and Firebase (see "Sync markers and panel"); set up before the store opens, which already reports.
     // pending: paths changed here and not in Firebase yet; outdated: nodes kept here that Firebase has newer; newer: the
     // paths written elsewhere; busy: a sync in progress; needsRefresh: the page shows something Firebase has changed.
-    const syncState = { pending: [], outdated: [], newer: [], kept: 0, bytes: 0, offline: false, checkedAt: null, mirroredAt: null, busy: null, needsRefresh: false };
+    const syncState = { pending: [], outdated: [], newer: [], kept: 0, bytes: 0, offline: false, error: null, checkedAt: null, mirroredAt: null, busy: null, needsRefresh: false };
     let syncNow = () => Promise.resolve();
     try {
       // Every request carries the signed-in user's ID token; a session Firebase no longer accepts goes back to sign-in.
@@ -220,6 +220,26 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function saveSortModes() {
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
     }
+    // How far the main blocks spell out what a settlement or a pot posts into them: 'total' (one figure for the whole
+    // block), 'section' (one per settlement, the default) or 'sub' (every subsection on its own line). A way of reading
+    // the month, not a fact about it, so like the sort order it stays in this browser and is never written to Firebase.
+    const POSTING_KEY = `${STORAGE_KEY}-posting`;
+    const POSTING_MODES = ['total', 'section', 'sub'];
+    const POSTING_LABELS = {
+      total: { label: 'the block as one figure', hint: 'Settlements posts a single total; the detail stays in its own block' },
+      section: { label: 'one line per settlement', hint: 'each settlement posts under its own name' },
+      sub: { label: 'a line for every subsection', hint: 'each subsection posts on its own, named after its settlement' }
+    };
+    let postingMode = (() => {
+      try { const saved = localStorage.getItem(POSTING_KEY); return POSTING_MODES.includes(saved) ? saved : 'section'; } catch (error) { return 'section'; }
+    })();
+    function setPostingMode(mode) {
+      if (!POSTING_MODES.includes(mode) || mode === postingMode) return;
+      postingMode = mode;
+      try { localStorage.setItem(POSTING_KEY, mode); } catch (error) { /* Not remembered; still applies now. */ }
+      renderLedger({ loadMissing: false });
+      showToast(`Income and Expenses now show ${POSTING_LABELS[mode].label}.`);
+    }
     // The ledger shows one year's months, or (the ★ tab beside the years) the special cards and hashtags page (see
     // renderHub). Remembered for the tab.
     let specialMode = sessionStorage.getItem(`${STORAGE_KEY}-special`) === 'true';
@@ -227,7 +247,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       specialMode = Boolean(on);
       sessionStorage.setItem(`${STORAGE_KEY}-special`, String(specialMode));
     }
-    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
+    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes, postingMode });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
@@ -448,7 +468,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // Adds a subsection to this panel's own list for this currency; other months and events keep theirs.
     function saveDraftSubsection(form) {
       const input = form.elements.name;
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      // A name becomes a Firebase key (a section keeps its roles per subsection name), and six characters cannot
+      // go in one. safeKey swaps each for the character that looks like it and is allowed, so the name reads as
+      // typed and the month can still be saved. See safeKey in data-layer.js.
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const hint = form.querySelector('.ledger-form-hint');
       const { month, property } = ledgerDraft;
       const scope = panelScope(month, property);
@@ -498,7 +521,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // pot, only what it earned is income, because moving your own money into savings is neither.
     function saveDraftSection(form) {
       const input = form.elements.name;
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const hint = form.querySelector('.ledger-form-hint');
       const { month, property } = ledgerDraft;
       const kind = ['settlement', 'savings'].includes(form.elements.kind?.value) ? form.elements.kind.value : 'settlement';
@@ -709,7 +732,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const year = Number(key.slice(3));
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       if (name === category) {
         editDraft = null;
         return renderLedger();
@@ -796,7 +819,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const year = Number(key.slice(3));
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const fail = text => {
         hint.textContent = text;
         input.setAttribute('aria-invalid', 'true');
@@ -867,7 +890,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const { month, property, section: was } = form.dataset;
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const scope = panelScope(month, property);
       if (name === was) {
         editDraft = null;
@@ -927,7 +950,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const { month, property, type, category, section: inSection } = form.dataset;
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
-      const name = input.value.trim().replace(/\s+/g, ' ');
+      const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const scope = panelScope(month, property);
       if (name === category) {
         editDraft = null;
@@ -952,7 +975,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       showToast(`Renamed "${category}" to "${finalName}"${scope.isEvent ? '' : ' for this month'}.`);
     }
     // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
-    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-setup], [data-section-close], [data-group-merge], [data-about]';
+    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-setup], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block]';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
@@ -1028,6 +1051,25 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (setupButton) {
           event.preventDefault();
           return openSectionSetup(setupButton.dataset.month, setupButton.dataset.property, setupButton.dataset.sectionSetup);
+        }
+        // A posted line in Income or Expenses stands for a section below it. Clicking it opens that section and brings
+        // it into view, so the trail from the figure to the entries behind it is one step and never a hunt by name.
+        const posted = event.target.closest('[data-posted-section], [data-posted-block]');
+        if (posted) {
+          event.preventDefault();
+          const panel = posted.closest('.ledger-panel');
+          const name = posted.dataset.postedSection;
+          const target = name
+            ? panel?.querySelector(`.ledger-type-section[data-section="${CSS.escape(name)}"]`)
+            : panel?.querySelector(`.ledger-type-section.is-group[data-group="${CSS.escape(posted.dataset.postedBlock || '')}"]`);
+          if (!target) return showToast('That section is not showing in this panel.');
+          for (let node = target; node; node = node.parentElement?.closest('details')) {
+            if (node.tagName === 'DETAILS') node.open = true;
+          }
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('is-revealed');
+          setTimeout(() => target.classList.remove('is-revealed'), 1400);
+          return;
         }
         const groupMerge = event.target.closest('[data-group-merge]');
         if (groupMerge) {
@@ -2703,14 +2745,60 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return `${mKey}-${String(Math.min(Number(date.slice(8, 10)) || 1, last)).padStart(2, '0')}`;
     }
     // Copies one entry (and its notes) into a target panel, under the given section and subsection.
-    function cloneEntry(item, mKey, property, section, category) {
+    // Income and Expenses hold an amount as a plain size: the block it sits in is what says which way the money went,
+    // which is why they refuse a negative one. A settlement or a pot holds it signed, because one section has to show
+    // both directions at once. So a row moved between them keeps the direction of the money rather than the number:
+    // £500 of expense becomes −£500 inside a settlement, and comes back out of one as £500 again.
+    const amountAcross = (amount, from, to) => {
+      if (from === to) return amount;
+      if (to === 'net') return from === 'expense' ? -Math.abs(amount) : Math.abs(amount);
+      return Math.abs(amount);
+    };
+    // Whether that move turns money in into money out, or the other way. It happens when a block cannot say what the
+    // row used to mean — cash that came in, dropped into Expenses — and the ledger says so rather than quietly flipping.
+    const flipsAcross = (amount, from, to) => {
+      if (from === to || !Number(amount)) return false;
+      const wasIn = from === 'net' ? Number(amount) > 0 : from === 'income';
+      const isIn = to === 'net' ? amountAcross(amount, from, to) > 0 : to === 'income';
+      return wasIn !== isIn;
+    };
+    // A subsection arriving from Income or Expenses has never had a role, and the section default ("Paid for the
+    // group") is wrong for half of them: money coming back is not another thing you paid for. So it takes the role
+    // that matches the way its money goes, and the settlement's figures read right the moment it lands.
+    const roleArriving = (into, from) => {
+      const kindKey = ExpenseStore.sectionKind(into);
+      if (from === 'net') return ExpenseStore.SECTION_ROLES.fallback[kindKey];
+      if (kindKey === 'savings') return from === 'income' ? 'return' : 'save';
+      return from === 'income' ? 'settle' : 'cost';
+    };
+    // Counted while a paste runs, and reported once when it finishes: a row whose money changed direction is still
+    // pasted, but the reader is told, because the figure stays the same size while meaning the opposite.
+    let crossed = 0;
+    const crossedNote = () => (crossed ? ` ${crossed} ${crossed === 1 ? 'row' : 'rows'} changed direction — check the sign.` : '');
+    // A row carried into another block: its amount is converted, and a formula that no longer works out the amount it
+    // is shown against is dropped, because a stale formula on a converted row would read as the truth.
+    const carryRow = (row, type) => {
+      // No block to land in means nothing to convert: a row keeps what it is rather than being left typeless, which
+      // would drop it out of every bucket the month adds up.
+      if (!type) return row;
+      const from = row.type || type;
+      if (from === type) return row;
+      const amount = amountAcross(row.amount, from, type);
+      if (flipsAcross(row.amount, from, type)) crossed += 1;
+      row.type = type;
+      // Only a settlement divides an amount, so a row leaving one stops saying what part of it was mine.
+      if (type !== 'net') delete row.split;
+      if (amount !== row.amount) { row.amount = amount; delete row.formula; }
+      return row;
+    };
+    function cloneEntry(item, mKey, property, section, category, type = item.type) {
       const scope = panelScope(mKey, property);
-      const copy = { ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields };
+      const copy = carryRow({ ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields }, type);
       if (!scope.isEvent) delete copy.eventId;
       // A flow follows one movement of money, so a copy is not part of it.
       delete copy.flow;
       if (Array.isArray(item.tags)) copy.tags = [...item.tags];
-      const notes = transactions.filter(note => note.parentId === item.id).map(note => ({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }));
+      const notes = transactions.filter(note => note.parentId === item.id).map(note => carryRow({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }, type));
       notes.forEach(note => {
         if (!scope.isEvent) delete note.eventId;
         delete note.flow;
@@ -2819,14 +2907,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (isEvent && clipboard.type === 'net') return null;
         return { entries: sameMoney };
       }
-      if (clipboard.kind === 'subsection' && ['section', 'subsection'].includes(target.kind)) return { entries: sameMoney && clipboard.type === target.type };
-      if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney && clipboard.type === target.type ? { entries: true, only: true } : null;
+      // A subsection or an entry goes into any of the three blocks, not just the one it came from: Income, Expenses and
+      // a settlement all hold the same rows, and what differs between them — the sign, and which way the money points —
+      // is converted on the way in (see amountAcross). The currency still has to match: money that would have to be
+      // converted on the way is not a paste.
+      if (clipboard.kind === 'subsection' && ['section', 'subsection'].includes(target.kind)) return { entries: sameMoney };
+      if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney ? { entries: true, only: true } : null;
       // A pick list lands where one of its kind would, and a cut never leaves its currency: the entries would have to
       // change money on the way, which is not a paste but a conversion.
       if (clipboard.kind === 'picks') {
         if (clipboard.mode === 'cut' && (!sameMoney || isEvent !== clipboard.mKey.startsWith('ev:'))) return null;
-        if (clipboard.itemKind === 'entry') return target.kind === 'subsection' && sameMoney && clipboard.type === target.type ? { entries: true, only: true } : null;
-        if (clipboard.itemKind === 'subsection') return ['section', 'subsection'].includes(target.kind) ? { entries: sameMoney && clipboard.type === target.type } : null;
+        if (clipboard.itemKind === 'entry') return target.kind === 'subsection' && sameMoney ? { entries: true, only: true } : null;
+        if (clipboard.itemKind === 'subsection') return ['section', 'subsection'].includes(target.kind) ? { entries: sameMoney } : null;
         if (clipboard.itemKind === 'section') {
           if (!['panel', 'section'].includes(target.kind)) return null;
           if (isEvent && clipboard.type === 'net') return null;
@@ -2837,12 +2929,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // Moves one entry (and its notes) to another panel, section and subsection: the same rows, re-pointed, so their
     // ids, notes, tags and flow stay with them. Used by a cut; a copy clones instead (see cloneEntry).
-    function moveEntry(item, mKey, property, section, category) {
+    function moveEntry(item, mKey, property, section, category, type = item.type) {
       const scope = panelScope(mKey, property);
       Object.assign(item, { property, date: dateIn(mKey, item.date), section, category, ...scope.fields });
+      carryRow(item, type);
       if (!scope.isEvent) delete item.eventId;
       transactions.filter(note => note.parentId === item.id).forEach(note => {
         Object.assign(note, { property, date: dateIn(mKey, note.date), category, ...scope.fields });
+        carryRow(note, type);
         if (!scope.isEvent) delete note.eventId;
       });
       return 1;
@@ -2855,7 +2949,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const own = scope.own();
       const from = panelScope(clipboard.mKey, clipboard.property);
       const cut = clipboard.mode === 'cut';
-      const sectionFor = name => own.find(item => item.type === clipboard.type && item.name === name) || own.find(item => item.type === clipboard.type);
+      // Where they land decides what they become: the block clicked, falling back to the one they came from.
+      const intoType = target.type || clipboard.type;
+      const sectionFor = name => own.find(item => item.type === intoType && item.name === name) || own.find(item => item.type === intoType);
       let added = 0;
       let moved = 0;
       if (clipboard.itemKind === 'entry') {
@@ -2865,7 +2961,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         clipboard.items.forEach(pick => {
           const item = transactions.find(row => row.id === pick.id);
           if (!item) return;
-          moved += cut ? moveEntry(item, mKey, property, into.name, target.category) : cloneEntry(item, mKey, property, into.name, target.category);
+          moved += cut ? moveEntry(item, mKey, property, into.name, target.category, into.type) : cloneEntry(item, mKey, property, into.name, target.category, into.type);
         });
         if (moved) saveTransactions();
       } else if (clipboard.itemKind === 'subsection') {
@@ -2877,14 +2973,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (!into.subsections.includes(pick.category)) {
             into.subsections.push(pick.category);
             if (into.type === 'net') {
-              (into.roles ||= {})[pick.category] = source ? ExpenseStore.subsectionRole(source, pick.category) : ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(into)];
+              (into.roles ||= {})[pick.category] = source?.type === 'net' ? ExpenseStore.subsectionRole(source, pick.category) : roleArriving(into, clipboard.type);
               const note = source?.subAbout?.[pick.category];
               if (note) (into.subAbout ||= {})[pick.category] = note;
             }
             added += 1;
           }
           const rows = entriesOf(clipboard.mKey, clipboard.property, clipboard.type, pick.section, pick.category);
-          if (withEntries || cut) rows.forEach(item => { moved += cut ? moveEntry(item, mKey, property, into.name, pick.category) : cloneEntry(item, mKey, property, into.name, pick.category); });
+          if (withEntries || cut) rows.forEach(item => { moved += cut ? moveEntry(item, mKey, property, into.name, pick.category, into.type) : cloneEntry(item, mKey, property, into.name, pick.category, into.type); });
           // A cut leaves nothing behind: the name goes from the section it came from, with what it stood for.
           if (cut && source && source !== into) {
             source.subsections = source.subsections.filter(name => name !== pick.category);
@@ -2924,12 +3020,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (cut) { clipboard = null; clearPicks(true); }
       renderLedger();
       const what = [added && `${added} ${added === 1 ? 'name' : 'names'}`, moved && `${moved} ${moved === 1 ? 'entry' : 'entries'}`].filter(Boolean).join(' and ');
-      showToast(what ? `${cut ? 'Moved' : 'Pasted'} ${what} into ${scopeName(mKey, property)}.` : 'Already there: nothing new to paste.');
+      showToast(what ? `${cut ? 'Moved' : 'Pasted'} ${what} into ${scopeName(mKey, property)}.${crossedNote()}` : 'Already there: nothing new to paste.');
     }
     function paste(target, withEntries) {
       if (target.closed) return showToast(`“${target.section || target.label}” is closed. Reopen it first.`);
       if (isViewer) return viewOnly();
       if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+      crossed = 0;
       if (clipboard.kind === 'picks') return pastePicks(target, withEntries);
       const { mKey, property } = target;
       const scope = panelScope(mKey, property);
@@ -2965,28 +3062,28 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         });
       } else if (clipboard.kind === 'subsection') {
         const into = sectionFor(target.type, target.section);
-        if (!into) return showToast(`${scope.label} has no ${target.type === 'income' ? 'income' : 'expense'} section yet: add one first.`);
+        if (!into) return showToast(`${scope.label} has no ${target.type === 'income' ? 'income' : target.type === 'net' ? 'settlement or savings' : 'expense'} section yet: add one first.`);
         if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
         if (!into.subsections.includes(clipboard.name)) {
           into.subsections.push(clipboard.name);
           if (into.type === 'net') {
-            (into.roles ||= {})[clipboard.name] = clipboard.role || ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(into)];
+            (into.roles ||= {})[clipboard.name] = clipboard.role || roleArriving(into, clipboard.type);
             if (clipboard.about) (into.subAbout ||= {})[clipboard.name] = clipboard.about;
           }
           added += 1;
         }
-        if (withEntries) entriesOf(clipboard.mKey, clipboard.property, clipboard.type, clipboard.section, clipboard.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, clipboard.name); });
+        if (withEntries) entriesOf(clipboard.mKey, clipboard.property, clipboard.type, clipboard.section, clipboard.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, clipboard.name, into.type); });
       } else if (clipboard.kind === 'entry') {
         const item = transactions.find(row => row.id === clipboard.id);
         const into = sectionFor(target.type, target.section);
         if (!item || !into) return showToast('Could not paste that entry here.');
-        copied += cloneEntry(item, mKey, property, into.name, target.category);
+        copied += cloneEntry(item, mKey, property, into.name, target.category, into.type);
       }
       if (added) scope.save();
       if (copied) saveTransactions();
       renderLedger();
       const what = [added && `${added} ${added === 1 ? 'name' : 'names'}`, copied && `${copied} ${copied === 1 ? 'entry' : 'entries'}`].filter(Boolean).join(' and ');
-      showToast(what ? `Pasted ${what} into ${scopeName(mKey, property)}.` : 'Already there: nothing new to paste.');
+      showToast(what ? `Pasted ${what} into ${scopeName(mKey, property)}.${crossedNote()}` : 'Already there: nothing new to paste.');
     }
 
     // ---- Row menu: a right-click (computer) or a double-tap (phone) on a month, a currency panel, a section, a subsection,
@@ -3091,6 +3188,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'pencil', label: 'Rename this block…', hint: 'here, in this month', run: edit({ kind: 'block', month: mKey, property, block: target.group }) },
           ...(closed.length > 1 ? [{ icon: 'arrow-merge', label: `Merge settled (${closed.length})…`, hint: 'bring closed ones together', run: () => openMergeDialog(mKey, property, target.group) }] : []),
           { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.closest('.ledger-panel')?.querySelector('[data-panel-expand]')?.click() },
+          ...POSTING_MODES.filter(mode => mode !== postingMode).map(mode => ({
+            icon: 'list-details', label: `Post to Income/Expenses as: ${POSTING_LABELS[mode].label}`,
+            hint: POSTING_LABELS[mode].hint, read: true, run: () => setPostingMode(mode)
+          })),
           { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
@@ -3135,8 +3236,34 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         ]);
       }
       if (kind === 'entry') {
+        // Money laid out for a group is divided, so the entry itself says how much of it was mine. Only such an entry
+        // is asked: a repayment, a savings pot or an ordinary expense has nothing to split.
+        const splitItems = (() => {
+          const row = transactions.find(item => item.id === target.id);
+          if (!row || row.type !== 'net' || isEvent) return [];
+          const section = panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === row.section);
+          if (!section || ExpenseStore.sectionKind(section) !== 'settlement') return [];
+          if (ExpenseStore.subsectionRole(section, row.category) !== ExpenseStore.SPLIT_ROLE) return [];
+          const now = row.split || null;
+          const same = split => now && now.m === split.m && (split.m !== 'equal' || Number(now.n) === split.n);
+          const gave = Number(row.amount) < 0;
+          const choices = [
+            { split: { m: 'mine' }, icon: 'user', label: 'All of it was mine', hint: 'nothing owed either way' },
+            { split: { m: 'equal', n: 2 }, icon: 'users', label: 'Shared equally: 2 ways', hint: 'half of it was mine' },
+            { split: { m: 'equal', n: 3 }, icon: 'users', label: 'Shared equally: 3 ways', hint: 'a third of it was mine' },
+            { split: { m: 'equal', n: 4 }, icon: 'users', label: 'Shared equally: 4 ways', hint: 'a quarter of it was mine' },
+            { split: { m: 'none' }, icon: 'arrow-right', label: gave ? 'I gave it all' : 'I got it all', hint: gave ? 'none of it was mine — the lot is owed back to me' : 'none of it was mine — I owe the lot back' }
+          ];
+          return [
+            ...choices.filter(choice => !same(choice.split)).map(choice => ({
+              icon: choice.icon, label: choice.label, hint: choice.hint, run: () => setEntrySplit(target.id, choice.split)
+            })),
+            ...(now ? [{ icon: 'eraser', label: 'Nothing recorded as mine', hint: 'leaves the whole amount outstanding', run: () => setEntrySplit(target.id, null) }] : [])
+          ];
+        })();
         return write([
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
+          ...splitItems,
           { icon: 'corner-down-right', label: 'Add note', run: add },
           ...[aboutAction(target)].filter(Boolean),
           ...pickItems(),
@@ -3175,6 +3302,19 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     };
     // Changes what one subsection of a settlement or a pot stands for. Nothing about the entries changes; what changes
     // is how they are read, so the figures and what is outstanding are worked out again from the same amounts.
+    // What part of one settlement entry was mine. It lives on the entry, so the split stays with the money it divides
+    // instead of being mirrored by hand into a second subsection that nothing keeps in step with it.
+    function setEntrySplit(id, split) {
+      if (isViewer) return viewOnly();
+      const item = transactions.find(row => row.id === id);
+      if (!item) return showToast('Could not find that entry. Refresh and try again.');
+      if (split) item.split = split; else delete item.split;
+      saveTransactions();
+      renderLedger();
+      showToast(split
+        ? `“${item.description}”: ${ExpenseStore.splitLabel(split).toLowerCase()}.`
+        : `“${item.description}”: nothing recorded as mine.`);
+    }
     function setSubsectionRole(mKey, property, sectionName, category, role) {
       if (isViewer) return viewOnly();
       const scope = panelScope(mKey, property);
@@ -4199,6 +4339,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const names = paths => [...new Set(paths.map(describePath))];
       const list = paths => `<ul class="sync-paths">${names(paths).slice(0, 12).map(name => `<li>${escapeHtml(name)}</li>`).join('')}${names(paths).length > 12 ? `<li>and ${names(paths).length - 12} more</li>` : ''}</ul>`;
       const rows = [];
+      // Why nothing is leaving this device. Without this the panel can only say what is waiting, which reads as patience
+      // when it is actually a refusal that will never clear on its own.
+      if (syncState.error) rows.push(`<li class="is-error"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><b>Firebase refused the last send</b><span>${escapeHtml(syncState.error)}</span></div></li>`);
       if (syncState.offline) rows.push(`<li class="is-offline"><i class="ti ti-wifi-off" aria-hidden="true"></i><div><b>Offline</b><span>Working from this device; changes go out when the connection returns.</span></div></li>`);
       if (syncState.pending.length) rows.push(`<li class="is-local"><i class="ti ti-arrow-up" aria-hidden="true"></i><div><b>Changed here, not in Firebase yet</b>${list(syncState.pending)}</div></li>`);
       if (syncState.newer.length) rows.push(`<li class="is-remote"><i class="ti ti-arrow-down" aria-hidden="true"></i><div><b>Newer in Firebase</b>${list(syncState.newer)}</div></li>`);
@@ -4328,7 +4471,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             if (report.outdated.some(onScreen)) syncState.needsRefresh = true;
             report = await store.sync.compare();
           }
-          Object.assign(syncState, { pending: report.pending, outdated: report.outdated, newer: report.newer, kept: report.kept.length, bytes: report.bytes, offline: report.offline, checkedAt: report.offline ? syncState.checkedAt : Date.now() });
+          Object.assign(syncState, { pending: report.pending, outdated: report.outdated, newer: report.newer, kept: report.kept.length, bytes: report.bytes, offline: report.offline, error: report.error || null, checkedAt: report.offline ? syncState.checkedAt : Date.now() });
           setSyncStatus(report.offline ? 'offline' : report.queued ? 'pending' : 'synced');
           applySyncMarks();
           drawSyncPanel();
