@@ -180,6 +180,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
     }
     function dayLabel(date) {
+      // A row standing for a group carries day 0, which is no date at all: shown as a dash rather than put through a
+      // date it would come back from as "Invalid Date".
+      if (String(date).slice(8, 10) === '00') return '—';
       return new Date(`${date}T12:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
     }
     // ---- Monthly ledger (months.html) ----
@@ -2742,7 +2745,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (mKey.startsWith('ev:')) return date;
       const [year, monthIndex] = yearMonthOf(mKey);
       const last = new Date(year, monthIndex + 1, 0).getDate();
-      return `${mKey}-${String(Math.min(Number(date.slice(8, 10)) || 1, last)).padStart(2, '0')}`;
+      const day = Number(date.slice(8, 10));
+      // Day 0 is not a day. It marks a row that stands for a group rather than something that happened on a date (see
+      // the level-shifting paste below), so it is carried through rather than nudged to the first of the month.
+      if (day === 0) return `${mKey}-00`;
+      return `${mKey}-${String(Math.min(day || 1, last)).padStart(2, '0')}`;
     }
     // Copies one entry (and its notes) into a target panel, under the given section and subsection.
     // Income and Expenses hold an amount as a plain size: the block it sits in is what says which way the money went,
@@ -2805,6 +2812,63 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       transactions.push(copy, ...notes);
       return 1;
+    }
+    // ---- pasting across levels ------------------------------------------------------------------
+    // The ledger holds Section → Subsection → Entry → Note. Pasting onto a row of another level says "put it here", so
+    // what is pasted is reshaped to fit rather than refused: a subsection dropped where entries live becomes one entry
+    // holding what it held, and an entry dropped where subsections live becomes a subsection of the same.
+    // A row that stands for a group has no day of its own, so it takes day 0 — which is also what tells it apart.
+    const NO_DAY = date => `${String(date).slice(0, 7)}-00`;
+    // A subsection becomes one entry, and everything it held becomes that entry's notes, in date order.
+    // An entry that had notes of its own kept none of its own amount — noteTotal reads the notes instead — so it comes
+    // across as a label worth nothing, with its notes beside it. That is what keeps the total the same: counting both
+    // the entry and the notes under it would add the same money twice.
+    function foldSubsectionIntoEntry(from, into, category, mKey, property) {
+      const scope = panelScope(mKey, property);
+      const rows = entriesOf(from.mKey, from.property, from.type, from.section, from.name);
+      const date = scope.isEvent ? (rows[0]?.date || ledgerCtx.today()) : NO_DAY(`${mKey}-01`);
+      const parent = carryRow({
+        id: newRowId(), property, date, section: into.name, category,
+        description: from.name, place: '', amount: 0, type: into.type, ...scope.fields
+      }, into.type);
+      const notes = [];
+      const asNote = (row, amount) => {
+        const note = carryRow({ ...row, id: newRowId(), parentId: parent.id, property, date: dateIn(mKey, row.date),
+          section: into.name, category, amount, ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
+        delete note.flow;
+        delete note.split;
+        if (!scope.isEvent) delete note.eventId;
+        notes.push(note);
+      };
+      rows.forEach(row => {
+        const kids = transactions.filter(item => item.parentId === row.id);
+        // Worth nothing when its notes already carry the money; worth what it says when it has none.
+        asNote(row, kids.length ? 0 : Number(row.amount));
+        kids.forEach(kid => asNote(kid, Number(kid.amount)));
+      });
+      transactions.push(parent, ...notes);
+      return { entries: 1, notes: notes.length };
+    }
+    // An entry becomes a subsection: its notes become the entries, each keeping its own date. An entry with no notes
+    // becomes the one entry in it, so nothing arrives empty.
+    function openEntryIntoSubsection(item, into, mKey, property) {
+      const scope = panelScope(mKey, property);
+      const name = ExpenseStore.safeKey(String(item.description || 'Pasted').trim().replace(/\s+/g, ' ')) || 'Pasted';
+      if (!into.subsections.includes(name)) {
+        into.subsections.push(name);
+        if (into.type === 'net') (into.roles ||= {})[name] = roleArriving(into, item.type);
+      }
+      const kids = transactions.filter(row => row.parentId === item.id);
+      const made = (kids.length ? kids : [item]).map(row => {
+        const made = carryRow({ ...row, id: newRowId(), property, date: dateIn(mKey, row.date), section: into.name,
+          category: name, amount: Number(row.amount), ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
+        delete made.parentId;
+        delete made.flow;
+        if (!scope.isEvent) delete made.eventId;
+        return made;
+      });
+      transactions.push(...made);
+      return { name, entries: made.length };
     }
     // The entries of a section (by its name, or listed subsections for older rows without one) in a panel.
     const entriesOf = (mKey, property, type, section, category = null) => {
@@ -2911,7 +2975,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // a settlement all hold the same rows, and what differs between them — the sign, and which way the money points —
       // is converted on the way in (see amountAcross). The currency still has to match: money that would have to be
       // converted on the way is not a paste.
-      if (clipboard.kind === 'subsection' && ['section', 'subsection'].includes(target.kind)) return { entries: sameMoney };
+      // Onto a subsection is "put it where entries live": the subsection is folded into one entry. Onto a section is
+      // "put it where subsections live": an entry is opened out into one. Both carry rows, and rows never change
+      // currency on the way, so both want the same money.
+      if (clipboard.kind === 'subsection' && target.kind === 'subsection') return sameMoney ? { entries: true, fold: 'entry' } : null;
+      if (clipboard.kind === 'subsection' && target.kind === 'section') return { entries: sameMoney };
+      if (clipboard.kind === 'entry' && target.kind === 'section') return sameMoney ? { entries: true, fold: 'subsection' } : null;
       if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney ? { entries: true, only: true } : null;
       // A pick list lands where one of its kind would, and a cut never leaves its currency: the entries would have to
       // change money on the way, which is not a paste but a conversion.
@@ -3064,6 +3133,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const into = sectionFor(target.type, target.section);
         if (!into) return showToast(`${scope.label} has no ${target.type === 'income' ? 'income' : target.type === 'net' ? 'settlement or savings' : 'expense'} section yet: add one first.`);
         if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        // Dropped on a subsection, so it becomes one entry there, carrying what it held as that entry's notes.
+        if (target.kind === 'subsection' && target.category) {
+          const made = foldSubsectionIntoEntry({ mKey: clipboard.mKey, property: clipboard.property, type: clipboard.type, section: clipboard.section, name: clipboard.name }, into, target.category, mKey, property);
+          saveTransactions();
+          revealKey = catKey(mKey, property, into.type, target.category);
+          renderLedger();
+          return showToast(`“${clipboard.name}” is now one entry in ${target.category}, with ${made.notes} ${made.notes === 1 ? 'note' : 'notes'}.${crossedNote()}`);
+        }
         if (!into.subsections.includes(clipboard.name)) {
           into.subsections.push(clipboard.name);
           if (into.type === 'net') {
@@ -3077,6 +3154,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const item = transactions.find(row => row.id === clipboard.id);
         const into = sectionFor(target.type, target.section);
         if (!item || !into) return showToast('Could not paste that entry here.');
+        // Dropped on a section, so it becomes a subsection there and its notes become the entries in it.
+        if (target.kind === 'section') {
+          const made = openEntryIntoSubsection(item, into, mKey, property);
+          scope.save();
+          saveTransactions();
+          revealKey = catKey(mKey, property, into.type, made.name);
+          renderLedger();
+          return showToast(`“${item.description}” is now the subsection “${made.name}”, with ${made.entries} ${made.entries === 1 ? 'entry' : 'entries'}.${crossedNote()}`);
+        }
         copied += cloneEntry(item, mKey, property, into.name, target.category, into.type);
       }
       if (added) scope.save();
@@ -3133,7 +3219,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const fits = pasteFits(target);
       const pasteAction = fits ? [clipboard.kind === 'picks'
         ? { icon: clipboard.mode === 'cut' ? 'cut' : 'clipboard', label: `${clipboard.mode === 'cut' ? 'Move' : 'Paste'} ${clipboard.label} here`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }
-        : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
+        : fits.fold === 'entry'
+          ? { icon: 'arrow-bar-to-down', label: `Paste “${clipboard.label}” here as an entry`, hint: 'its entries and notes become this entry\u2019s notes', paste: fits }
+          : fits.fold === 'subsection'
+            ? { icon: 'arrow-bar-to-up', label: 'Paste entry here as a subsection', hint: 'its notes become the entries in it', paste: fits }
+            : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
       // Pick this row, and — once something is picked — copy, cut or drop the lot. Shown on sections, subsections and
       // entries; the Copy and Cut lines only appear on a row that is itself in the list, so they always read as acting

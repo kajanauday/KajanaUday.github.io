@@ -12,7 +12,9 @@
   const dateField = (mKey, value, { required = true, label = 'Day of month' } = {}) => (isEventKey(mKey)
     ? `<input name="date" type="date" value="${value || ''}" aria-label="Date"${required ? ' required' : ''}>`
     : `<input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(isYearKey(mKey) ? String(value).slice(0, 7) : mKey)}" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}>`);
-  const dateText = (mKey, date, ctx) => (isEventKey(mKey) || isYearKey(mKey) ? ctx.dayLabel(date) : date.slice(8, 10));
+  // Day 0 marks a row that stands for a group rather than a day of the month (see the level-shifting paste), so it
+  // shows a dash where a date would go.
+  const dateText = (mKey, date, ctx) => (isEventKey(mKey) || isYearKey(mKey) ? ctx.dayLabel(date) : (date.slice(8, 10) === '00' ? '—' : date.slice(8, 10)));
   // The notes an entry shows: in a month, those dated in it; in the year card, those dated in the year; in an event, all.
   const notesShownIn = (mKey, sub) => isEventKey(mKey) || sub.date.startsWith(isYearKey(mKey) ? mKey.slice(3) : mKey);
 
