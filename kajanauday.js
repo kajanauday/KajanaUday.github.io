@@ -1873,7 +1873,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
               <button type="button" class="icon-button config-remove" data-remove-section aria-label="Remove section ${escapeHtml(section.name)}" title="Remove section"><i class="ti ti-trash" aria-hidden="true"></i></button>
             </div>
             ${closedToggle}
-            ${section.type === 'net' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.sectionCalc(section), { esc: escapeHtml }) : ''}
+            ${section.type === 'net' && sectionKind === 'savings' ? window.LedgerBlueprints.SectionRuleFields(ExpenseStore.sectionCalc(section), { esc: escapeHtml }) : ''}
             ${roleRows}
             <div class="kv-row"><span class="kv-key">Subsections</span></div>`;
           box.querySelector('.kv-row').append(chipInput({
@@ -3307,7 +3307,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
       // Every menu below reads in the same order, so a row's menu is learnt once rather than per kind:
       //   1. what this row is for      Edit, Add…
-      //   2. how it counts             the share chips, Count it as…, Set up how it counts…, Close / Reopen
+      //   2. how it counts             the share chips, settlement roles, savings setup, Close / Reopen
       //   3. what is attached to it    Description…, Tags…, a flow
       //   4. moving it about           Cut, Copy, Move / Paste — always the three together, in that order
       //   5. renaming it               Rename…
@@ -3347,7 +3347,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // than one of its sections'. Each section is still set up from its own row; this is the figure the block itself
         // posts to the month, written in the same language.
         const inBlock = panelScope(mKey, property).sections().filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === target.group);
-        const setupItems = isEvent ? [] : [
+        const setupItems = isEvent || target.group !== 'savings' ? [] : [
           { icon: 'adjustments-horizontal', label: 'Set up how it counts…',
             hint: inBlock.length ? `this block, over its ${inBlock.length} ${inBlock.length === 1 ? one : `${one}s`}` : 'this block',
             run: () => openBlockSetup(mKey, property, target.group) }
@@ -3370,7 +3370,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
         return write([
           { icon: 'plus', label: 'Add subsection', run: add },
-          ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: 'this section and its subsections', run: () => openSectionSetup(mKey, property, target.section) }] : []),
+          ...(custom && target.kindOf === 'savings' ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: 'this section and its subsections', run: () => openSectionSetup(mKey, property, target.section) }] : []),
           ...(custom && !isEvent ? [target.closed
             ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
             : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
@@ -3398,7 +3398,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const home = target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name;
         // How a subsection counts is written in its section's calculation, so this opens that one dialog with this
         // subsection picked out in it, rather than inventing a second place to say the same thing.
-        const setupItems = target.kindOf && home && !isEvent
+        const setupItems = target.kindOf === 'savings' && home && !isEvent
           ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `in “${home}”`, run: () => openSectionSetup(mKey, property, home, target.category) }]
           : [];
         return write([

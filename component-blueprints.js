@@ -88,18 +88,17 @@
     return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
   };
 
-  // A settlement's four figures on its heading: cash in, cash out, my share and what remains owed. Their meanings stay
-  // available to assistive technology and on hover, without taking room from the numbers.
-  const SettleTotals = (settle, property, ctx) => {
-    const mine = settle.owed >= 0;
+  // A settlement shows its signed net posting and what remains outstanding, never gross income and expenses together.
+  const SettleTotals = (settle, amount, property, ctx) => {
+    const net = Number(amount) || 0;
+    const owed = Number(settle.owed) || 0;
+    const mine = owed >= 0;
     const figures = [
-      ['Cash in', settle.cashIn, 'in', 'Everything that brought money in, notes left out'],
-      ['Cash out', settle.cashOut, 'out', 'Everything that took money out, notes left out'],
-      ['My share', settle.share, 'memo', 'My own part of what the group spent — a note, not money that moved'],
-      [mine ? 'Owed to me' : 'I owe', Math.abs(settle.owed), mine ? 'in' : 'out', mine ? 'Still to come back to me' : 'Still for me to pay the other side']
+      [net < 0 ? 'Expense' : 'Income', net, net < 0 ? 'out' : 'in'],
+      [mine ? 'Owed to me' : 'I owe', owed, 'memo']
     ];
-    return `<span class="settle-totals">${figures.map(([label, amount, tone, title]) =>
-      `<span class="settle-figure is-${tone}" title="${ctx.esc(`${label}: ${title}`)}" aria-label="${ctx.esc(`${label}: ${signed(amount, property, ctx)}`)}"><b>${signed(amount, property, ctx)}</b></span>`).join('')}</span>`;
+    return `<span class="settle-totals">${figures.map(([label, value, tone]) =>
+      `<span class="settle-figure is-${tone}" title="${ctx.esc(label)}" aria-label="${ctx.esc(`${label}: ${signed(value, property, ctx)}`)}"><b>${signed(value, property, ctx)}</b></span>`).join('')}</span>`;
   };
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
@@ -144,8 +143,7 @@
     `<label><span>${type === 'income' ? 'Income' : 'Expenses'}</span><select name="${type}" data-side-mode="${type}" aria-label="${type === 'income' ? 'Income' : 'Expenses'}: show and count">${SIDE_MODES.map(([value, label]) => `<option value="${value}"${mode === value ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select></label>`;
   const SectionRuleFields = (rule = { expense: { mode: 'count' }, income: { mode: 'off' } }, ctx) =>
     `<div class="section-rule">${SideModeField('expense', rule.expense.mode, ctx)}${SideModeField('income', rule.income.mode, ctx)}</div>`;
-  // A new settlement or pot inside its block. It comes ready to count realistically — everything in as income,
-  // everything out as an expense for a settlement; only the gain for a pot — so there is nothing to set up first.
+  // A new settlement or pot inside its block. A settlement counts its signed net movement; a pot counts only its gain.
   const SectionForm = ({ kind = 'settlement' }, ctx) => {
     const group = GROUPS[kind] || GROUPS.settlement;
     return `<form class="ledger-form sub-form section-form" data-ledger-form="section" data-kind="${group.kind}" novalidate><input name="name" placeholder="New ${ctx.esc(group.one)} (amounts may be negative)" maxlength="40" aria-label="New ${ctx.esc(group.one)} name" autocomplete="off"><input type="hidden" name="kind" value="${group.kind}"><button type="submit" class="mini-btn is-save" aria-label="Add ${ctx.esc(group.one)}" title="Add (Enter)"><i class="ti ti-check" aria-hidden="true"></i></button><button type="button" class="mini-btn" data-cancel-draft aria-label="Cancel" title="Cancel (Esc)"><i class="ti ti-x" aria-hidden="true"></i></button><p class="ledger-form-hint" aria-live="polite">${ctx.esc(group.blurb)}</p></form>`;
@@ -406,9 +404,7 @@
       ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${meta.kind === 'savings' ? 'savings pot' : 'settlement'}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
       : '';
     const open = Boolean(subForm) || Boolean(renameForm) || Boolean(ownRename) || categoriesHtml.includes('data-ledger-form=');
-    // How a settlement or a pot counts is set up from the row's menu alone (“Set up how it counts…” on a right-click,
-    // a double-tap, or the Menu key on the focused heading). The gear that used to sit on the heading is gone: it put a
-    // control on a line whose job is to read, and the menu it duplicated is a press away on the same row.
+    // A savings pot's calculation is set up from its row menu. Settlements always post their signed net cash movement.
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
@@ -421,7 +417,7 @@
     const lifeState = meta?.kind && store()?.sectionState ? store().sectionState(meta) : null;
     const stateBadge = lifeState && lifeState.kind !== 'settlement' ? StateCapsule(meta, ctx) : '';
     // A settlement shows the status word from its description and nothing else: the dot beside it was a second mark
-    // for the same description, on a heading that already carries a name, a status and four figures. The description
+    // for the same description, on a heading that already carries a name, a status and two figures. The description
     // itself is one press away, on the row's menu (“Description…”). A pot keeps both marks.
     const aboutBadge = !(meta?.kind && heading) ? ''
       : meta.kind === 'settlement'
@@ -430,9 +426,10 @@
     const emptyNote = heading
       ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
       : 'Nothing recorded';
-    // A settlement states its cash both ways, my share and what is outstanding. A savings pot and every other block
-    // keep the figures they had: those four are a settlement's story, not theirs.
-    const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle ? SettleTotals(meta.settle, property, ctx) : '';
+    // A settlement shows its net posting and remaining balance; other custom sections keep their own totals.
+    const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle
+      ? SettleTotals(meta.settle, meta.stats?.balance ?? (meta.settle.cashIn - meta.settle.cashOut), property, ctx)
+      : '';
     return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
@@ -463,8 +460,7 @@
       : '';
     const settledKey = ctx.esc([mKey, property, kind, 'settled'].join('|'));
     const settledHtml = !done.length ? '' : `<details class="ledger-settled" data-key="${settledKey}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled</span><small>${done.length}</small></summary><div>${done.map(blockOf).join('')}</div></details>`;
-    // No figures of its own across the top: the heading already carries the block's income, expenses and balance, and
-    // each settlement below states its own cash and what is outstanding. A third set in between only repeated them.
+    // A settlement block and each settlement show only a signed net posting and the remaining balance.
     // Double-clicking the heading renames the block for this month and currency.
     const e = state.editDraft;
     const renaming = live && e?.kind === 'block' && e.month === mKey && e.property === property && e.block === kind;
@@ -472,9 +468,15 @@
       ? `<form class="ledger-form cat-rename-form block-rename-form" data-ledger-form="rename-block" data-month="${mKey}" data-property="${property}" data-block="${kind}" novalidate><input name="name" value="${ctx.esc(heading)}" maxlength="40" aria-label="Name for this block" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames this block for this month · leave it empty to go back to “${ctx.esc(group.title)}”</p></form>`
       : '';
     const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${settledHtml}`;
-    const totalsHtml = Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
+    const settlementOwed = sections.reduce((sum, section) => sum + (Number(section._meta.settle?.owed) || 0), 0);
+    const settlementNet = sections.reduce((sum, section) =>
+      sum + (Number(section._meta.stats?.balance ?? (section._meta.settle?.cashIn - section._meta.settle?.cashOut)) || 0), 0);
+    const totalsHtml = kind === 'settlement'
+      ? (sections.length ? SettleTotals({ owed: settlementOwed }, settlementNet, property, ctx) : '')
+      : Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
     const isOpen = Boolean(newForm) || Boolean(renameForm) || body.includes('data-ledger-form=');
-    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i>${group.icon ? `<i class="ti ${group.icon} ledger-group-icon" aria-hidden="true"></i>` : ''}<strong>${ctx.esc(heading)}</strong><small class="ledger-group-count">${sections.length}</small>${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
+    const count = kind === 'settlement' ? '' : `<small class="ledger-group-count">${sections.length}</small>`;
+    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i>${group.icon ? `<i class="ti ${group.icon} ledger-group-icon" aria-hidden="true"></i>` : ''}<strong>${ctx.esc(heading)}</strong>${count}${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.

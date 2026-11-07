@@ -401,12 +401,18 @@
     const role = section?.roles?.[name];
     return ROLES[kind].includes(role) ? role : DEFAULT_ROLE[kind];
   };
-  // How a brand-new section counts. A settlement reports gross: everything that came in is income, everything that went
-  // out is an expense, so +X and -X never cancel each other out and the month shows what really moved. A savings pot
+  // How a brand-new section counts. A settlement posts its signed net cash balance to exactly one side; a savings pot
   // counts only its gain as income, because moving your own money into savings neither earns nor spends anything.
   const defaultCalc = kind => (kind === 'savings'
-    ? { v: 3, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } }
-    : { v: 3, vars: [], lines: ['GI = CI', 'GE = CO', 'GB = GI - GE'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'count', formula: 'GE' } });
+    ? { v: 4, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } }
+    : { v: 4, vars: [], lines: ['GB = CI - CO'], income: { mode: 'count', formula: 'max(GB, 0)' }, expense: { mode: 'count', formula: 'max(-GB, 0)' } });
+  const legacyGrossSettlementCalc = calc => {
+    const lines = listOf(calc?.lines).map(line => String(line).trim().toUpperCase());
+    return Number(calc?.v) >= 1 && Number(calc?.v) <= 3 &&
+      lines.join('|') === 'GI = CI|GE = CO|GB = GI - GE' &&
+      calc?.income?.mode === 'count' && String(calc.income.formula || '').trim().toUpperCase() === 'GI' &&
+      calc?.expense?.mode === 'count' && String(calc.expense.formula || '').trim().toUpperCase() === 'GE';
+  };
   // Reads an expression into { refs, run(get) } or { error }; names are upper-cased.
   function parseCalc(text) {
     const tokens = String(text ?? '').match(/[A-Za-z_][A-Za-z0-9_]*|\d+\.?\d*|\.\d+|\S/g) || [];
@@ -533,7 +539,7 @@
     return { parts };
   }
   // A rule nobody ever wrote anything into: no lines, and each side either empty or the plain balance. Those are the
-  // ones that used to net +X and -X down to a single figure, so they are the ones moved to the realistic default (v3);
+  // ones that used to net +X and -X down to a single figure, so they are the ones moved to the current default;
   // anything with an equation in it is left exactly as its owner wrote it.
   const plainSide = text => { const value = String(text ?? '').trim().toUpperCase(); return !value || value === 'GB'; };
   const untouchedCalc = calc => !listOf(calc?.lines).some(line => String(line).trim()) && plainSide(calc?.income?.formula) && plainSide(calc?.expense?.formula);
@@ -543,7 +549,9 @@
     const names = section?.subsections || [];
     if (section?.calc) {
       const { calc } = section;
-      if (Number(calc.v) < 3 && untouchedCalc(calc)) return { ...defaultCalc(sectionKind(section)), vars: calcVars(calc.vars, names) };
+      if ((Number(calc.v) < 4 && untouchedCalc(calc)) || (sectionKind(section) === 'settlement' && legacyGrossSettlementCalc(calc))) {
+        return { ...defaultCalc(sectionKind(section)), vars: calcVars(calc.vars, names) };
+      }
       return handSetGrand({
         vars: calcVars(calc.vars, names),
         lines: listOf(calc.lines).map(String),
@@ -573,6 +581,23 @@
     }
     return handSetGrand({ vars, lines: [], income: side(rule.income), expense: side(rule.expense) });
   }
+  const signedSettlementTotals = (amount, label, kind) => {
+    const net = Math.round(Number(amount) || 0);
+    const income = Math.max(net, 0);
+    const expenses = Math.max(-net, 0);
+    const type = net < 0 ? 'expense' : 'income';
+    const formula = type === 'income' ? 'max(GB, 0)' : 'max(-GB, 0)';
+    const off = { mode: 'off', formula, result: 0, error: null, fatal: false, empty: false };
+    const active = { ...off, mode: 'count', result: Math.abs(net) };
+    return {
+      stats: { income: income || undefined, expenses: expenses || undefined, balance: net },
+      sides: { income: net > 0 ? active : off, expense: net < 0 ? active : off },
+      adds: {
+        income, expenses,
+        lines: net ? [{ type, label, section: label, kind, amount: Math.abs(net), counted: true, parts: null }] : []
+      }
+    };
+  };
   // An older calc used GI / GE / GB as the entries' totals without setting them, and sent GB for an empty formula: it gets
   // the lines that set the ones it uses, so it works out as before (and shows just those in its heading).
   function handSetGrand(calc) {
@@ -661,7 +686,10 @@
       (valuesBySub[name] || []).forEach(amount => { if (amount > 0) into += amount; else outOf -= amount; });
       return { name, role, memo: false, in: into, out: outOf };
     });
-    const { lines, stats, sides, adds } = evaluateCalc({ calc, vars, base, label, kind, postings });
+    const evaluated = evaluateCalc({ calc, vars, base, label, kind, postings });
+    const totals = kind === 'settlement' ? signedSettlementTotals(cashIn - cashOut, label, kind) : evaluated;
+    const { lines } = evaluated;
+    const { stats, sides, adds } = totals;
     return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
   }
   // Works a calculation out against a set of named figures: the lines in order, the grand totals they set, and what
@@ -753,7 +781,7 @@
   const defaultBlockCalc = kind => defaultCalc(kind);
   // Reads a block's stored calculation, giving it the ids its sections need. `names` are the sections in it, in order.
   function blockCalc(stored, names, kind = 'settlement') {
-    const calc = stored && Number(stored.v) >= 3 ? stored : null;
+    const calc = stored && Number(stored.v) >= 3 && !(kind === 'settlement' && legacyGrossSettlementCalc(stored)) ? stored : null;
     if (!calc) return { ...defaultBlockCalc(sectionKind({ kind })), vars: calcVars([], names) };
     return handSetGrand({
       vars: calcVars(calc.vars, names),
@@ -805,7 +833,12 @@
       out: Math.max(0, Math.round(Number(part.adds?.expenses) || 0))
     }));
     const label = block?.name || 'Block';
-    const { lines, stats, sides, adds } = evaluateCalc({ calc, vars, base, label, kind, postings });
+    const evaluated = evaluateCalc({ calc, vars, base, label, kind, postings });
+    const totals = kind === 'settlement'
+      ? signedSettlementTotals(balances.reduce((sum, amount) => sum + amount, 0), label, kind)
+      : evaluated;
+    const { lines } = evaluated;
+    const { stats, sides, adds } = totals;
     return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
   }
   const netSectionSummary = (section, amountsBySub) => runCalc(section, amountsBySub);
