@@ -28,12 +28,19 @@
   // A custom section's amounts show without a minus sign: red already says it is negative. Editing still shows the sign.
   const amountText = (type, amount, property, ctx) => ctx.fmt(type === 'net' ? Math.abs(Number(amount)) : amount, property);
   const signed = (minor, property, ctx) => `${Number(minor) < 0 ? '−' : ''}${ctx.fmt(Math.abs(Number(minor)), property)}`;
+  // Arrows typed into a settlement's own names ("ఉదయ్ --> సాయిరాం ✓", "[15-SEP ->26-OCT]") are noise on a row that
+  // already reads left to right, so a settlement and its subsections are drawn without them. Only the drawing changes:
+  // the stored name is still what every key, data attribute, rename field and formula variable uses — calc.vars binds a
+  // subsection to its figure by name — so taking the arrows off here can never move an amount. A name that is nothing
+  // but arrows keeps them, because a blank row would say less than the one it replaced.
+  const ARROWS = /<-{1,2}>|<-{1,2}|-{1,2}>/g;
+  const plainName = name => String(name).replace(ARROWS, ' ').replace(/\s{2,}/g, ' ').trim() || String(name);
 
   // The two blocks a custom section can live in. A month has exactly one of each: every settlement sits inside
   // Settlements and every pot inside Savings, instead of each one standing on its own beside Income and Expenses.
   const GROUPS = {
     settlement: {
-      kind: 'settlement', title: 'Settlements', icon: 'ti-arrows-exchange', one: 'settlement',
+      kind: 'settlement', title: 'Settlements', icon: '', one: 'settlement',
       blurb: 'Money shared with someone: a split bill, a loan, someone putting money into you.',
       empty: 'No settlements this month.'
     },
@@ -273,7 +280,7 @@
     return `<details class="ledger-year-items" data-key="${ctx.esc(key)}|items"${renamingKey ? ' open' : ''}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>By description</span><small>${items.length}</small></summary><ul>${rows}</ul></details>`;
   };
 
-  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '' }, state, ctx) => {
+  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '', kind = null }, state, ctx) => {
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
     const order = inYear ? null : state.sortModes?.[key] || null;
@@ -295,7 +302,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -319,19 +326,42 @@
       const eventId = section._meta.event;
       Object.entries(section.categories).forEach(([name, category]) => {
         // Every subsection on the month's list shows, used or not; entries outside the list show too.
-        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, about: section._meta.subAbout?.[name] || '' });
+        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, kind: section._meta.kind || null, about: section._meta.subAbout?.[name] || '' });
       });
     });
     // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
     const carryHtml = carry ? `<div class="ledger-carry" title="Previous balance brought into this ${isYearKey(mKey) ? 'year' : 'month'}"><i class="ti ti-arrow-forward-up" aria-hidden="true"></i><span>Brought forward from ${ctx.esc(carry.from)}</span><strong class="${type}">${ctx.fmt(carry.amount, property)}</strong></div>` : '';
     // Where the figure came from: the line carries its settlement (or its block, when the whole block posts as one), so
     // a click opens that section below instead of leaving the reader to match names by eye.
-    const balancesHtml = balances.map(({ label, amount, counted = true, section = null, kind = null, from = null }) => {
+    const balancesHtml = balances.map(({ label, amount, counted = true, section = null, kind = null, from = null, parts = null }) => {
       const where = section ? ` data-posted-section="${ctx.esc(section)}"` : kind ? ` data-posted-block="${ctx.esc(kind)}"` : '';
       const made = from?.length ? ` · ${from.length} ${from.length === 1 ? 'section' : 'sections'}: ${from.join(', ')}` : '';
       const how = counted ? `counted as ${type === 'income' ? 'income' : 'an expense'}` : 'shown only, not added to the total';
+      const money = value => `<strong class="${type}">${value < 0 ? '−' : ''}${ctx.fmt(Math.abs(value), property)}</strong>`;
+      // A block posting one figure opens like the subsections beside it: the same caret on the left, and under it every
+      // settlement the figure is made of, each with the subsections its own equations read. The caret is the whole job of
+      // the summary, so the jump to a section lives on the rows inside, where it names the one section it goes to.
+      // Only a line that stands for a whole block opens: one that stands for a single settlement already goes there when
+      // it is clicked, and taking that away to make room for a caret would cost more than the breakdown adds.
+      if (parts?.length && !section) {
+        const rows = parts.map(part => {
+          // Under each settlement, what it is made of. Where the subsections add up to its figure exactly they are its
+          // breakdown; where its own equations reshape the figure they are only the inputs those equations read, and the
+          // row says which of the two it is, so no one reads a column that does not add up as one that should.
+          const exact = Boolean(part.parts?.length);
+          const subs = (part.parts || part.inputs || []).map(sub =>
+            `<div class="ledger-carry-part is-sub${exact ? '' : ' is-input'}" title="${ctx.esc(exact ? `${sub.label} · part of ${part.label}` : `${sub.label} · read by the equations of ${part.label}, not a share of its figure`)}"><span>${ctx.esc(plainName(sub.label))}</span>${money(sub.amount)}</div>`).join('');
+          const note = subs && !exact ? '<p class="ledger-carry-note">Figures its equations read, not a split of the total above.</p>' : '';
+          const go = part.section ? ` data-posted-section="${ctx.esc(part.section)}"` : '';
+          const partTip = part.section ? `${part.label} · click to show it below` : part.label;
+          return `<div class="ledger-carry-part${go ? ' is-posted' : ''}"${go} title="${ctx.esc(partTip)}"><span>${ctx.esc(plainName(part.label))}</span>${money(part.amount)}</div>${note}${subs}`;
+        }).join('');
+        const tip = `${label}, ${how}${made} · open it for what it is made of`;
+        const partsKey = ctx.esc([mKey, property, type, 'posted', kind || section || label].join('|'));
+        return `<details class="ledger-carry is-balance has-parts${counted ? '' : ' is-shown-only'}" data-key="${partsKey}" title="${ctx.esc(tip)}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>${ctx.esc(label)}</span>${money(amount)}</summary><div class="ledger-carry-parts">${rows}</div></details>`;
+      }
       const tip = `${label}, ${how}${made}${where ? ' · click to show it below' : ''}`;
-      return `<div class="ledger-carry is-balance${counted ? '' : ' is-shown-only'}${where ? ' is-posted' : ''}"${where} title="${ctx.esc(tip)}"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>${ctx.esc(label)}</span><strong class="${type}">${amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(amount), property)}</strong></div>`;
+      return `<div class="ledger-carry is-balance${counted ? '' : ' is-shown-only'}${where ? ' is-posted' : ''}"${where} title="${ctx.esc(tip)}"><span>${ctx.esc(label)}</span>${money(amount)}</div>`;
     }).join('');
     const total = categories.reduce((sum, { category }) => sum + category._meta.total, 0) + (carry ? carry.amount : 0) + balances.reduce((sum, { amount, counted = true }) => sum + (counted ? amount : 0), 0);
     const inYear = isYearKey(mKey);
@@ -344,7 +374,7 @@
     // In the year card each subsection shows its share of its section.
     const categoryRows = (list, whole) => [...list]
       .sort((a, b) => b.category._meta.total - a.category._meta.total)
-      .map(({ name, category, sectionName, eventId, about }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
+      .map(({ name, category, sectionName, eventId, about, kind }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, kind, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
       .join('');
     // A year card's Income or Expenses block that holds several sections shows each under its own heading, with its share
     // of the block (a double-click renames it); with one section, its subsections stand straight under the block.
@@ -364,7 +394,7 @@
     const subForm = draftSection
       ? SubsectionForm({ sectionName: l.section, kind: draftSection._meta.kind || null, role: l.role || null }, ctx)
       : '';
-    const title = heading ? ctx.esc(heading.title) : type === 'income' ? 'Income' : 'Expenses';
+    const title = heading ? ctx.esc(heading.meta?.kind === 'settlement' ? plainName(heading.title) : heading.title) : type === 'income' ? 'Income' : 'Expenses';
     // Income and Expenses start closed (a month opens on just these headings); an open form keeps its block open, and
     // the app reopens the blocks that were open before a redraw (data-key).
     const renaming = e?.kind === 'year-section' && e.month === mKey && e.property === property && e.type === type && !e.group && e.block === (heading?.section || '');
@@ -444,7 +474,7 @@
     const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${settledHtml}`;
     const totalsHtml = Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
     const isOpen = Boolean(newForm) || Boolean(renameForm) || body.includes('data-ledger-form=');
-    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><i class="ti ${group.icon} ledger-group-icon" aria-hidden="true"></i><strong>${ctx.esc(heading)}</strong><small class="ledger-group-count">${sections.length}</small>${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
+    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i>${group.icon ? `<i class="ti ${group.icon} ledger-group-icon" aria-hidden="true"></i>` : ''}<strong>${ctx.esc(heading)}</strong><small class="ledger-group-count">${sections.length}</small>${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
@@ -464,11 +494,12 @@
     // ExpenseStore.runCalc): one line per side it is sent to, shown only or added to the total.
     const lines = blocks.filter(section => section._meta.type === 'net' && section._meta.adds).flatMap(section => section._meta.adds.lines);
     // How much of a settlement or a pot the main blocks spell out. A control account posts one figure and keeps its
-    // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so the
-    // reader picks the depth that suits what they are doing: the whole block as one figure, one figure per settlement
-    // (the default), or every subsection posted on its own line. It is a way of reading, not a fact about the month,
-    // so it is kept with the reader (see postingMode) and never written to the ledger.
-    const postingMode = ['total', 'section', 'sub'].includes(state.postingMode) ? state.postingMode : 'section';
+    // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so
+    // Income and Expenses carry one line per block by default and the settlements themselves are read below, where
+    // each already states its own cash and what is outstanding. The reader can still ask for one figure per
+    // settlement, or every subsection on its own line. It is a way of reading, not a fact about the month, so it is
+    // kept with the reader (see postingMode) and never written to the ledger.
+    const postingMode = ['total', 'section', 'sub'].includes(state.postingMode) ? state.postingMode : 'total';
     const GROUPS_KINDS = ['settlement', 'savings'];
     // A block only counts for itself once someone has set it up; until then its sections post themselves exactly as
     // they always have, so nothing here changes for a ledger that has never opened a block's setup. Worked out once
@@ -485,6 +516,18 @@
       blockRuns.set(kind, run);
       return run;
     };
+    // The figures a settlement's own equations read. A section whose equations reshape its posting has no honest split
+    // (runCalc leaves parts null rather than invent one), but what went into it is still worth showing — so these are
+    // offered as inputs, and the rows say so instead of pretending they add up to the figure above them.
+    const sectionByName = new Map(blocks.filter(section => section._meta.type === 'net').map(section => [section._meta.id, section]));
+    const inputsOf = name => {
+      const section = sectionByName.get(name);
+      if (!section) return null;
+      const rows = Object.entries(section.categories)
+        .map(([label, category]) => ({ label, amount: category._meta.total }))
+        .filter(part => part.amount);
+      return rows.length ? rows : null;
+    };
     const blockTitleOf = kind => (kind === 'savings'
       ? (m.blockNames?.savings || GROUPS.savings.title)
       : (m.blockNames?.settlement || GROUPS.settlement.title));
@@ -498,15 +541,25 @@
           const kind = line.kind === 'savings' ? 'savings' : 'settlement';
           if (blockRun(kind)) return; // a block that counts for itself says its own figure below
           const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
-          const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [] }).get(key);
+          const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [], parts: [] }).get(key);
           group.amount += line.amount;
           group.from.push(line.section);
+          // What the one figure is made of: the settlement that sent it, and the subsections its own equations read.
+          // Kept so the line can be opened; without it the reader would have to match names against the block below.
+          group.parts.push({
+            label: line.section, amount: line.amount, section: line.section,
+            parts: line.parts || null, inputs: line.parts ? null : inputsOf(line.section)
+          });
         });
         // A block with a calculation of its own posts what that works out to, in place of its sections' own figures.
         GROUPS_KINDS.forEach(kind => {
           const run = blockRun(kind);
           (run?.adds.lines || []).filter(line => line.type === type && line.amount).forEach(line => {
-            groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, { ...line, label: blockTitleOf(kind), kind, section: null, from: (line.parts || []).map(part => part.label) });
+            groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, {
+              ...line, label: blockTitleOf(kind), kind, section: null,
+              from: (line.parts || []).map(part => part.label),
+              parts: (line.parts || []).map(part => ({ label: part.label, amount: part.amount, section: part.label, parts: null }))
+            });
           });
         });
         return [...groups.values()];

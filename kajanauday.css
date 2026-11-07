@@ -878,6 +878,32 @@
    line in Income or Expenses. */
 .ledger-cat > summary > strong.income { color: var(--income-2); }
 .ledger-cat > summary > strong.expense { color: var(--expense); }
+/* A posted balance line carries no icon, so its label starts at the left edge instead of in the icon column. */
+.ledger-carry.is-balance { grid-template-columns: minmax(0, 1fr) auto; }
+/* Unless it can be opened: then it is a row like the subsections beside it, caret and all, and what the figure is made
+   of sits underneath. The caret column is the one the subsections use, so the two line up down the panel. */
+details.ledger-carry.is-balance.has-parts { display: block; }
+details.ledger-carry.is-balance.has-parts > summary { min-height: 30px; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 0 -6px; padding: 0 6px; border-radius: 6px; cursor: pointer; list-style: none; }
+details.ledger-carry.is-balance.has-parts > summary::-webkit-details-marker { display: none; }
+details.ledger-carry.is-balance.has-parts > summary:hover { background: var(--hover); }
+details.ledger-carry.is-balance.has-parts > summary:hover > span { color: var(--ink); }
+details.ledger-carry.is-balance.has-parts > summary > i { font-size: 12px; transition: transform .15s; }
+details.ledger-carry.is-balance.has-parts[open] > summary > i { transform: rotate(90deg); }
+/* The breakdown: one row per settlement, with the subsections its equations read set in under it. Quieter than the
+   figure above them — they explain it, they are not a second claim on the month. */
+.ledger-carry-parts { padding: 2px 0 4px; }
+.ledger-carry-part { min-height: 26px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding-left: 22px; color: var(--muted); font-size: 13px; font-style: italic; }
+.ledger-carry-part > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger-carry-part strong { font: 400 13px var(--mono); font-style: normal; font-variant-numeric: tabular-nums; }
+.ledger-carry-part.is-posted { margin: 0 -6px; padding-right: 6px; padding-left: 28px; border-radius: 6px; cursor: pointer; }
+.ledger-carry-part.is-posted:hover { background: var(--hover); color: var(--ink); }
+.ledger-carry-part.is-posted:hover > span { text-decoration: underline; text-underline-offset: 2px; }
+.ledger-carry-part.is-sub { padding-left: 38px; color: var(--faint); font-size: 12.5px; }
+.ledger-carry-part.is-sub strong { font-size: 12.5px; }
+/* Inputs to an equation rather than a split of the figure above: marked with a hairline so the column is not read as
+   one that ought to add up. */
+.ledger-carry-part.is-sub.is-input { margin-left: 30px; padding-left: 8px; border-left: 1px dashed var(--line-strong); }
+.ledger-carry-note { margin: 2px 0 1px; padding-left: 30px; color: var(--faint); font-size: 11px; font-style: italic; line-height: 1.5; }
 .ledger-carry.is-balance strong.expense { color: var(--expense); }
 .ledger-type-section[data-type="net"] .ledger-entry strong.expense { color: var(--expense); }
 .ledger-type-section[data-type="net"] .ledger-entry strong.income { color: var(--income-2); }

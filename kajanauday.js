@@ -224,17 +224,19 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
     }
     // How far the main blocks spell out what a settlement or a pot posts into them: 'total' (one figure for the whole
-    // block), 'section' (one per settlement, the default) or 'sub' (every subsection on its own line). A way of reading
-    // the month, not a fact about it, so like the sort order it stays in this browser and is never written to Firebase.
+    // block, the default), 'section' (one per settlement) or 'sub' (every subsection on its own line). Income and
+    // Expenses read as a control account: the block posts one line under its own name and keeps the settlement-by-
+    // settlement detail in the Settlements block below, where the reader can already see it. A way of reading the
+    // month, not a fact about it, so like the sort order it stays in this browser and is never written to Firebase.
     const POSTING_KEY = `${STORAGE_KEY}-posting`;
     const POSTING_MODES = ['total', 'section', 'sub'];
     const POSTING_LABELS = {
-      total: { label: 'the block as one figure', hint: 'Settlements posts a single total; the detail stays in its own block' },
+      total: { label: 'the block as one figure', hint: 'the default · Settlements posts a single total; the detail stays in its own block' },
       section: { label: 'one line per settlement', hint: 'each settlement posts under its own name' },
       sub: { label: 'a line for every subsection', hint: 'each subsection posts on its own, named after its settlement' }
     };
     let postingMode = (() => {
-      try { const saved = localStorage.getItem(POSTING_KEY); return POSTING_MODES.includes(saved) ? saved : 'section'; } catch (error) { return 'section'; }
+      try { const saved = localStorage.getItem(POSTING_KEY); return POSTING_MODES.includes(saved) ? saved : 'total'; } catch (error) { return 'total'; }
     })();
     function setPostingMode(mode) {
       if (!POSTING_MODES.includes(mode) || mode === postingMode) return;
@@ -273,6 +275,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
       const keepOpenTypes = new Set([...host.querySelectorAll('details.ledger-type-section[open]')].map(section => section.dataset.key));
       const keepSettled = new Set([...host.querySelectorAll('details.ledger-settled[open]')].map(fold => fold.dataset.key));
+      // A posted balance line opened for its breakdown stays open too: it is read while entries are being added, and
+      // closing it on every save would shut the one thing the reader was looking at.
+      const keepPosted = new Set([...host.querySelectorAll('details.ledger-carry[open]')].map(line => line.dataset.key));
       // The year card's section groups (open by default), description lists and months (closed by default) stay as they were.
       const yearFolds = new Map([...host.querySelectorAll('.month-block.is-year details.ledger-year-group, .month-block.is-year details.ledger-year-items, .month-block.is-year details.ledger-year-month')].map(item => [item.dataset.key, item.open]));
       const typingFilter = document.activeElement?.matches?.('[data-hub-filter]');
@@ -286,6 +291,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Income / Expenses blocks open before stay open, and an open subsection keeps its block open.
       host.querySelectorAll('details.ledger-type-section').forEach(section => { if (keepOpenTypes.has(section.dataset.key)) section.open = true; });
       host.querySelectorAll('details.ledger-settled').forEach(fold => { if (keepSettled.has(fold.dataset.key)) fold.open = true; });
+      host.querySelectorAll('details.ledger-carry').forEach(line => { if (keepPosted.has(line.dataset.key)) line.open = true; });
       host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing').forEach(cat => { const section = cat.closest('details.ledger-type-section'); if (section) section.open = true; });
       // A settlement inside Settlements (or a pot inside Savings) keeps the block around it open too, so reopening
       // one row never hides the rest of it.
