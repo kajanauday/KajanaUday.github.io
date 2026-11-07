@@ -650,6 +650,27 @@
       base[item.id] = major(sum);
       return { ...item, sum };
     });
+    const label = section?.name || 'Section';
+    // What each subsection on its own puts into the money that moved, so the ledger can post a section either as one
+    // figure or line by line. A memo role (My share) is left out: it is a note about the split, never money.
+    const postings = names.map(name => {
+      const role = subsectionRole(section, name);
+      if (MEMO_ROLES.has(role)) return { name, role, memo: true, in: 0, out: 0 };
+      let into = 0;
+      let outOf = 0;
+      (valuesBySub[name] || []).forEach(amount => { if (amount > 0) into += amount; else outOf -= amount; });
+      return { name, role, memo: false, in: into, out: outOf };
+    });
+    const { lines, stats, sides, adds } = evaluateCalc({ calc, vars, base, label, kind, postings });
+    return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
+  }
+  // Works a calculation out against a set of named figures: the lines in order, the grand totals they set, and what
+  // the two "to the month" rules come to. None of it cares whether those figures are a section’s subsections or a
+  // block’s sections, so one engine decides what every equation in the ledger means and there is a single place for
+  // a formula to be wrong. `base` is every read-only name a formula may use (TI, CI, OWED… and the part ids), `vars`
+  // is what those part ids stand for, and `postings` is what each part puts into the money that moved — used to split
+  // one posted figure back into its parts when they add up to it exactly.
+  function evaluateCalc({ calc, vars, base, label, kind, postings }) {
     const lines = calc.lines.map(text => (String(text).trim() ? { text, ...parseLine(text) } : { text, blank: true }));
     const defs = new Map();
     lines.forEach(line => {
@@ -698,20 +719,9 @@
     const grand = Object.fromEntries(GRAND.map(name => [name, defs.has(name) ? work(() => get(name)).value : undefined]));
     const minor = value => (value === undefined ? undefined : Math.round(value * 100));
     const stats = { income: minor(grand.GI), expenses: minor(grand.GE), balance: minor(grand.GB) };
-    const label = section?.name || 'Section';
     const sides = {};
     const out = [];
     const adds = { income: 0, expenses: 0, lines: out };
-    // What each subsection on its own puts into the money that moved, so the ledger can post a section either as one
-    // figure or line by line. A memo role (My share) is left out: it is a note about the split, never money.
-    const postings = names.map(name => {
-      const role = subsectionRole(section, name);
-      if (MEMO_ROLES.has(role)) return { name, role, memo: true, in: 0, out: 0 };
-      let into = 0;
-      let outOf = 0;
-      (valuesBySub[name] || []).forEach(amount => { if (amount > 0) into += amount; else outOf -= amount; });
-      return { name, role, memo: false, in: into, out: outOf };
-    });
     ['income', 'expense'].forEach(type => {
       const { mode, formula } = calc[type];
       const parsed = parseCalc(formula);
@@ -728,6 +738,74 @@
       out.push({ type, label, section: label, kind, amount, counted: mode === 'count', parts: splits ? parts : null });
       if (mode === 'count') adds[type === 'income' ? 'income' : 'expenses'] += amount;
     });
+    return { lines, stats, sides, adds };
+  }
+  // ---- a block's own calculation ---------------------------------------------------------------
+  // A block (Settlements, Savings) holds sections the way a section holds subsections, so it counts the same way: its
+  // parts are the sections in it, and it has one calculation of its own saying what the block posts to the month.
+  // Where a section reads its parts from entries and their roles, a block reads its parts from what each section
+  // already worked out, so the two can never disagree — a block is never a second opinion about the same money.
+  // Stored per month and currency beside the block names (monthSections/<month>/<cur>/blockCalc/<kind>).
+  //
+  // Its read-only figures are the sections' own, added up: CI / CO cash both ways, OWED what is still outstanding,
+  // MS my share, SV / RT a pot and its gain, TI / TE every section's balance positive and negative. Each section is a
+  // part id (E1, E2…) worth that section's balance, so a block formula can name one settlement on its own.
+  const defaultBlockCalc = kind => defaultCalc(kind);
+  // Reads a block's stored calculation, giving it the ids its sections need. `names` are the sections in it, in order.
+  function blockCalc(stored, names, kind = 'settlement') {
+    const calc = stored && Number(stored.v) >= 3 ? stored : null;
+    if (!calc) return { ...defaultBlockCalc(sectionKind({ kind })), vars: calcVars([], names) };
+    return handSetGrand({
+      vars: calcVars(calc.vars, names),
+      lines: listOf(calc.lines).map(String),
+      income: sideRule(calc.income),
+      expense: sideRule(calc.expense),
+      v: calc.v
+    });
+  }
+  // Works a block out. `parts` is one entry per section in it, in order:
+  //   { name, stats: { income, expenses, balance }, settle: { cashIn, cashOut, owed, share, saved, returns } }
+  // which is exactly what runCalc already hands back for each section, so nothing is recomputed from the entries.
+  function runBlockCalc(block, parts, calc = blockCalc(block?.calc, parts.map(part => part.name), sectionKind(block))) {
+    const kind = sectionKind(block);
+    const names = parts.map(part => part.name);
+    const vars = calcVars(calc.vars, names);
+    const major = minor => minor / 100;
+    const add = pick => parts.reduce((sum, part) => sum + (Number(pick(part)) || 0), 0);
+    const balanceOf = part => Number(part.stats?.balance ?? part.settle?.owed ?? 0) || 0;
+    // A block's cash both ways is its sections' cash both ways: a section that brought 500 in and paid 1000 out keeps
+    // both figures here, so +X and -X never cancel and the block says what really moved.
+    const cashIn = add(part => part.settle?.cashIn);
+    const cashOut = add(part => part.settle?.cashOut);
+    const owed = add(part => part.settle?.owed);
+    const share = add(part => part.settle?.share);
+    const saved = add(part => part.settle?.saved);
+    const returns = add(part => part.settle?.returns);
+    const balances = parts.map(balanceOf);
+    const income = balances.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
+    const expenses = -balances.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
+    const settle = { kind, cashIn, cashOut, owed, share, saved, returns, byRole: {}, cleared: owed === 0 };
+    const base = {
+      TI: major(income), TE: major(expenses),
+      CI: major(cashIn), CO: major(cashOut),
+      OWED: major(owed), MS: major(share),
+      SV: major(saved), RT: major(returns)
+    };
+    const byName = new Map(parts.map(part => [part.name, part]));
+    const subs = vars.filter(item => byName.has(item.name)).map(item => {
+      const sum = balanceOf(byName.get(item.name));
+      base[item.id] = major(sum);
+      return { ...item, sum };
+    });
+    // What each section puts into the money that moved: what it already posts, so a block posted line by line and the
+    // same block posted as one figure are the same money said two ways.
+    const postings = parts.map(part => ({
+      name: part.name, role: 'cost', memo: false,
+      in: Math.max(0, Math.round(Number(part.adds?.income) || 0)),
+      out: Math.max(0, Math.round(Number(part.adds?.expenses) || 0))
+    }));
+    const label = block?.name || 'Block';
+    const { lines, stats, sides, adds } = evaluateCalc({ calc, vars, base, label, kind, postings });
     return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
   }
   const netSectionSummary = (section, amountsBySub) => runCalc(section, amountsBySub);
@@ -860,6 +938,30 @@
       if (!clean || nameKey(clean) === nameKey(BLOCK_NAMES[kind])) delete names[kind];
       else names[kind] = clean;
       if (Object.keys(names).length) node.names = names; else delete node.names;
+      const update = this.recomputeFrom(String(year));
+      return this.queue(() => this.db.patch(update));
+    }
+    // A block's own calculation for this month and currency, as stored (null when it has never been set up, which is
+    // every block until someone opens its setup: the default is then worked out from the sections in it).
+    storedBlockCalc(year, monthIndex, currency, kind) {
+      return this.year(year)?.monthSections[monthIdOf(year, monthIndex)]?.[currency]?.blockCalc?.[kind] || null;
+    }
+    // Both blocks' stored calculations, or null each where none was ever saved. A block with none behaves exactly as
+    // it always did — the sections in it post themselves — so this feature is invisible until someone uses it.
+    blockCalcs(year, monthIndex, currency) {
+      return Object.fromEntries(SECTION_KINDS.map(kind => [kind, this.storedBlockCalc(year, monthIndex, currency, kind)]));
+    }
+    // Writes one, beside the block names. A calc equal to the default is stored as nothing, so a block that was opened
+    // and left alone keeps no settings of its own and follows the default if it ever changes.
+    saveBlockCalc(year, monthIndex, currency, kind, calc) {
+      if (!SECTION_KINDS.includes(kind)) return Promise.resolve();
+      const month = this.year(year).monthSections[monthIdOf(year, monthIndex)] ||= {};
+      const node = month[currency] ||= { own: true, sections: [] };
+      const all = { ...(node.blockCalc || {}) };
+      const fallback = defaultBlockCalc(kind);
+      const same = calc && JSON.stringify({ ...calc, vars: [] }) === JSON.stringify({ ...fallback, vars: [] });
+      if (!calc || same) delete all[kind]; else all[kind] = calc;
+      if (Object.keys(all).length) node.blockCalc = all; else delete node.blockCalc;
       const update = this.recomputeFrom(String(year));
       return this.queue(() => this.db.patch(update));
     }
@@ -1488,7 +1590,7 @@
         sections[`event:${id}:${type}`] = section;
       }));
       return {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency), blockNames: this.blockNames(year, monthIndex, currency) },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency), blockNames: this.blockNames(year, monthIndex, currency), blockCalcs: this.blockCalcs(year, monthIndex, currency) },
         sections
       };
     }
@@ -1564,6 +1666,6 @@
     }
   }
 
-  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel });
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

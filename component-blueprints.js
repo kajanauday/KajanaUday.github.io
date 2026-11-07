@@ -469,6 +469,22 @@
     // (the default), or every subsection posted on its own line. It is a way of reading, not a fact about the month,
     // so it is kept with the reader (see postingMode) and never written to the ledger.
     const postingMode = ['total', 'section', 'sub'].includes(state.postingMode) ? state.postingMode : 'section';
+    const GROUPS_KINDS = ['settlement', 'savings'];
+    // A block only counts for itself once someone has set it up; until then its sections post themselves exactly as
+    // they always have, so nothing here changes for a ledger that has never opened a block's setup. Worked out once
+    // per block and kept, because the panel asks for it per side.
+    const blockRuns = new Map();
+    const blockRun = kind => {
+      if (blockRuns.has(kind)) return blockRuns.get(kind);
+      const stored = m.blockCalcs?.[kind] || null;
+      const parts = blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind && section._meta.adds)
+        .map(section => ({ name: section._meta.id, stats: section._meta.stats, settle: section._meta.settle, adds: section._meta.adds }));
+      const run = stored && parts.length && store()?.runBlockCalc
+        ? store().runBlockCalc({ name: blockTitleOf(kind), kind, calc: stored }, parts)
+        : null;
+      blockRuns.set(kind, run);
+      return run;
+    };
     const blockTitleOf = kind => (kind === 'savings'
       ? (m.blockNames?.savings || GROUPS.savings.title)
       : (m.blockNames?.settlement || GROUPS.settlement.title));
@@ -480,10 +496,18 @@
         const groups = new Map();
         own.forEach(line => {
           const kind = line.kind === 'savings' ? 'savings' : 'settlement';
+          if (blockRun(kind)) return; // a block that counts for itself says its own figure below
           const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
           const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [] }).get(key);
           group.amount += line.amount;
           group.from.push(line.section);
+        });
+        // A block with a calculation of its own posts what that works out to, in place of its sections' own figures.
+        GROUPS_KINDS.forEach(kind => {
+          const run = blockRun(kind);
+          (run?.adds.lines || []).filter(line => line.type === type && line.amount).forEach(line => {
+            groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, { ...line, label: blockTitleOf(kind), kind, section: null, from: (line.parts || []).map(part => part.label) });
+          });
         });
         return [...groups.values()];
       }

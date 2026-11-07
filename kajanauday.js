@@ -1903,7 +1903,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // ---- Section setup: how a custom section (L1) and each of its subsections (L2) count ----
     // Opened from the section heading's settings button, and right after a subsection is added to a custom section.
-    const setupState = { month: null, property: null, name: null, draft: null, focus: null, section: null };
+    // The setup dialog works on one of two things: a section, whose parts are its subsections, or a block, whose
+    // parts are the sections in it. `block` holds which kind of block when it is one, and is null for a section.
+    const setupState = { month: null, property: null, name: null, draft: null, focus: null, section: null, block: null };
+    // The sections of the block being set up, each worked out its own way, which is what a block counts from.
+    function setupBlockParts() {
+      const { month, property, block } = setupState;
+      const scope = panelScope(month, property);
+      return scope.sections().filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === block)
+        .map(section => {
+          const amounts = Object.fromEntries((section.subsections || []).map(sub => [sub, []]));
+          transactions.filter(item => !item.parentId && scope.match(item) && item.type === 'net'
+            && (item.section === section.name || (!item.section && section.subsections.includes(item.category))))
+            .forEach(item => (amounts[item.category] ||= []).push({ amount: store.entryTotal(item.id), split: item.split || null }));
+          return { name: section.name, ...ExpenseStore.runCalc(section, amounts) };
+        });
+    }
     // This section's entry amounts by subsection, for the preview (an entry counts as the sum of its notes).
     function setupAmounts() {
       const { month, property, name } = setupState;
@@ -1942,7 +1957,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function renderSectionSetup() {
       const { month, property, name, draft } = setupState;
       document.querySelector('#section-setup-title').textContent = name;
-      document.querySelector('#section-setup-where').textContent = `Section setup · ${regions[property].code} · ${panelScope(month, property).label}`;
+      const what = setupState.block ? 'Block setup' : 'Section setup';
+      document.querySelector('#section-setup-where').textContent = `${what} · ${regions[property].code} · ${panelScope(month, property).label}`;
+      // The part ids stand for whatever this is counting over: a section's subsections, or a block's sections.
+      document.querySelector('[data-calc-parts]').textContent = setupState.block ? 'E1, E2… the sections in it' : 'E1, E2… subsections';
       document.querySelector('#calc-lines').innerHTML = draft.lines.map((line, index) => `<div class="calc-row" data-line="${index}">
           ${calcField(`data-calc-line="${index}" aria-label="Calculation ${index + 1}"`, line, 'Name = E1 / 2')}
           <output class="calc-value"></output>
@@ -1961,17 +1979,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // Live: chips with their values, each line's and each side's result or problem, and the colours in every field.
     function updateSetupPreview() {
-      const { property, name, draft } = setupState;
-      const amounts = setupAmounts();
-      const live = setupState.section;
-      const summary = ExpenseStore.runCalc({ name, subsections: Object.keys(amounts), kind: ExpenseStore.sectionKind(live), roles: live?.roles || {}, calc: draft }, amounts);
+      const { property, name, draft, block } = setupState;
+      const summary = block
+        ? ExpenseStore.runBlockCalc({ name, kind: block }, setupBlockParts(), draft)
+        : (() => {
+          const amounts = setupAmounts();
+          const live = setupState.section;
+          return ExpenseStore.runCalc({ name, subsections: Object.keys(amounts), kind: ExpenseStore.sectionKind(live), roles: live?.roles || {}, calc: draft }, amounts);
+        })();
       setupState.summary = summary;
       const money = minor => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
       const chip = (id, label, minor, tone, title = `Put ${id} in the equation`) => `<button type="button" class="calc-chip ${tone}" data-insert="${id}" title="${escapeHtml(title)}"><b>${id}</b>${label ? `<span>${escapeHtml(label)}</span>` : ''}${minor === undefined ? '<em class="is-unset">not set</em>' : `<em class="${minor < 0 ? 'expense' : 'income'}">${money(minor)}</em>`}</button>`;
       // Subsections; the entries' own totals; then GI / GE / GB, shown in the heading only once a line sets them.
       const minorOf = key => Math.round((summary.base[key] || 0) * 100);
       const totalChip = (id, title) => chip(id, '', minorOf(id), 'is-total', title);
-      const roleChips = ExpenseStore.sectionKind(setupState.section) === 'savings'
+      const roleChips = (setupState.block || ExpenseStore.sectionKind(setupState.section)) === 'savings'
         ? totalChip('SV', 'Put into the pot less what was taken out') + totalChip('RT', 'Interest, dividend or gain the pot earned')
         : totalChip('OWED', 'Still outstanding: above zero is owed to you, below zero is what you owe') + totalChip('MS', 'Your own share of what the group spent');
       document.querySelector('#calc-chips').innerHTML = summary.subs.map(sub => chip(sub.id, sub.name, sub.sum, `v${colorOf(sub.id)}`)).join('')
@@ -2001,11 +2023,28 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       document.querySelectorAll('#section-setup-form .calc-field input').forEach(paintField);
     }
+    // Opens the same dialog on a whole block, its parts being the sections in it. A block that has never been set up
+    // starts from the default, which works out to exactly what the block already posts — so opening this and saving
+    // without touching anything changes no figure.
+    function openBlockSetup(month, property, kind) {
+      if (isViewer) return showToast('This account can view the ledger but not change it.');
+      if (String(month).startsWith('ev:')) return showToast('An event has no blocks to set up.');
+      const [year, monthIndex] = yearMonthOf(month);
+      const names = panelScope(month, property).sections()
+        .filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === kind).map(item => item.name);
+      const stored = store.storedBlockCalc(year, monthIndex, property, kind);
+      const title = store.blockNames(year, monthIndex, property)[kind];
+      Object.assign(setupState, { month, property, name: title, focus: null, target: null, section: null, block: kind,
+        draft: JSON.parse(JSON.stringify(ExpenseStore.blockCalc(stored, names, kind))) });
+      document.querySelector('#section-setup-error').hidden = true;
+      renderSectionSetup();
+      document.querySelector('#section-setup-dialog').showModal();
+    }
     function openSectionSetup(month, property, name, focus = null) {
       if (isViewer) return showToast('This account can view the ledger but not change it.');
       const section = panelScope(month, property).sections().find(item => item.name === name);
       if (!section) return showToast('That section is no longer set up here.');
-      Object.assign(setupState, { month, property, name, focus, target: null, section, draft: JSON.parse(JSON.stringify(ExpenseStore.sectionCalc(section))) });
+      Object.assign(setupState, { month, property, name, focus, target: null, section, block: null, draft: JSON.parse(JSON.stringify(ExpenseStore.sectionCalc(section))) });
       document.querySelector('#section-setup-error').hidden = true;
       renderSectionSetup();
       document.querySelector('#section-setup-dialog').showModal();
@@ -2086,12 +2125,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           error.hidden = false;
           return (lineIndex >= 0 ? form.querySelector(`[data-calc-line="${lineIndex}"]`) : form.querySelector(`[data-calc-out="${side[0]}"]`)).focus();
         }
+        const result = type => ({ mode: draft[type].mode, formula: draft[type].formula.trim() });
+        const calc = { v: 3, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
+        if (setupState.block) {
+          const [year, monthIndex] = yearMonthOf(month);
+          trackSave(store.saveBlockCalc(year, monthIndex, property, setupState.block, calc));
+          dialog.close();
+          renderLedger();
+          return showToast(`Saved how the “${name}” block counts.`);
+        }
         const scope = panelScope(month, property);
         const section = scope.own().find(item => item.name === name);
         if (!section) return dialog.close();
         ExpenseStore.ensureCalc(section);
-        const result = type => ({ mode: draft[type].mode, formula: draft[type].formula.trim() });
-        section.calc = { v: 3, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
+        section.calc = calc;
         scope.save();
         dialog.close();
         renderLedger();
@@ -3286,16 +3333,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (kind === 'group') {
         const one = target.group === 'savings' ? 'savings pot' : 'settlement';
         const closed = panelScope(mKey, property).sections().filter(item => item.type === 'net' && item.closed && ExpenseStore.sectionKind(item) === target.group);
-        // Setting up how it counts is a section's own business, so the block hands it straight over: with one section
-        // in the block it opens that one, and with several it asks which first. Either way the dialog that opens is
-        // the same one a section or a subsection opens — there is only one place a calculation is written.
+        // The block has a calculation of its own, over the sections in it, so this opens the block's own setup rather
+        // than one of its sections'. Each section is still set up from its own row; this is the figure the block itself
+        // posts to the month, written in the same language.
         const inBlock = panelScope(mKey, property).sections().filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === target.group);
-        const setupItems = isEvent || !inBlock.length ? [] : [inBlock.length === 1
-          ? { icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: inBlock[0].name, run: () => openSectionSetup(mKey, property, inBlock[0].name) }
-          : { icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `${inBlock.length} to choose from`, submenu: {
-            title: 'Set up how it counts', subtitle: `which ${one}?`,
-            items: inBlock.map(item => ({ icon: target.group === 'savings' ? 'pig-money' : 'arrows-exchange', label: item.name, run: () => openSectionSetup(mKey, property, item.name) }))
-          } }];
+        const setupItems = isEvent ? [] : [
+          { icon: 'adjustments-horizontal', label: 'Set up how it counts…',
+            hint: inBlock.length ? `this block, over its ${inBlock.length} ${inBlock.length === 1 ? one : `${one}s`}` : 'this block',
+            run: () => openBlockSetup(mKey, property, target.group) }
+        ];
         return write([
           { icon: 'plus', label: `Add ${one}`, run: add },
           ...setupItems,
