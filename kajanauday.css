@@ -1203,6 +1203,20 @@ details.ledger-carry.is-balance.has-parts[open] > summary > i { transform: rotat
   font: 600 9.5px/15px var(--mono); letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; vertical-align: 1px; }
 .split-mark.is-all { background: var(--st-done-bg); color: var(--st-done); }
 .split-mark.is-none { background: var(--st-waiting-bg); color: var(--st-waiting); }
+/* What a repayment, or money arriving, said it was for. It sits beside the split mark and reads the same way: only a
+   row that has said something carries one, and the whole list is in its title. A payment that has not been fully
+   accounted for is drawn hollow, so "half said" never looks like "said". */
+.alloc-mark { display: inline-flex; align-items: center; gap: 3px; margin-right: 5px; padding: 0 5px; border-radius: 4px;
+  background: var(--brand-soft); color: var(--brand); font: 600 9.5px/15px var(--mono); letter-spacing: .03em;
+  max-width: 13ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: 1px; }
+.alloc-mark i { font-size: 10px; }
+.alloc-mark.is-part { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent); }
+/* Where one thing inside a settlement stands, on that thing's own row. Shown only when it is not square, because a
+   settled line saying "0 open" is noise on every row that has ever been paid off. */
+.purpose-mark { padding: 0 5px; border-radius: 4px; background: var(--surface-soft); font: 600 10px/16px var(--mono);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.purpose-mark.is-in { color: var(--income-1); }
+.purpose-mark.is-out { color: var(--expense-soft-text); }
 /* Why nothing is leaving this device, at the top of the Sync panel: a refusal is not a queue, and reads differently. */
 .sync-states .is-error i { color: var(--expense); }
 .sync-states .is-error span { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
@@ -1333,19 +1347,13 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .ledger-type-section.is-closed { opacity: .72; }
 .ledger-type-section.is-closed:hover, .ledger-type-section.is-closed[open] { opacity: 1; }
 
-/* A settlement's four figures on its heading: the cash both ways, the part that was mine, and what is still open. */
-.settle-totals { min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 18px; }
-.settle-figure { min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+/* The one figure on a settlement's heading: what it posts to the month, green for income and red for an expense,
+   with no sign — the colour is what says which way it goes. */
+.settle-totals { min-width: 0; display: flex; justify-content: flex-end; }
+.settle-figure { min-width: 0; }
 .settle-figure b { font: 600 13.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .settle-figure.is-in b { color: var(--income-1); }
 .settle-figure.is-out b { color: var(--expense-soft-text); }
-.settle-figure.is-memo b { color: var(--muted); }
-
-/* On a narrow screen, let the four figures fill a two-column line below the heading. */
-@media (max-width: 560px) {
-  .settle-totals { width: 100%; justify-content: flex-start; gap: 6px 0; }
-  .settle-figure { flex: 0 0 50%; align-items: flex-start; }
-}
 
 /* Closed sections folded away together. */
 .ledger-merged-note { display: flex; align-items: center; gap: 5px; margin: 6px 0 0; color: var(--faint); font-size: 11.5px; font-style: italic; }
@@ -1359,6 +1367,32 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 /* What a subsection stands for is chosen here, on its form and in Set up; it is no longer written on the row itself,
    where its word collided with the status a description sets (a "paid" row said paid twice). */
 .sub-form .role-select { height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 11.5px; }
+
+/* What a repayment covers: one row per thing the settlement is about, each saying where it stands, with a running
+   count of what has not been accounted for. */
+.alloc-blurb { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.alloc-list { display: grid; gap: 6px; max-height: 44vh; overflow: auto; }
+.alloc-row { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); }
+.alloc-row.is-gone { opacity: .6; }
+.alloc-row:has(input:not(:placeholder-shown)) { border-color: var(--brand); background: var(--brand-soft); }
+.alloc-name { flex: 1; min-width: 0; color: var(--ink); font-size: 12.5px; }
+.alloc-name small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+.alloc-row input { width: 108px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font: 400 12.5px var(--mono); text-align: right; }
+.alloc-row input[aria-invalid="true"] { border-color: var(--expense); }
+.alloc-left { margin: 10px 0 0; color: var(--muted); font-size: 11.5px; }
+.alloc-left.is-over { color: var(--expense); font-weight: 600; }
+
+/* What a settlement reports to the month, as one word rather than as equations nobody can read back. Picking one
+   writes the equations below it, so the dialog always shows what the word means. */
+.calc-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin-top: 4px; }
+.calc-modes[hidden] { display: none; }
+.calc-mode { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft);
+  color: var(--ink); cursor: pointer; text-align: left; }
+.calc-mode b { display: block; font-size: 12.5px; }
+.calc-mode span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.calc-mode:hover { border-color: var(--brand); }
+.calc-mode[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
 
 /* Merging closed sections. */
 .merge-blurb { margin: 0 0 10px; color: var(--muted); font-size: 12px; }

@@ -18,15 +18,15 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261112j">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261113b">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../data-layer.js?v=20261112k" defer></script>
+  <script src="../data-layer.js?v=20261113a" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261112k" defer></script>
+  <script src="../component-blueprints.js?v=20261113b" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261112k" defer></script>
+  <script src="../kajanauday.js?v=20261113a" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -104,14 +104,25 @@
   <dialog class="modal month-dialog setup-dialog" id="section-setup-dialog" aria-labelledby="section-setup-title">
     <form id="section-setup-form" novalidate>
       <div class="modal-header"><div><p id="section-setup-where">Section setup</p><h2 id="section-setup-title">Section</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="calc-modes" id="calc-modes" role="group" aria-label="What this settlement reports to the month" hidden></div>
       <div class="calc-chips" id="calc-chips" aria-label="Click one to put it in the equation you are writing"></div>
       <div class="calc-head"><h3>Calculations</h3><button type="button" class="quiet-button calc-add" data-calc-add title="Add a line (Enter in a line)"><i class="ti ti-plus" aria-hidden="true"></i> Line</button></div>
       <div class="calc-lines" id="calc-lines"></div>
       <div class="calc-head"><h3>To the month</h3></div>
       <div class="calc-out" id="calc-out"></div>
-      <p class="calc-hint"><span data-calc-parts>E1, E2… subsections</span> · CI / CO cash in and out · OWED still outstanding · MS your own share · SV / RT a pot and its gain · TI / TE every positive / negative entry · set GI, GE, GB to show income, expenses, balance in the heading · abs() min() max() round()</p>
+      <p class="calc-hint"><span data-calc-parts>E1, E2… subsections</span> · CI / CO cash in and out · OWED still outstanding · MS your own share · SI / SO money between the two sides · AL / UA of that, said and unsaid what for · SV / RT a pot and its gain · TI / TE every positive / negative entry · set GI, GE, GB to show income, expenses, balance in the heading · abs() min() max() round()</p>
       <p class="settings-error" id="section-setup-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog alloc-dialog" id="alloc-dialog" aria-labelledby="alloc-dialog-title">
+    <form id="alloc-form" novalidate>
+      <div class="modal-header"><div><p id="alloc-where">What this covers</p><h2 id="alloc-dialog-title">Allocate</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="alloc-blurb" id="alloc-blurb"></p>
+      <div class="alloc-list" id="alloc-list" role="group" aria-label="What this money covers"></div>
+      <p class="alloc-left" id="alloc-left" aria-live="polite"></p>
+      <p class="settings-error" id="alloc-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" id="alloc-clear">Clear</button><button type="button" class="quiet-button" id="alloc-rest">Spread the rest</button><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog merge-dialog" id="merge-dialog" aria-labelledby="merge-dialog-title">

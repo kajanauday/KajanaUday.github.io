@@ -214,8 +214,16 @@
         if (split.m === 'amount') return { split: { m: 'amount', a: Math.abs(Math.round(Number(split.a) || 0)) } };
         return { split: { m: split.m } };
       };
+      // What a repayment or a receipt inside a settlement was for (see normalizeAlloc): the subsections it covers and
+      // how much of it each one takes. Written here for the same reason a split is — saveTransactions decides whether
+      // to write at all by comparing this document with the last copy sent, so a field missing from here is a change
+      // that is never saved, never synced, and gone on the next reload.
+      const allocOf = row => {
+        const list = normalizeAlloc(row.alloc);
+        return list.length ? { alloc: list } : {};
+      };
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item) };
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -286,7 +294,11 @@
   //   OWED      what is still outstanding, signed: more than zero is owed to me, less than zero is what I owe.
   //   MS        my own share of what the group spent, as a positive cost.
   //   SV / RT   a savings pot: what was put in less what was taken out, and the interest or gain credited to it.
-  const ENTRY_TOTALS = ['TI', 'TE', 'CI', 'CO', 'OWED', 'MS', 'SV', 'RT'];
+  //   SI / SO   money that passed between me and the other side: what came to me, and what I handed over. They are the
+  //             repayment half of CI / CO, so what was laid out for the group on its own is CI - SI and CO - SO.
+  //   AL / UA   of that repayment money, how much has been said what it was for (see normalizeAlloc) and how much has
+  //             not. Both are positive sums, and together they come to SI + SO.
+  const ENTRY_TOTALS = ['TI', 'TE', 'CI', 'CO', 'OWED', 'MS', 'SV', 'RT', 'SI', 'SO', 'AL', 'UA'];
   const SUB_ID = /^E\d+$/;
   // A custom section is either a settlement (money shared with someone: a split bill, a loan, someone investing in me)
   // or a savings pot. Both live inside their own single block; a month never has more than one of each block.
@@ -304,6 +316,9 @@
   // Only money laid out for the group is divided, so that is the role a split belongs to. A repayment under "Settled
   // up" moves money between the two sides; it is not a cost with a share of its own.
   const SPLIT_ROLE = 'cost';
+  // Money passing between the two sides is the only thing there is to allocate: it is the entry that pays something
+  // off, or that arrives for some purpose. A cost already says what it was for — it is sitting under that heading.
+  const ALLOC_ROLE = 'settle';
   // How one entry says what part of it was mine, so the split sits on the entry that was shared instead of in a second
   // subsection kept beside it by hand:
   //   { m: 'mine' }             all of it was mine — nothing is owed either way
@@ -313,6 +328,39 @@
   // No split means nothing was recorded, which is what every entry held before this existed. It adds nothing, so a
   // ledger written before splits reads exactly as it always did.
   const SPLIT_MODES = ['mine', 'equal', 'none', 'amount'];
+  // One repayment usually pays off more than one thing at once: 130,000 handed over might clear the rent, part of the
+  // car and the whole of a loan. Money coming the other way is the same question asked backwards — what is it for.
+  // So a "Settled up" entry carries `alloc`: the subsections of its own settlement it covers, each with a positive
+  // amount in minor units. The entry's own sign says which way the money went, so an allocation never carries one.
+  //   [{ to: 'Rent', a: 5000000 }, { to: 'Car', a: 8000000 }]
+  // Nothing has to be allocated: an entry with no `alloc` is exactly what every repayment was before this existed,
+  // and counts the same. A name no longer among the subsections is kept rather than dropped — it costs nothing, and
+  // it comes back the moment that subsection does (a rename carries its allocations with it).
+  const MAX_ALLOC = 40;
+  function normalizeAlloc(value) {
+    const seen = new Map();
+    listOf(value).forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const to = String(item.to ?? '').trim();
+      const amount = Math.abs(Math.round(Number(item.a) || 0));
+      if (!to || !amount || seen.size >= MAX_ALLOC && !seen.has(to)) return;
+      seen.set(to, (seen.get(to) || 0) + amount);
+    });
+    return [...seen].map(([to, a]) => ({ to, a }));
+  }
+  const allocTotal = list => normalizeAlloc(list).reduce((sum, item) => sum + item.a, 0);
+  // An allocation never says more than the entry it sits on: the entries are trimmed in order until they fit, so a
+  // half-finished edit can overstate what a repayment covered but the figures never can.
+  function allocFor(amount, list) {
+    let left = Math.abs(Math.round(Number(amount) || 0));
+    const out = [];
+    normalizeAlloc(list).forEach(item => {
+      const take = Math.min(item.a, left);
+      left -= take;
+      if (take) out.push({ to: item.to, a: take });
+    });
+    return out;
+  }
   function splitShare(amount, split) {
     const value = Number(amount) || 0;
     const mode = split?.m;
@@ -405,8 +453,45 @@
   // counts only its gain as income, because moving your own money into savings neither earns nor spends anything.
   const defaultCalc = kind => (kind === 'savings'
     ? { v: 4, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } }
-    : { v: 4, vars: [], lines: ['GB = CI - CO'], income: { mode: 'count', formula: 'max(GB, 0)' }, expense: { mode: 'count', formula: 'max(-GB, 0)' } });
+    : settlePreset('net'));
+  // ---- what a settlement reports to the month ------------------------------------------------
+  // Everything else about a settlement is worked out from its entries and cannot be argued with. This one thing is a
+  // choice, and only its owner can make it: the same 130,000 paid out and 90,000 had back is honestly a net 40,000
+  // expense, honestly 90,000 of income beside 130,000 of expense, and honestly neither if the only part that was ever
+  // mine was my own share of the bill. So a settlement says which of those it means, and says it in one named word
+  // rather than by hand in equations nobody can read back:
+  //   net     one signed figure — what it came to on balance. How every settlement has always counted.
+  //   gross   both sides at once — everything that went out as an expense, everything that came in as income.
+  //           A settlement very often is both at once, and this is the way to say so.
+  //   mine    only my own share of what the group spent, as an expense. Money coming back is recovery, not income.
+  //   custom  whatever its own equations say, written in the setup dialog like any other section's.
+  // The first three are written into the calc as ordinary lines, so the dialog shows exactly what the word means and
+  // a word can always be taken apart into equations. A calc with no word at all is a settlement from before this
+  // existed: it reads as `net`, which is what it has been posting all along.
+  const SETTLE_MODES = ['net', 'gross', 'mine', 'custom'];
+  const SETTLE_PRESETS = {
+    net: { lines: ['GB = CI - CO'], income: { mode: 'count', formula: 'max(GB, 0)' }, expense: { mode: 'count', formula: 'max(-GB, 0)' } },
+    gross: { lines: ['GI = CI', 'GE = CO', 'GB = GI - GE'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'count', formula: 'GE' } },
+    mine: { lines: ['GE = MS', 'GB = CI - CO'], income: { mode: 'off', formula: '' }, expense: { mode: 'count', formula: 'GE' } }
+  };
+  const SETTLE_MODE_LABELS = {
+    net: { label: 'Net', hint: 'one signed figure: what it came to on balance' },
+    gross: { label: 'Both sides', hint: 'everything out as expense, everything in as income — at the same time' },
+    mine: { label: 'My share only', hint: 'what the shared spending really cost you; money back is not income' },
+    custom: { label: 'Custom', hint: 'whatever the equations below say' }
+  };
+  const settleMode = calc => (SETTLE_MODES.includes(calc?.mode) ? calc.mode : 'net');
+  // A preset as a whole calc, keeping the ids its parts already have. Always a fresh copy: a calc is handed out to be
+  // edited, and the stored shapes above are read by every settlement there is.
+  const settlePreset = (mode, vars = []) => {
+    const preset = SETTLE_PRESETS[mode] || { lines: [], income: { mode: 'off', formula: '' }, expense: { mode: 'off', formula: '' } };
+    return { v: 4, mode, vars, lines: [...preset.lines], income: { ...preset.income }, expense: { ...preset.expense } };
+  };
+  // The gross calc some settlements were left holding before any of this was a choice. It was never what they posted
+  // (the net figure was), so it is still read as the default — unless a word has since been set on purpose, which is
+  // the whole point of `gross` and must not be undone the moment it is saved.
   const legacyGrossSettlementCalc = calc => {
+    if (SETTLE_MODES.includes(calc?.mode)) return false;
     const lines = listOf(calc?.lines).map(line => String(line).trim().toUpperCase());
     return Number(calc?.v) >= 1 && Number(calc?.v) <= 3 &&
       lines.join('|') === 'GI = CI|GE = CO|GB = GI - GE' &&
@@ -557,7 +642,8 @@
         lines: listOf(calc.lines).map(String),
         income: sideRule(calc.income),
         expense: sideRule(calc.expense),
-        v: calc.v
+        v: calc.v,
+        ...(sectionKind(section) === 'settlement' && { mode: settleMode(calc) })
       });
     }
     if (untouchedLegacy(section)) return { ...defaultCalc(sectionKind(section)), vars: calcVars([], names) };
@@ -624,10 +710,12 @@
     // goes on working and an old ledger keeps every figure it had.
     const valuesBySub = {};
     const splitsBySub = {};
+    const allocsBySub = {};
     names.forEach(name => {
       const list = amountsBySub[name] || [];
       valuesBySub[name] = list.map(item => (item && typeof item === 'object' ? Number(item.amount) || 0 : Number(item) || 0));
       splitsBySub[name] = list.map(item => (item && typeof item === 'object' ? item.split || null : null));
+      allocsBySub[name] = list.map((item, at) => (item && typeof item === 'object' && item.alloc ? allocFor(valuesBySub[name][at], item.alloc) : []));
     });
     const all = names.flatMap(name => valuesBySub[name]);
     const income = all.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
@@ -643,17 +731,44 @@
     // money between the two sides rather than being a cost to divide, and the old "My share" subsection is a memo
     // that already states its own figure.
     let splitMine = 0;
+    // Money passing between the two sides, kept apart from what was laid out for the group, and how much of it has
+    // been said what it was for. A settlement reads very differently once those two are told apart: 130,000 handed
+    // over against named things is a story, 130,000 handed over against nothing is a figure.
+    let settleIn = 0;
+    let settleOut = 0;
+    let allocated = 0;
+    // What each subsection has against it, once allocations are read: what was laid out under it, how much of that
+    // was mine, and how much of it has since been covered from either side. `owed` is what is still open on that one
+    // thing — the same sum the whole settlement does, asked of one subsection at a time, which is what makes paying
+    // 130,000 across three of them something the ledger can show rather than something you remember.
+    const purposes = new Map();
+    const purposeOf = name => purposes.get(name) || purposes.set(name, { name, role: subsectionRole(section, name), laid: 0, mine: 0, covered: 0, owed: 0 }).get(name);
+    names.forEach(name => purposeOf(name));
     names.forEach(name => {
       const role = subsectionRole(section, name);
       const tally = byRole[role] || (byRole[role] = { in: 0, out: 0, net: 0 });
+      const here = purposeOf(name);
       valuesBySub[name].forEach((amount, at) => {
         tally.net += amount;
         if (amount > 0) tally.in += amount; else tally.out -= amount;
-        if (role === SPLIT_ROLE) splitMine += splitShare(amount, splitsBySub[name][at]);
+        if (role === SPLIT_ROLE) {
+          splitMine += splitShare(amount, splitsBySub[name][at]);
+          here.laid += amount;
+          here.mine += splitShare(amount, splitsBySub[name][at]);
+        }
+        if (role === ALLOC_ROLE) {
+          if (amount > 0) settleIn += amount; else settleOut -= amount;
+          // The entry's own sign says which way this money went, so an allocation only ever says how much.
+          allocsBySub[name][at].forEach(part => {
+            allocated += part.a;
+            purposeOf(part.to).covered += amount > 0 ? part.a : -part.a;
+          });
+        }
         if (MEMO_ROLES.has(role)) return;
         if (amount > 0) cashIn += amount; else cashOut -= amount;
       });
     });
+    purposes.forEach(item => { item.owed = -item.laid + item.mine - item.covered; });
     const cost = byRole.cost?.net || 0;
     // My own part: whatever the "My share" subsection states, plus what the entries themselves said was mine.
     const share = (byRole.share?.net || 0) + splitMine;
@@ -663,12 +778,16 @@
     // What is still open between me and the other side. Everything I laid out is owed back to me, less the part that was
     // mine to begin with, less whatever has already changed hands. Zero means the settlement is clear.
     const owed = -cost + share - settled;
-    const settle = { kind, cashIn, cashOut, owed, share: -share, saved, returns, byRole, cleared: owed === 0 };
+    const unallocated = Math.max(0, settleIn + settleOut - allocated);
+    const settle = { kind, cashIn, cashOut, owed, share: -share, saved, returns, byRole, cleared: owed === 0,
+      settleIn, settleOut, allocated, unallocated, purposes: [...purposes.values()] };
     const base = {
       TI: major(income), TE: major(expenses),
       CI: major(cashIn), CO: major(cashOut),
       OWED: major(owed), MS: major(-share),
-      SV: major(saved), RT: major(returns)
+      SV: major(saved), RT: major(returns),
+      SI: major(settleIn), SO: major(settleOut),
+      AL: major(allocated), UA: major(unallocated)
     };
     const subs = vars.filter(item => names.includes(item.name)).map(item => {
       const sum = (valuesBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
@@ -687,7 +806,7 @@
       return { name, role, memo: false, in: into, out: outOf };
     });
     const evaluated = evaluateCalc({ calc, vars, base, label, kind, postings });
-    const totals = kind === 'settlement' ? signedSettlementTotals(cashIn - cashOut, label, kind) : evaluated;
+    const totals = kind === 'settlement' && settleMode(calc) === 'net' ? signedSettlementTotals(cashIn - cashOut, label, kind) : evaluated;
     const { lines } = evaluated;
     const { stats, sides, adds } = totals;
     return { calc: { ...calc, vars }, subs, base, lines, stats, sides, adds, settle, kind };
@@ -788,7 +907,8 @@
       lines: listOf(calc.lines).map(String),
       income: sideRule(calc.income),
       expense: sideRule(calc.expense),
-      v: calc.v
+      v: calc.v,
+      ...(kind === 'settlement' && { mode: settleMode(calc) })
     });
   }
   // Works a block out. `parts` is one entry per section in it, in order:
@@ -809,15 +929,22 @@
     const share = add(part => part.settle?.share);
     const saved = add(part => part.settle?.saved);
     const returns = add(part => part.settle?.returns);
+    const settleIn = add(part => part.settle?.settleIn);
+    const settleOut = add(part => part.settle?.settleOut);
+    const allocated = add(part => part.settle?.allocated);
     const balances = parts.map(balanceOf);
     const income = balances.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
     const expenses = -balances.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
-    const settle = { kind, cashIn, cashOut, owed, share, saved, returns, byRole: {}, cleared: owed === 0 };
+    const unallocated = Math.max(0, settleIn + settleOut - allocated);
+    const settle = { kind, cashIn, cashOut, owed, share, saved, returns, byRole: {}, cleared: owed === 0,
+      settleIn, settleOut, allocated, unallocated, purposes: [] };
     const base = {
       TI: major(income), TE: major(expenses),
       CI: major(cashIn), CO: major(cashOut),
       OWED: major(owed), MS: major(share),
-      SV: major(saved), RT: major(returns)
+      SV: major(saved), RT: major(returns),
+      SI: major(settleIn), SO: major(settleOut),
+      AL: major(allocated), UA: major(unallocated)
     };
     const byName = new Map(parts.map(part => [part.name, part]));
     const subs = vars.filter(item => byName.has(item.name)).map(item => {
@@ -834,7 +961,7 @@
     }));
     const label = block?.name || 'Block';
     const evaluated = evaluateCalc({ calc, vars, base, label, kind, postings });
-    const totals = kind === 'settlement'
+    const totals = kind === 'settlement' && settleMode(calc) === 'net'
       ? signedSettlementTotals(balances.reduce((sum, amount) => sum + amount, 0), label, kind)
       : evaluated;
     const { lines } = evaluated;
@@ -869,7 +996,7 @@
       (group.entries || []).forEach(entry => {
         const key = entry.section || homeOf.get(nameKey(group.category)) || '';
         const bySub = balances.get(key) || balances.set(key, {}).get(key);
-        (bySub[group.category] ||= []).push({ amount: noteTotal(entry.amount, entry.notes || []), split: entry.split || null });
+        (bySub[group.category] ||= []).push({ amount: noteTotal(entry.amount, entry.notes || []), split: entry.split || null, alloc: entry.alloc || null });
       });
     }));
     balances.forEach((amountsBySub, key) => {
@@ -1372,8 +1499,15 @@
           // are the months added up, so the year card answers "is this cleared?" without opening a single month.
           if (section._meta.settle) {
             into._meta.kind = section._meta.kind;
-            const totals = into._meta.settle ||= { kind: section._meta.kind, cashIn: 0, cashOut: 0, owed: 0, share: 0, saved: 0, returns: 0, byRole: {}, cleared: true };
-            ['cashIn', 'cashOut', 'owed', 'share', 'saved', 'returns'].forEach(field => { totals[field] += section._meta.settle[field] || 0; });
+            const totals = into._meta.settle ||= { kind: section._meta.kind, cashIn: 0, cashOut: 0, owed: 0, share: 0, saved: 0, returns: 0, settleIn: 0, settleOut: 0, allocated: 0, unallocated: 0, byRole: {}, purposes: [], cleared: true };
+            ['cashIn', 'cashOut', 'owed', 'share', 'saved', 'returns', 'settleIn', 'settleOut', 'allocated', 'unallocated'].forEach(field => { totals[field] += section._meta.settle[field] || 0; });
+            // Each thing the settlement is about, over the whole year: a purpose opened in March and paid off in
+            // August is one row here, which is the only place it can be seen as one.
+            (section._meta.settle.purposes || []).forEach(part => {
+              const seen = totals.purposes.find(item => nameKey(item.name) === nameKey(part.name));
+              const into_ = seen || (totals.purposes.push({ name: part.name, role: part.role, laid: 0, mine: 0, covered: 0, owed: 0 }), totals.purposes[totals.purposes.length - 1]);
+              ['laid', 'mine', 'covered', 'owed'].forEach(field => { into_[field] += part[field] || 0; });
+            });
             Object.entries(section._meta.settle.byRole || {}).forEach(([role, tally]) => {
               const into_ = totals.byRole[role] ||= { in: 0, out: 0, net: 0 };
               ['in', 'out', 'net'].forEach(field => { into_[field] += tally[field] || 0; });
@@ -1642,7 +1776,7 @@
           if (section.type === 'net') {
             // What each subsection counts as and what the section adds to the month, by its rules (as stored totals count it).
             const built = sections[section.name];
-            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null }))]));
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([name, category]) => [name, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null, alloc: entry.alloc || null }))]));
             const summary = netSectionSummary(section, amountsBySub);
             built._meta.adds = summary.adds;
             built._meta.stats = summary.stats;
@@ -1668,7 +1802,7 @@
           if (type === 'net') {
             const built = sections[name];
             built._meta.block = true;
-            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([sub, category]) => [sub, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null }))]));
+            const amountsBySub = Object.fromEntries(Object.entries(built.categories).map(([sub, category]) => [sub, category.entries.map(entry => ({ amount: entry._meta.total, split: entry.split || null, alloc: entry.alloc || null }))]));
             const summary = netSectionSummary({ name, subsections: Object.keys(built.categories) }, amountsBySub);
             Object.assign(built._meta, { adds: summary.adds, stats: summary.stats, kind: summary.kind, settle: summary.settle, roles: {}, closed: false, closedOn: '', mergedFrom: [] });
           }
@@ -1692,6 +1826,7 @@
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
         id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [], flow: item.flow || null, about: item.about || '',
+        split: item.split || null, alloc: item.alloc ? normalizeAlloc(item.alloc) : null,
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
         subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))
@@ -1699,6 +1834,7 @@
     }
   }
 
-  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel });
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel,
+    ALLOC_ROLE, normalizeAlloc, allocFor, allocTotal, SETTLE_MODES, SETTLE_MODE_LABELS, SETTLE_PRESETS, settleMode, settlePreset });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

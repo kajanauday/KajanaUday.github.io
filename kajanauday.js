@@ -865,6 +865,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         item.category = finalName;
         if (target) item.section = target.name;
       });
+      // Every repayment that said it covered this subsection goes on saying so under its new name. Allocations name
+      // subsections of their own settlement, so only rows in the same section are rewritten — the same reach the
+      // rename itself has.
+      transactions.forEach(item => {
+        if (!inPanel(item) || !Array.isArray(item.alloc)) return;
+        if (!item.alloc.some(part => part.to === category)) return;
+        item.alloc = ExpenseStore.normalizeAlloc(item.alloc.map(part => (part.to === category ? { ...part, to: finalName } : part)));
+      });
       sections.forEach(section => {
         const index = section.subsections.indexOf(category);
         if (index < 0) return;
@@ -1925,7 +1933,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const amounts = Object.fromEntries((section.subsections || []).map(sub => [sub, []]));
           transactions.filter(item => !item.parentId && scope.match(item) && item.type === 'net'
             && (item.section === section.name || (!item.section && section.subsections.includes(item.category))))
-            .forEach(item => (amounts[item.category] ||= []).push({ amount: store.entryTotal(item.id), split: item.split || null }));
+            .forEach(item => (amounts[item.category] ||= []).push({ amount: store.entryTotal(item.id), split: item.split || null, alloc: item.alloc || null }));
           return { name: section.name, ...ExpenseStore.runCalc(section, amounts) };
         });
     }
@@ -1936,8 +1944,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const section = scope.sections().find(item => item.name === name);
       setupState.section = section || null;
       const amounts = Object.fromEntries((section?.subsections || []).map(sub => [sub, []]));
+      // The same shape the panel builds, splits and allocations included: the preview has to be the figures on the
+      // page, or the dialog teaches a formula against numbers the ledger does not have.
       transactions.filter(item => !item.parentId && scope.match(item) && item.type === 'net' && (item.section === name || (!item.section && section?.subsections.includes(item.category))))
-        .forEach(item => (amounts[item.category] ||= []).push(store.entryTotal(item.id)));
+        .forEach(item => (amounts[item.category] ||= []).push({ amount: store.entryTotal(item.id), split: item.split || null, alloc: item.alloc || null }));
       return amounts;
     }
     const SIDES = [['income', 'Income'], ['expense', 'Expenses']];
@@ -1964,11 +1974,50 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       hl.scrollLeft = input.scrollLeft;
     }
+    // Which kind the dialog is working on: a block's own kind, or the section's.
+    const setupKind = () => setupState.block || ExpenseStore.sectionKind(setupState.section);
+    // A settlement says in one word what it reports to the month (see ExpenseStore.SETTLE_MODES), because that is the
+    // one thing about it nobody can work out from the entries. Picking a word writes its equations below, so the
+    // dialog always shows what the word actually means and the two can never drift apart; editing those equations by
+    // hand moves it to Custom, which is the honest name for equations nobody chose from a list.
+    function renderSettleModes() {
+      const row = document.querySelector('#calc-modes');
+      if (!row) return;
+      const isSettlement = setupKind() === 'settlement';
+      row.hidden = !isSettlement;
+      if (!isSettlement) return (row.innerHTML = '');
+      const now = ExpenseStore.settleMode(setupState.draft);
+      row.innerHTML = ExpenseStore.SETTLE_MODES.map(mode => {
+        const { label, hint } = ExpenseStore.SETTLE_MODE_LABELS[mode];
+        return `<button type="button" class="calc-mode" data-settle-mode="${mode}" aria-pressed="${mode === now}" title="${escapeHtml(hint)}"><b>${escapeHtml(label)}</b><span>${escapeHtml(hint)}</span></button>`;
+      }).join('');
+    }
+    // Everything a word stands for, written out. Keeping the part ids means a settlement that names one of its own
+    // subsections in a custom equation can be moved to a word and back without losing which subsection it meant.
+    function setSettleMode(mode) {
+      const { draft } = setupState;
+      if (mode === 'custom') {
+        draft.mode = 'custom';
+      } else {
+        Object.assign(draft, ExpenseStore.settlePreset(mode, draft.vars));
+      }
+      setupState.target = null;
+      renderSectionSetup();
+    }
+    // A hand-edit is nobody's preset any more. It is said once, when the first edit happens, rather than on every
+    // keystroke, so the picker does not flicker while a formula is being typed.
+    function markCustom() {
+      const { draft } = setupState;
+      if (setupKind() !== 'settlement' || ExpenseStore.settleMode(draft) === 'custom') return;
+      draft.mode = 'custom';
+      renderSettleModes();
+    }
     function renderSectionSetup() {
       const { month, property, name, draft } = setupState;
       document.querySelector('#section-setup-title').textContent = name;
       const what = setupState.block ? 'Block setup' : 'Section setup';
       document.querySelector('#section-setup-where').textContent = `${what} · ${regions[property].code} · ${panelScope(month, property).label}`;
+      renderSettleModes();
       // The part ids stand for whatever this is counting over: a section's subsections, or a block's sections.
       document.querySelector('[data-calc-parts]').textContent = setupState.block ? 'E1, E2… the sections in it' : 'E1, E2… subsections';
       document.querySelector('#calc-lines').innerHTML = draft.lines.map((line, index) => `<div class="calc-row" data-line="${index}">
@@ -2003,9 +2052,16 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Subsections; the entries' own totals; then GI / GE / GB, shown in the heading only once a line sets them.
       const minorOf = key => Math.round((summary.base[key] || 0) * 100);
       const totalChip = (id, title) => chip(id, '', minorOf(id), 'is-total', title);
-      const roleChips = (setupState.block || ExpenseStore.sectionKind(setupState.section)) === 'savings'
+      // A settlement is offered the figures a settlement is actually about: what is outstanding, what was really
+      // yours, the money that passed between the two sides, and how much of that has been said what it was for.
+      const roleChips = setupKind() === 'savings'
         ? totalChip('SV', 'Put into the pot less what was taken out') + totalChip('RT', 'Interest, dividend or gain the pot earned')
-        : totalChip('OWED', 'Still outstanding: above zero is owed to you, below zero is what you owe') + totalChip('MS', 'Your own share of what the group spent');
+        : totalChip('OWED', 'Still outstanding: above zero is owed to you, below zero is what you owe')
+          + totalChip('MS', 'Your own share of what the group spent')
+          + totalChip('SI', 'Money that came to you from the other side')
+          + totalChip('SO', 'Money you handed over to the other side')
+          + totalChip('AL', 'Of that, how much has been said what it was for')
+          + totalChip('UA', 'Of that, how much has not been said what it was for');
       document.querySelector('#calc-chips').innerHTML = summary.subs.map(sub => chip(sub.id, sub.name, sub.sum, `v${colorOf(sub.id)}`)).join('')
         + totalChip('CI', 'Cash in: every entry that brought money in, leaving notes out')
         + totalChip('CO', 'Cash out: every entry that took money out, leaving notes out')
@@ -2070,6 +2126,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const form = document.querySelector('#section-setup-form');
       const addLine = (at, text = '') => {
         setupState.draft.lines.splice(at, 0, text);
+        markCustom();
         renderSectionSetup();
         const input = form.querySelector(`[data-calc-line="${at}"]`);
         input?.focus();
@@ -2079,6 +2136,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const mode = event.target.closest('[data-side-mode]');
         if (!mode) return;
         setupState.draft[mode.dataset.sideMode].mode = mode.value;
+        markCustom();
         updateSetupPreview();
       });
       form.addEventListener('focusin', event => {
@@ -2089,6 +2147,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (input.dataset.calcLine !== undefined) setupState.draft.lines[Number(input.dataset.calcLine)] = input.value;
         else if (input.dataset.calcOut) setupState.draft[input.dataset.calcOut].formula = input.value;
         else return;
+        markCustom();
         document.querySelector('#section-setup-error').hidden = true;
         updateSetupPreview();
       });
@@ -2096,6 +2155,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (event.target.closest?.('.calc-field input')) paintField(event.target);
       }, true);
       form.addEventListener('click', event => {
+        const pick = event.target.closest('[data-settle-mode]');
+        if (pick) return setSettleMode(pick.dataset.settleMode);
         const chip = event.target.closest('[data-insert]');
         if (chip) {
           // Puts the id at the cursor of the field last worked on (else the Expenses result), with a + after a value.
@@ -2113,6 +2174,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (remove) {
           setupState.draft.lines.splice(Number(remove.dataset.calcRemove), 1);
           setupState.target = null;
+          markCustom();
           renderSectionSetup();
         }
       });
@@ -2136,7 +2198,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           return (lineIndex >= 0 ? form.querySelector(`[data-calc-line="${lineIndex}"]`) : form.querySelector(`[data-calc-out="${side[0]}"]`)).focus();
         }
         const result = type => ({ mode: draft[type].mode, formula: draft[type].formula.trim() });
-        const calc = { v: 3, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense') };
+        const calc = { v: 3, vars: draft.vars, lines: draft.lines.map(line => line.trim()).filter(Boolean), income: result('income'), expense: result('expense'),
+          ...(setupKind() === 'settlement' && { mode: ExpenseStore.settleMode(draft) }) };
         if (setupState.block) {
           const [year, monthIndex] = yearMonthOf(month);
           trackSave(store.saveBlockCalc(year, monthIndex, property, setupState.block, calc));
@@ -2155,6 +2218,163 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         showToast(`Saved how “${name}” counts.`);
       });
     }
+    // ---- What a repayment covers -------------------------------------------------------------
+    // One payment hardly ever pays off one thing. Hand 130,000 back and it clears the rent, part of the car and the
+    // whole of a loan; money arriving is the same question the other way round — what is it for. Without somewhere
+    // to say so, a settlement can only tell you a single net figure and you are left remembering the rest.
+    //
+    // So a "Settled up" entry can be spread over the subsections of its own settlement. The entry's sign still says
+    // which way the money went; this only says how much of it belonged to each thing. Nothing has to be allocated,
+    // and what is allocated never changes the settlement's own totals — it divides what is outstanding between the
+    // things the settlement is about, so each of them can say where it stands on its own.
+    const allocState = { id: null, draft: new Map(), rows: [], amount: 0, property: null };
+    // The settlement an entry sits in, worked out as the panel works it out, so the figures in the picker are the
+    // figures on the page rather than a second opinion about them.
+    function settlementFor(item) {
+      if (!item || item.type !== 'net') return null;
+      const mKey = item.eventId ? `ev:${item.eventId}` : item.date.slice(0, 7);
+      const scope = panelScope(mKey, item.property);
+      const section = scope.sections().find(entry => entry.type === 'net'
+        && (item.section ? entry.name === item.section : entry.subsections.includes(item.category)));
+      if (!section || ExpenseStore.sectionKind(section) !== 'settlement') return null;
+      const amounts = Object.fromEntries((section.subsections || []).map(sub => [sub, []]));
+      transactions.filter(row => !row.parentId && scope.match(row) && row.type === 'net'
+        && (row.section === section.name || (!row.section && section.subsections.includes(row.category))))
+        .forEach(row => (amounts[row.category] ||= []).push({ amount: store.entryTotal(row.id), split: row.split || null, alloc: row.alloc || null }));
+      return { mKey, property: item.property, scope, section, summary: ExpenseStore.runCalc(section, amounts) };
+    }
+    // Whether this row is one that can say what it covers: a real entry, in a settlement, under a "Settled up"
+    // subsection. A cost already says what it was for by sitting under that heading, so it is never asked.
+    function allocatable(item) {
+      const home = settlementFor(item);
+      if (!home || item.parentId) return null;
+      return ExpenseStore.subsectionRole(home.section, item.category) === ExpenseStore.ALLOC_ROLE ? home : null;
+    }
+    function openAllocDialog(id) {
+      if (isViewer) return viewOnly();
+      const item = transactions.find(row => row.id === id);
+      const home = item && allocatable(item);
+      if (!home) return showToast('Only a “Settled up” entry in a settlement can say what it covers.');
+      const amount = store.entryTotal(item.id);
+      if (!amount) return showToast('Give the entry an amount first.');
+      const { section, summary, property } = home;
+      const owedBy = new Map((summary.settle.purposes || []).map(part => [part.name, part]));
+      // Everything in the settlement this money could be for: its own subsection is left out (money cannot pay
+      // itself off), and so is a memo subsection, which states a share rather than holding any money.
+      const memo = new Set(ExpenseStore.SECTION_ROLES.memo);
+      const rows = (section.subsections || [])
+        .filter(name => name !== item.category && !memo.has(ExpenseStore.subsectionRole(section, name)))
+        .map(name => ({ name, owed: Number(owedBy.get(name)?.owed) || 0, laid: Number(owedBy.get(name)?.laid) || 0 }));
+      // An allocation to a subsection that has since gone is still shown, so it can be seen and taken off rather
+      // than quietly counting for nothing.
+      ExpenseStore.normalizeAlloc(item.alloc).forEach(part => {
+        if (!rows.some(row => row.name === part.to)) rows.push({ name: part.to, owed: 0, laid: 0, gone: true });
+      });
+      Object.assign(allocState, { id, property, amount, rows,
+        draft: new Map(ExpenseStore.allocFor(amount, item.alloc).map(part => [part.to, part.a])) });
+      document.querySelector('#alloc-dialog-title').textContent = item.description || 'This entry';
+      document.querySelector('#alloc-where').textContent = `${section.name} · ${regions[property].code} · ${home.scope.label}`;
+      document.querySelector('#alloc-blurb').textContent = amount > 0
+        ? `${formatMoney(Math.abs(amount), property)} came in. What was it for?`
+        : `${formatMoney(Math.abs(amount), property)} went out. What did it pay off?`;
+      document.querySelector('#alloc-error').hidden = true;
+      renderAlloc();
+      document.querySelector('#alloc-dialog').showModal();
+      document.querySelector('#alloc-list input')?.focus();
+    }
+    const allocUsed = () => [...allocState.draft.values()].reduce((sum, value) => sum + value, 0);
+    function renderAlloc() {
+      const { rows, property, amount, draft } = allocState;
+      const money = minor => `${minor < 0 ? '−' : ''}${formatMoney(Math.abs(minor), property)}`;
+      document.querySelector('#alloc-list').innerHTML = rows.length ? rows.map(row => {
+        // What is still open on that one thing, said the way round the reader is standing: above zero they owe you.
+        const note = row.gone ? 'no longer a subsection here'
+          : row.owed > 0 ? `${money(row.owed)} still owed to you`
+            : row.owed < 0 ? `${money(-row.owed)} you still owe`
+              : row.laid ? 'nothing outstanding' : 'nothing recorded against it yet';
+        const value = draft.get(row.name);
+        return `<label class="alloc-row${row.gone ? ' is-gone' : ''}"><span class="alloc-name">${escapeHtml(row.name)}<small>${escapeHtml(note)}</small></span><input name="alloc" data-alloc-to="${escapeHtml(row.name)}" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${value ? escapeHtml(String(value / 100)) : ''}" placeholder="0" aria-label="How much of this covers ${escapeHtml(row.name)}"></label>`;
+      }).join('') : '<p class="config-muted">This settlement has nothing else in it yet. Add what the money was for as a subsection first.</p>';
+      const left = Math.abs(amount) - allocUsed();
+      const out = document.querySelector('#alloc-left');
+      out.textContent = left > 0 ? `${money(left)} of ${money(Math.abs(amount))} not yet said what for.`
+        : left < 0 ? `${money(-left)} more than the entry itself.`
+          : `All ${money(Math.abs(amount))} accounted for.`;
+      out.classList.toggle('is-over', left < 0);
+    }
+    function setupAllocDialog() {
+      const dialog = document.querySelector('#alloc-dialog');
+      const form = document.querySelector('#alloc-form');
+      form.addEventListener('input', event => {
+        const input = event.target.closest('[data-alloc-to]');
+        if (!input) return;
+        const read = ExpenseStore.readAmount(input.value);
+        const minor = read.empty || read.error ? 0 : Math.abs(Math.round(read.value * 100));
+        if (minor) allocState.draft.set(input.dataset.allocTo, minor); else allocState.draft.delete(input.dataset.allocTo);
+        input.toggleAttribute('aria-invalid', Boolean(read.error));
+        document.querySelector('#alloc-error').hidden = true;
+        // Only the running total is redrawn while typing: rewriting the rows would take the caret with them.
+        const left = Math.abs(allocState.amount) - allocUsed();
+        const money = value => `${value < 0 ? '−' : ''}${formatMoney(Math.abs(value), allocState.property)}`;
+        const out = document.querySelector('#alloc-left');
+        out.textContent = left > 0 ? `${money(left)} of ${money(Math.abs(allocState.amount))} not yet said what for.`
+          : left < 0 ? `${money(-left)} more than the entry itself.`
+            : `All ${money(Math.abs(allocState.amount))} accounted for.`;
+        out.classList.toggle('is-over', left < 0);
+      });
+      document.querySelector('#alloc-clear').addEventListener('click', () => {
+        allocState.draft.clear();
+        renderAlloc();
+      });
+      // What is left over goes against whatever is still outstanding, most outstanding first and never past it —
+      // which is what anyone would do by hand, and is the whole gesture for the common case of paying one thing off.
+      document.querySelector('#alloc-rest').addEventListener('click', () => {
+        let left = Math.abs(allocState.amount) - allocUsed();
+        if (left <= 0) return showToast('Nothing left to spread.');
+        // Money coming in pays off what they owe me; money going out pays off what I owe. Each way round only ever
+        // goes against the things that are actually open in that direction, so a repayment is never put against a
+        // thing it could not possibly have paid for.
+        const coming = allocState.amount > 0;
+        [...allocState.rows]
+          .map(row => ({ row, open: coming ? row.owed : -row.owed }))
+          .filter(item => item.open > 0)
+          .sort((a, b) => b.open - a.open)
+          .forEach(({ row, open }) => {
+            const already = allocState.draft.get(row.name) || 0;
+            const take = Math.min(left, Math.max(0, open - already));
+            if (!take) return;
+            left -= take;
+            allocState.draft.set(row.name, already + take);
+          });
+        renderAlloc();
+        if (left > 0) showToast('Nothing more is outstanding; the rest is left unsaid.');
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const error = document.querySelector('#alloc-error');
+        const over = allocUsed() - Math.abs(allocState.amount);
+        if (over > 0) {
+          error.textContent = `That is ${formatMoney(over, allocState.property)} more than the entry itself. Take some off first.`;
+          error.hidden = false;
+          return;
+        }
+        const item = transactions.find(row => row.id === allocState.id);
+        if (!item) {
+          dialog.close();
+          return showToast('Could not find that entry. Refresh and try again.');
+        }
+        // Kept in the order the settlement lists them, so two entries covering the same things read the same way.
+        const list = allocState.rows.map(row => ({ to: row.name, a: allocState.draft.get(row.name) || 0 })).filter(part => part.a);
+        if (list.length) item.alloc = list; else delete item.alloc;
+        saveTransactions();
+        dialog.close();
+        renderLedger();
+        showToast(list.length
+          ? `“${item.description}” covers ${list.length === 1 ? list[0].to : `${list.length} things`}.`
+          : `“${item.description}”: nothing said about what it covers.`);
+      });
+    }
+
     // ---- Merging closed sections ----
     // Only closed ones are offered: while something is still outstanding it belongs on its own, where it can be
     // followed. Once two or more are settled and were really the same running thing — the same trip, the same person,
@@ -2845,8 +3065,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const amount = amountAcross(row.amount, from, type);
       if (flipsAcross(row.amount, from, type)) crossed += 1;
       row.type = type;
-      // Only a settlement divides an amount, so a row leaving one stops saying what part of it was mine.
-      if (type !== 'net') delete row.split;
+      // Only a settlement divides an amount or says what a repayment covered, so a row leaving one stops saying
+      // either: both name subsections of the settlement it has just left.
+      if (type !== 'net') { delete row.split; delete row.alloc; }
       if (amount !== row.amount) { row.amount = amount; delete row.formula; }
       return row;
     };
@@ -2854,8 +3075,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = panelScope(mKey, property);
       const copy = carryRow({ ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields }, type);
       if (!scope.isEvent) delete copy.eventId;
-      // A flow follows one movement of money, so a copy is not part of it.
+      // A flow follows one movement of money, so a copy is not part of it. What a repayment covered names the
+      // subsections of the settlement it was written in, and a copy landing anywhere else would be naming things
+      // that are not there — so it arrives saying nothing about what it covers, to be said again where it lands.
       delete copy.flow;
+      if (section !== item.section || type !== 'net') delete copy.alloc;
       if (Array.isArray(item.tags)) copy.tags = [...item.tags];
       const notes = transactions.filter(note => note.parentId === item.id).map(note => carryRow({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }, type));
       notes.forEach(note => {
@@ -2889,6 +3113,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           section: into.name, category, amount, ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
         delete note.flow;
         delete note.split;
+        delete note.alloc;
         if (!scope.isEvent) delete note.eventId;
         notes.push(note);
       };
@@ -3347,7 +3572,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // than one of its sections'. Each section is still set up from its own row; this is the figure the block itself
         // posts to the month, written in the same language.
         const inBlock = panelScope(mKey, property).sections().filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === target.group);
-        const setupItems = isEvent || target.group !== 'savings' ? [] : [
+        const setupItems = isEvent ? [] : [
           { icon: 'adjustments-horizontal', label: 'Set up how it counts…',
             hint: inBlock.length ? `this block, over its ${inBlock.length} ${inBlock.length === 1 ? one : `${one}s`}` : 'this block',
             run: () => openBlockSetup(mKey, property, target.group) }
@@ -3370,7 +3595,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
         return write([
           { icon: 'plus', label: 'Add subsection', run: add },
-          ...(custom && target.kindOf === 'savings' ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: 'this section and its subsections', run: () => openSectionSetup(mKey, property, target.section) }] : []),
+          ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…',
+            hint: target.kindOf === 'savings' ? 'this section and its subsections' : 'what it posts to Income and Expenses',
+            run: () => openSectionSetup(mKey, property, target.section) }] : []),
           ...(custom && !isEvent ? [target.closed
             ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
             : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
@@ -3398,7 +3625,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const home = target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name;
         // How a subsection counts is written in its section's calculation, so this opens that one dialog with this
         // subsection picked out in it, rather than inventing a second place to say the same thing.
-        const setupItems = target.kindOf === 'savings' && home && !isEvent
+        const setupItems = target.kindOf && home && !isEvent
           ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `in “${home}”`, run: () => openSectionSetup(mKey, property, home, target.category) }]
           : [];
         return write([
@@ -3446,9 +3673,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             ...(now ? [{ chip: true, icon: 'eraser', caption: 'Clear', label: 'Nothing recorded as mine', hint: 'leaves the whole amount outstanding', run: () => setEntrySplit(target.id, null) }] : [])
           ];
         })();
+        // A repayment, or money arriving, can say what it was for — across as many of the settlement's subsections as
+        // it really covered. It sits with the share chips because it answers the same sort of question: not what this
+        // row is, but how it divides.
+        const allocItems = (() => {
+          const row = transactions.find(item => item.id === target.id);
+          if (!row || isEvent || !allocatable(row)) return [];
+          const list = ExpenseStore.normalizeAlloc(row.alloc);
+          const covers = list.length === 1 ? `covers “${list[0].to}”` : list.length ? `covers ${list.length} things` : 'nothing said yet';
+          return [{ icon: 'arrows-split-2', label: list.length ? 'What this covers…' : 'Say what this covers…',
+            hint: covers, run: () => openAllocDialog(target.id) }];
+        })();
         return write([
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
           ...splitItems,
+          ...allocItems,
           { icon: 'corner-down-right', label: 'Add note', run: add },
           ...[aboutAction(target)].filter(Boolean),
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
@@ -4602,6 +4841,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupYearConfig();
     setupMonthSettings();
     setupSectionSetup();
+    setupAllocDialog();
     setupMergeDialog();
     setupAboutPop();
     setupHub();

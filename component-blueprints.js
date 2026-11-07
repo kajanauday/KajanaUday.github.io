@@ -27,7 +27,6 @@
   const monthsOf = categories => new Set(categories.flatMap(category => (category._meta.months || []).map(item => item.month))).size;
   // A custom section's amounts show without a minus sign: red already says it is negative. Editing still shows the sign.
   const amountText = (type, amount, property, ctx) => ctx.fmt(type === 'net' ? Math.abs(Number(amount)) : amount, property);
-  const signed = (minor, property, ctx) => `${Number(minor) < 0 ? '−' : ''}${ctx.fmt(Math.abs(Number(minor)), property)}`;
   // Arrows typed into a settlement's own names ("ఉదయ్ --> సాయిరాం ✓", "[15-SEP ->26-OCT]") are noise on a row that
   // already reads left to right, so a settlement and its subsections are drawn without them. Only the drawing changes:
   // the stored name is still what every key, data attribute, rename field and formula variable uses — calc.vars binds a
@@ -88,17 +87,16 @@
     return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
   };
 
-  // A settlement shows its signed net posting and what remains outstanding, never gross income and expenses together.
-  const SettleTotals = (settle, amount, property, ctx) => {
+  // A settlement's heading carries one figure: what it posts to the month, green when it is income and red when it is
+  // an expense. No sign — the colour has already said which way it goes, and a minus beside a red figure said the same
+  // thing twice. The title and the label still name it, so the meaning does not rest on colour alone.
+  // What is still outstanding used to sit beside it in grey. It is still said, where it can be read against the thing
+  // it is outstanding on: on each subsection's own row (see PurposeMark), and in the settlement's own setup figures.
+  const SettleTotals = (amount, property, ctx) => {
     const net = Number(amount) || 0;
-    const owed = Number(settle.owed) || 0;
-    const mine = owed >= 0;
-    const figures = [
-      [net < 0 ? 'Expense' : 'Income', net, net < 0 ? 'out' : 'in'],
-      [mine ? 'Owed to me' : 'I owe', owed, 'memo']
-    ];
-    return `<span class="settle-totals">${figures.map(([label, value, tone]) =>
-      `<span class="settle-figure is-${tone}" title="${ctx.esc(label)}" aria-label="${ctx.esc(`${label}: ${signed(value, property, ctx)}`)}"><b>${signed(value, property, ctx)}</b></span>`).join('')}</span>`;
+    const label = net < 0 ? 'Expense' : 'Income';
+    const text = ctx.fmt(Math.abs(net), property);
+    return `<span class="settle-totals"><span class="settle-figure is-${net < 0 ? 'out' : 'in'}" title="${ctx.esc(label)}" aria-label="${ctx.esc(`${label}: ${text}`)}"><b>${text}</b></span></span>`;
   };
 
   // An amount typed as a formula shows its total, with the formula on hover. The formula rides in data-formula, not in
@@ -204,6 +202,19 @@
         : split.m === 'none' ? 'None of it was mine — the whole amount is owed' : 'Part of it was mine';
     return `<span class="split-mark ${tone}" data-split-mark title="${ctx.esc(`${says} · right-click the row to change it`)}">${ctx.esc(text)}</span>`;
   };
+  // What a repayment, or money arriving, said it was for. One payment usually covers more than one thing, so the mark
+  // names the one thing when there is one and counts them when there are several; the whole list is in its title, with
+  // anything not yet accounted for. A row that has said nothing carries no mark at all, exactly as before.
+  const AllocMark = (alloc, amount, property, ctx) => {
+    const s = store();
+    const list = s?.allocFor ? s.allocFor(amount, alloc) : [];
+    if (!list.length) return '';
+    const money = minor => ctx.fmt(Math.abs(minor), property);
+    const left = Math.abs(Math.round(Number(amount) || 0)) - list.reduce((sum, part) => sum + part.a, 0);
+    const text = list.length === 1 ? list[0].to : `${list.length} things`;
+    const says = `${Number(amount) < 0 ? 'Pays off' : 'For'}: ${list.map(part => `${part.to} ${money(part.a)}`).join(', ')}${left > 0 ? ` · ${money(left)} not yet said what for` : ''}`;
+    return `<span class="alloc-mark${left > 0 ? ' is-part' : ''}" data-alloc-mark title="${ctx.esc(`${says} · right-click the row to change it`)}"><i class="ti ti-arrows-split-2" aria-hidden="true"></i>${ctx.esc(text)}</span>`;
+  };
   const tagged = (text, ctx) => (global.LedgerSearch ? global.LedgerSearch.markTags(ctx.esc(text)) : ctx.esc(text));
   // `tail` (a status capsule and the description dot) goes inside the description cell, not beside it: the row is a
   // grid whose columns are exactly time / description / comment / amount, and an extra child would shift them all.
@@ -236,7 +247,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -278,7 +289,16 @@
     return `<details class="ledger-year-items" data-key="${ctx.esc(key)}|items"${renamingKey ? ' open' : ''}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>By description</span><small>${items.length}</small></summary><ul>${rows}</ul></details>`;
   };
 
-  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '', kind = null }, state, ctx) => {
+  // Where one thing inside a settlement stands: what is still owed on it either way. Shown only where it means
+  // something — a subsection money was laid out under, that is not square. A subsection nobody has allocated anything
+  // against and that is fully outstanding says so too, because that is exactly what is worth seeing.
+  const PurposeMark = (purpose, kind, property, ctx) => {
+    const owed = Math.round(Number(purpose?.owed) || 0);
+    if (kind !== 'settlement' || !owed || !purpose.laid) return '';
+    const mine = owed > 0;
+    return `<small class="purpose-mark is-${mine ? 'in' : 'out'}" title="${ctx.esc(`${mine ? 'Still owed to you' : 'You still owe'} on ${purpose.name}`)}">${mine ? '' : '−'}${ctx.fmt(Math.abs(owed), property)} open</small>`;
+  };
+  const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '', kind = null, purpose = null }, state, ctx) => {
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
     const order = inYear ? null : state.sortModes?.[key] || null;
@@ -300,7 +320,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -324,7 +344,10 @@
       const eventId = section._meta.event;
       Object.entries(section.categories).forEach(([name, category]) => {
         // Every subsection on the month's list shows, used or not; entries outside the list show too.
-        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, kind: section._meta.kind || null, about: section._meta.subAbout?.[name] || '' });
+        if (category.entries.length || section._meta.subsections.includes(name) || entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name })) categories.push({ name, category, sectionName, eventId, section, kind: section._meta.kind || null, about: section._meta.subAbout?.[name] || '',
+          // What is still open on this one thing, once the repayments that said they covered it are taken off. It is
+          // the whole settlement's question asked of one subsection, and it is the only place it can be answered.
+          purpose: (section._meta.settle?.purposes || []).find(part => part.name === name) || null });
       });
     });
     // The balance a month brings in is shown as its own line: under Income when positive, under Expenses when negative.
@@ -372,7 +395,7 @@
     // In the year card each subsection shows its share of its section.
     const categoryRows = (list, whole) => [...list]
       .sort((a, b) => b.category._meta.total - a.category._meta.total)
-      .map(({ name, category, sectionName, eventId, about, kind }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, kind, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
+      .map(({ name, category, sectionName, eventId, about, kind, purpose }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, kind, purpose, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
       .join('');
     // A year card's Income or Expenses block that holds several sections shows each under its own heading, with its share
     // of the block (a double-click renames it); with one section, its subsections stand straight under the block.
@@ -404,7 +427,7 @@
       ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${meta.kind === 'savings' ? 'savings pot' : 'settlement'}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
       : '';
     const open = Boolean(subForm) || Boolean(renameForm) || Boolean(ownRename) || categoriesHtml.includes('data-ledger-form=');
-    // A savings pot's calculation is set up from its row menu. Settlements always post their signed net cash movement.
+    // A settlement and a pot are both set up from their row menus (see openSectionSetup).
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
@@ -426,9 +449,9 @@
     const emptyNote = heading
       ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
       : 'Nothing recorded';
-    // A settlement shows its net posting and remaining balance; other custom sections keep their own totals.
+    // A settlement shows the one figure it posts; other custom sections keep their own totals.
     const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle
-      ? SettleTotals(meta.settle, meta.stats?.balance ?? (meta.settle.cashIn - meta.settle.cashOut), property, ctx)
+      ? SettleTotals(meta.stats?.balance ?? (meta.settle.cashIn - meta.settle.cashOut), property, ctx)
       : '';
     return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
@@ -460,7 +483,7 @@
       : '';
     const settledKey = ctx.esc([mKey, property, kind, 'settled'].join('|'));
     const settledHtml = !done.length ? '' : `<details class="ledger-settled" data-key="${settledKey}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled</span><small>${done.length}</small></summary><div>${done.map(blockOf).join('')}</div></details>`;
-    // A settlement block and each settlement show only a signed net posting and the remaining balance.
+    // A settlement block and each settlement show one figure: what it posts to the month, in its own colour.
     // Double-clicking the heading renames the block for this month and currency.
     const e = state.editDraft;
     const renaming = live && e?.kind === 'block' && e.month === mKey && e.property === property && e.block === kind;
@@ -468,11 +491,10 @@
       ? `<form class="ledger-form cat-rename-form block-rename-form" data-ledger-form="rename-block" data-month="${mKey}" data-property="${property}" data-block="${kind}" novalidate><input name="name" value="${ctx.esc(heading)}" maxlength="40" aria-label="Name for this block" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames this block for this month · leave it empty to go back to “${ctx.esc(group.title)}”</p></form>`
       : '';
     const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${settledHtml}`;
-    const settlementOwed = sections.reduce((sum, section) => sum + (Number(section._meta.settle?.owed) || 0), 0);
     const settlementNet = sections.reduce((sum, section) =>
       sum + (Number(section._meta.stats?.balance ?? (section._meta.settle?.cashIn - section._meta.settle?.cashOut)) || 0), 0);
     const totalsHtml = kind === 'settlement'
-      ? (sections.length ? SettleTotals({ owed: settlementOwed }, settlementNet, property, ctx) : '')
+      ? (sections.length ? SettleTotals(settlementNet, property, ctx) : '')
       : Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
     const isOpen = Boolean(newForm) || Boolean(renameForm) || body.includes('data-ledger-form=');
     const count = kind === 'settlement' ? '' : `<small class="ledger-group-count">${sections.length}</small>`;
@@ -642,5 +664,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SplitMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
