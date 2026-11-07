@@ -983,6 +983,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(`Renamed "${category}" to "${finalName}"${scope.isEvent ? '' : ' for this month'}.`);
     }
+    // A subsection's stored name, taken from the row rather than from the text it draws. The two are not always the same
+    // — a settlement's name is drawn without the arrows typed into it — and every lookup here (paste, rename, cut, the
+    // search jump) matches against what is stored, so reading the drawn text would silently miss the row it meant.
+    const catName = cat => cat?.dataset.category ?? cat?.querySelector('.ledger-cat-name')?.textContent.trim() ?? '';
     // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
     const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block]';
     function setupLedger() {
@@ -1417,7 +1421,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           return true;
         }
         if (cat && typeSection) {
-          const categoryName = cat.querySelector('.ledger-cat-name').textContent.trim();
+          const categoryName = catName(cat);
           const candidates = sections.filter(item => item.type === type);
           const section = candidates.find(item => item.name === namedSection) || candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
           if (!section) {
@@ -1475,7 +1479,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const cat = element.closest('.ledger-cat');
           const blockType = element.closest('.ledger-type-section')?.dataset.type;
           const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
-          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: cat.querySelector('.ledger-cat-name').textContent.trim(), section: cat.dataset.section };
+          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: catName(cat), section: cat.dataset.section };
         } else if (kind === 'ysec') {
           // The first click folded or unfolded the section; put that back.
           const group = element.closest('.ledger-year-group');
@@ -1485,7 +1489,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const cat = element.closest('.ledger-cat');
           const blockType = element.closest('.ledger-type-section')?.dataset.type;
           const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
-          editDraft = { kind: 'year-item', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, section: cat.dataset.section, category: cat.querySelector('.ledger-cat-name').textContent.trim(), item: element.closest('[data-year-item]').dataset.yearItem };
+          editDraft = { kind: 'year-item', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, section: cat.dataset.section, category: catName(cat), item: element.closest('[data-year-item]').dataset.yearItem };
         } else {
           const section = element.closest('.ledger-type-section');
           if (section) section.open = !section.open;
@@ -2739,7 +2743,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       let target = noteId ? block.querySelector(`[data-note-id="${CSS.escape(noteId)}"] .ledger-entry-line`) : null;
       target ||= entryId ? lineOf(block.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(entryId)}"]`)) : null;
       target ||= [...block.querySelectorAll(`.ledger-panel[data-property="${CSS.escape(property)}"] .ledger-cat`)]
-        .find(cat => cat.querySelector('.ledger-cat-name')?.textContent.trim() === category)?.querySelector(':scope > summary');
+        .find(cat => catName(cat) === category)?.querySelector(':scope > summary');
       target ||= block.querySelector('.month-ledger-head');
       for (let details = target.closest('details'); details; details = details.parentElement.closest('details')) details.open = true;
       target.classList.remove('is-search-hit');
@@ -2999,7 +3003,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ? panel.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(item.id)}"]`)?.closest('.ledger-entry-cell')
           : item.kind === 'subsection'
             ? [...panel.querySelectorAll(`.ledger-cat[data-section="${CSS.escape(item.section)}"]`)]
-              .find(cat => cat.querySelector('.ledger-cat-name')?.textContent.trim() === item.category)
+              .find(cat => catName(cat) === item.category)
             : panel.querySelector(`.ledger-type-section[data-section="${CSS.escape(item.section)}"]`);
         row?.classList.add('is-picked');
       });
@@ -3255,7 +3259,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const blockType = ['income', 'net'].includes(typeBlock?.dataset.type) ? typeBlock.dataset.type : 'expense';
       if (catSummary) {
         const cat = catSummary.parentElement;
-        return { kind: 'subsection', mKey, property, type: blockType, section: cat.dataset.section || null, kindOf: typeBlock?.dataset.kind || null, closed: typeBlock?.dataset.closed === 'true', category: cat.querySelector('.ledger-cat-name').textContent.trim(), row: catSummary, label: cat.querySelector('.ledger-cat-name').textContent.trim() };
+        return { kind: 'subsection', mKey, property, type: blockType, section: cat.dataset.section || null, kindOf: typeBlock?.dataset.kind || null, closed: typeBlock?.dataset.closed === 'true', category: catName(cat), row: catSummary, label: cat.querySelector('.ledger-cat-name')?.textContent.trim() || catName(cat) };
       }
       const typeSummary = el.closest('.ledger-type-section > summary');
       if (typeSummary && typeBlock.classList.contains('is-group')) return { kind: 'group', mKey, property, group: typeBlock.dataset.group, row: typeSummary, label: typeSummary.querySelector('strong')?.textContent.trim() || '' };
