@@ -376,33 +376,34 @@
       ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${meta.kind === 'savings' ? 'savings pot' : 'settlement'}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
       : '';
     const open = Boolean(subForm) || Boolean(renameForm) || Boolean(ownRename) || categoriesHtml.includes('data-ledger-form=');
-    // The gear sits on the heading itself, beside the name and what the section is up to, rather than on a line of its
-    // own underneath: it is how a settlement's or a pot's counting is set up.
-    // It is a real <button> inside a <summary>, which an accessibility audit will flag ("an interactive element was
-    // found within a <summary>"). Keep it a button anyway. The warning is about assistive technology that flattens a
-    // summary into one node; it is not invalid markup (a button is phrasing content, which is what summary takes), and
-    // this ledger depends on these buttons being focusable: the sort arrows in a subsection heading restore focus to
-    // themselves after their re-render (see the [data-sort-cat] handler), and this gear opens Section setup with
-    // showModal(), which hands focus back here when the dialog closes. Turning them into spans with data attributes —
-    // the way AboutMark does, because a dot has nothing to activate — would silence the audit and take both away.
-    // The click handler already calls preventDefault(), so pressing it never toggles the section open.
-    // The same action is in this row's menu too (right-click, double-tap, or the Menu key on the focused heading).
-    const setupButton = live ? `<button type="button" class="mini-btn section-setup-btn" data-section-setup="${ctx.esc(heading.section)}" data-month="${mKey}" data-property="${property}" aria-label="Set up how ${title} counts" title="Set up how this section and its subsections count"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>` : '';
+    // How a settlement or a pot counts is set up from the row's menu alone (“Set up how it counts…” on a right-click,
+    // a double-tap, or the Menu key on the focused heading). The gear that used to sit on the heading is gone: it put a
+    // control on a line whose job is to read, and the menu it duplicated is a press away on the same row.
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
     if (heading?.bare) {
       return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
-    // Where this settlement or pot stands, and its own description, beside its name.
+    // Where this settlement or pot stands, and its own description, beside its name. A settlement says where it
+    // stands in its own description, as a status line of its own ("=paid"), so a worked-out capsule beside it would be
+    // a second answer to the same question on the same row — and the one nobody wrote. A pot has no such line, so it
+    // keeps the capsule. data-state stays on the element either way: it is what the section's left edge is coloured
+    // from, and what anything looking for the state reads.
     const lifeState = meta?.kind && store()?.sectionState ? store().sectionState(meta) : null;
-    const stateBadge = lifeState ? StateCapsule(meta, ctx) : '';
-    const aboutBadge = meta?.kind && heading ? AboutTags(meta.about, { kind: 'section', mKey, property, type, section: heading.section }, ctx) : '';
+    const stateBadge = lifeState && lifeState.kind !== 'settlement' ? StateCapsule(meta, ctx) : '';
+    // A settlement shows the status word from its description and nothing else: the dot beside it was a second mark
+    // for the same description, on a heading that already carries a name, a status and four figures. The description
+    // itself is one press away, on the row's menu (“Description…”). A pot keeps both marks.
+    const aboutBadge = !(meta?.kind && heading) ? ''
+      : meta.kind === 'settlement'
+        ? StatusCapsule(meta.about, ctx)
+        : AboutTags(meta.about, { kind: 'section', mKey, property, type, section: heading.section }, ctx);
     const emptyNote = heading
       ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
       : 'Nothing recorded';
     // A settlement states its cash both ways, my share and what is outstanding. A savings pot and every other block
     // keep the figures they had: those four are a settlement's story, not theirs.
     const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle ? SettleTotals(meta.settle, property, ctx) : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${setupButton}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.

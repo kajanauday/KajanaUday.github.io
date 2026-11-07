@@ -978,7 +978,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       showToast(`Renamed "${category}" to "${finalName}"${scope.isEvent ? '' : ' for this month'}.`);
     }
     // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
-    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-setup], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block]';
+    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block]';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
@@ -1049,11 +1049,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.preventDefault();
           const { yearJump: mKey, property, category } = yearJump.dataset;
           return openSearchResult({ year: Number(mKey.slice(0, 4)), mKey, property, category });
-        }
-        const setupButton = event.target.closest('[data-section-setup]');
-        if (setupButton) {
-          event.preventDefault();
-          return openSectionSetup(setupButton.dataset.month, setupButton.dataset.property, setupButton.dataset.sectionSetup);
         }
         // A posted line in Income or Expenses stands for a section below it. Clicking it opens that section and brings
         // it into view, so the trail from the figure to the entries behind it is one step and never a hunt by name.
@@ -2882,6 +2877,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const list = panelScope(mKey, property).sections().filter(item => item.type === type && (!sectionName || item.name === sectionName));
       if (!list.length) return showToast('Nothing to copy here yet.');
       clipboard = { kind: 'sections', mKey, property, type, sections: JSON.parse(JSON.stringify(list)), label: sectionName || (type === 'income' ? 'Income' : 'Expenses') };
+      clearPicks();
       showToast(`Copied “${clipboard.label}” (${list.reduce((sum, item) => sum + item.subsections.length, 0)} subsections). Right-click or double-tap where it should go, then Paste.`);
     }
     function copySubsection(mKey, property, type, section, name) {
@@ -2889,19 +2885,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const role = home?.type === 'net' ? ExpenseStore.subsectionRole(home, name) : null;
       const about = home?.subAbout?.[name] || '';
       clipboard = { kind: 'subsection', mKey, property, type, section, name, role, about, label: name };
+      clearPicks();
       showToast(`Copied the subsection “${name}”. Paste it on a section in any month or event.`);
     }
     function copyEntry(id) {
       const item = transactions.find(row => row.id === id);
       if (!item) return;
       clipboard = { kind: 'entry', id, property: item.property, type: item.type, label: item.description };
+      clearPicks();
       showToast(`Copied the entry “${item.description}”. Paste it on a subsection.`);
     }
-    // ---- Picking several rows at once ----------------------------------------------------------
-    // Sections, subsections or entries can be picked one by one from their row menus and then copied or cut together.
-    // A pick list holds one kind of row, from one month and currency: entries only ever copy within a currency, and a
-    // list mixing a section with the entries inside it has no sensible meaning when it lands somewhere else. Picking a
-    // row of another kind, or in another panel, starts a new list rather than silently dropping what was there.
+    // ---- Cutting rows, one at a time or several together ---------------------------------------
+    // Cut on a section, a subsection or an entry puts that row on the clipboard ready to move; cutting another one in
+    // the same panel adds it to the same move. The list holds one kind of row, from one month and currency: entries
+    // only ever move within a currency, and a list mixing a section with the entries inside it has no sensible meaning
+    // when it lands somewhere else. Cutting a row of another kind, or in another panel, starts the list again rather
+    // than silently dropping what was there.
     const picks = { kind: null, mKey: null, property: null, type: null, items: [] };
     const PICK_NAMES = { section: ['section', 'sections'], subsection: ['subsection', 'subsections'], entry: ['entry', 'entries'] };
     const pickKey = item => (item.kind === 'entry' ? `entry:${item.id}` : `${item.kind}:${item.type}|${item.section || ''}|${item.category || ''}`);
@@ -2920,23 +2919,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return { kind: 'subsection', type: target.type, section: target.section, category: target.category, label: target.category };
     }
     const isPicked = pick => pick && picks.items.some(item => pickKey(item) === pickKey(pick));
-    function clearPicks(quiet = false) {
-      const had = pickCount();
+    function clearPicks() {
       Object.assign(picks, { kind: null, mKey: null, property: null, type: null, items: [] });
-      if (had && !quiet) { markPicks(); showToast('Selection cleared.'); }
-      else markPicks();
+      markPicks();
     }
-    // Adds or removes one row. A row of another kind, or from another panel, starts the list again.
+    // Adds or removes one row of the cut. A row of another kind, or from another panel, starts the list again. The
+    // Cut that called this says how it went, so nothing is said here.
     function togglePick(target) {
       const pick = pickFor(target);
-      if (!pick) return showToast('That row cannot be picked.');
+      if (!pick) return showToast('That row cannot be cut.');
       const fresh = picks.kind !== pick.kind || picks.mKey !== target.mKey || picks.property !== target.property;
       if (fresh) Object.assign(picks, { kind: pick.kind, mKey: target.mKey, property: target.property, type: pick.type, items: [] });
       const at = picks.items.findIndex(item => pickKey(item) === pickKey(pick));
       if (at >= 0) picks.items.splice(at, 1); else picks.items.push(pick);
-      if (!picks.items.length) return clearPicks(true);
+      if (!picks.items.length) return clearPicks();
       markPicks();
-      showToast(fresh && pickCount() === 1 ? `Picked “${pick.label}”. Pick more, then Copy or Cut.` : `${pickLabel()} picked.`);
     }
     // Marks the picked rows in the ledger. Called after every redraw, so a pick survives saving an entry.
     function markPicks() {
@@ -2954,12 +2951,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         row?.classList.add('is-picked');
       });
     }
-    // Copy keeps the originals; cut takes them away, but only once the paste has landed.
-    function takePicks(mode) {
-      if (!pickCount()) return showToast('Pick some rows first.');
-      clipboard = { kind: 'picks', mode, itemKind: picks.kind, mKey: picks.mKey, property: picks.property,
+    // One Cut, one row: the row goes on the clipboard ready to move, and cutting another in the same panel adds it to
+    // the same move rather than starting again. Cutting a row that is already cut takes it back out of the move.
+    // Nothing leaves where it is until the move lands, so a cut that is never pasted costs nothing.
+    function cutRow(target) {
+      if (isViewer) return viewOnly();
+      togglePick(target);
+      if (!pickCount()) { clipboard = null; return showToast('Nothing is cut now.'); }
+      clipboard = { kind: 'picks', mode: 'cut', itemKind: picks.kind, mKey: picks.mKey, property: picks.property,
         type: picks.type, items: picks.items.map(item => ({ ...item })), label: pickLabel() };
-      showToast(`${mode === 'cut' ? 'Cut' : 'Copied'} ${pickLabel()}. Right-click where they should go, then Paste.`);
+      showToast(`${pickLabel()} cut. Open the menu where ${pickCount() === 1 ? 'it' : 'they'} should go and choose Move.`);
+    }
+    // Drops a cut without moving anything: the rows stay exactly where they are.
+    function cancelCut() {
+      clipboard = null;
+      clearPicks();
+      showToast('Cut cancelled. Nothing moved.');
     }
     // Whether the clipboard can go to a target ({ kind: 'panel' | 'section' | 'subsection', mKey, property, type, ... }), and
     // whether it may bring its entries along there.
@@ -3086,7 +3093,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (added || cut) { scope.save(); if (cut) from.save(); }
         if (moved) saveTransactions();
       }
-      if (cut) { clipboard = null; clearPicks(true); }
+      if (cut) { clipboard = null; clearPicks(); }
       renderLedger();
       const what = [added && `${added} ${added === 1 ? 'name' : 'names'}`, moved && `${moved} ${moved === 1 ? 'entry' : 'entries'}`].filter(Boolean).join(' and ');
       showToast(what ? `${cut ? 'Moved' : 'Pasted'} ${what} into ${scopeName(mKey, property)}.${crossedNote()}` : 'Already there: nothing new to paste.');
@@ -3225,25 +3232,31 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             ? { icon: 'arrow-bar-to-up', label: 'Paste entry here as a subsection', hint: 'its notes become the entries in it', paste: fits }
             : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
-      // Pick this row, and — once something is picked — copy, cut or drop the lot. Shown on sections, subsections and
-      // entries; the Copy and Cut lines only appear on a row that is itself in the list, so they always read as acting
-      // on what is highlighted rather than on the row under the pointer.
-      const pickItems = () => {
+      // Cut this row: it is taken away from here and put down wherever it is next pasted. Cutting a second row in the
+      // same panel adds it to the same move, so several go over together, but nothing has to be “picked” first — one
+      // Cut is the whole gesture. Copy keeps its own line further down, so the two are never a pair of half-steps.
+      const cutItems = () => {
         const pick = pickFor(target);
         if (!pick || isEvent) return [];
-        const on = isPicked(pick);
-        const mine = on && picks.mKey === mKey && picks.property === property;
         const one = PICK_NAMES[pick.kind][0];
-        return [
-          { icon: on ? 'square-minus' : 'square-plus', label: on ? `Unpick this ${one}` : `Pick this ${one}`,
-            hint: on ? `${pickLabel()} picked` : 'to copy or cut several at once', run: () => togglePick(target) },
-          ...(mine ? [
-            { icon: 'copy', label: `Copy ${pickLabel()}`, hint: 'the originals stay', run: () => takePicks('copy') },
-            { icon: 'cut', label: `Cut ${pickLabel()}`, hint: 'they move when you paste', run: () => takePicks('cut') },
-            { icon: 'square-x', label: 'Unpick all', read: true, run: () => clearPicks() }
-          ] : [])
+        const here = picks.kind === pick.kind && picks.mKey === mKey && picks.property === property;
+        if (here && isPicked(pick)) return [
+          { icon: 'cut', label: `Leave this ${one} out of the cut`, hint: `${pickLabel()} waiting to move`, run: () => cutRow(target) },
+          { icon: 'square-x', label: `Cancel the cut (${pickLabel()})`, read: true, run: () => cancelCut() }
         ];
+        return [{ icon: 'cut', label: `Cut this ${one}`,
+          hint: here && pickCount() ? `moves with the ${pickLabel()} already cut` : 'it moves to wherever you paste it',
+          run: () => cutRow(target) }];
       };
+      // Every menu below reads in the same order, so a row's menu is learnt once rather than per kind:
+      //   1. what this row is for      Edit, Add…
+      //   2. how it counts             the share chips, Count it as…, Set up how it counts…, Close / Reopen
+      //   3. what is attached to it    Description…, Tags…, a flow
+      //   4. moving it about           Cut, Copy, Move / Paste — always the three together, in that order
+      //   5. renaming it               Rename…
+      //   6. taking it away            Delete, last, and the only red line
+      // Anything about more than this row (open or close all, how the block posts, month settings) comes after all of
+      // it, because it is a different subject: those act on the panel or the month, not on what was clicked.
       if (kind === 'month') {
         const panels = [...document.querySelectorAll(`.month-block[data-month-key="${CSS.escape(mKey)}"] .ledger-panel`)].map(panel => panel.dataset.property);
         const pastes = clipboard ? panels.map(cur => ({ cur, fits: pasteFits({ kind: 'panel', mKey, property: cur }) })).filter(item => item.fits)
@@ -3273,10 +3286,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (kind === 'group') {
         const one = target.group === 'savings' ? 'savings pot' : 'settlement';
         const closed = panelScope(mKey, property).sections().filter(item => item.type === 'net' && item.closed && ExpenseStore.sectionKind(item) === target.group);
+        // Setting up how it counts is a section's own business, so the block hands it straight over: with one section
+        // in the block it opens that one, and with several it asks which first. Either way the dialog that opens is
+        // the same one a section or a subsection opens — there is only one place a calculation is written.
+        const inBlock = panelScope(mKey, property).sections().filter(item => item.type === 'net' && ExpenseStore.sectionKind(item) === target.group);
+        const setupItems = isEvent || !inBlock.length ? [] : [inBlock.length === 1
+          ? { icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: inBlock[0].name, run: () => openSectionSetup(mKey, property, inBlock[0].name) }
+          : { icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `${inBlock.length} to choose from`, submenu: {
+            title: 'Set up how it counts', subtitle: `which ${one}?`,
+            items: inBlock.map(item => ({ icon: target.group === 'savings' ? 'pig-money' : 'arrows-exchange', label: item.name, run: () => openSectionSetup(mKey, property, item.name) }))
+          } }];
         return write([
           { icon: 'plus', label: `Add ${one}`, run: add },
-          { icon: 'pencil', label: 'Rename this block…', hint: 'here, in this month', run: edit({ kind: 'block', month: mKey, property, block: target.group }) },
+          ...setupItems,
           ...(closed.length > 1 ? [{ icon: 'arrow-merge', label: `Merge settled (${closed.length})…`, hint: 'bring closed ones together', run: () => openMergeDialog(mKey, property, target.group) }] : []),
+          { icon: 'pencil', label: 'Rename this block…', hint: 'here, in this month', run: edit({ kind: 'block', month: mKey, property, block: target.group }) },
           { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.closest('.ledger-panel')?.querySelector('[data-panel-expand]')?.click() },
           ...POSTING_MODES.filter(mode => mode !== postingMode).map(mode => ({
             icon: 'list-details', label: `Post to Income/Expenses as: ${POSTING_LABELS[mode].label}`,
@@ -3289,15 +3313,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const custom = target.section && target.type === 'net';
         const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
         return write([
+          { icon: 'plus', label: 'Add subsection', run: add },
+          ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: 'this section and its subsections', run: () => openSectionSetup(mKey, property, target.section) }] : []),
           ...(custom && !isEvent ? [target.closed
             ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
             : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
-          { icon: 'plus', label: 'Add subsection', run: add },
           ...[aboutAction(target)].filter(Boolean),
-          ...pickItems(),
+          ...cutItems(),
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
-          ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', run: () => openSectionSetup(mKey, property, target.section) }] : []),
           ...(custom && !isEvent ? [{ icon: 'pencil', label: 'Rename…', hint: 'here, in this month', run: edit({ kind: 'section', month: mKey, property, section: target.section }) }]
             : target.section ? [{ icon: 'pencil', label: 'Rename…', hint: settingsLabel.replace('…', ''), run: settings }] : []),
           ...(custom ? [{ icon: 'trash', label: 'Delete section', danger: true, run: () => deleteSection(target) }] : [])
@@ -3314,20 +3338,30 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             hint: ROLE_HINTS[role], run: () => setSubsectionRole(mKey, property, target.section, target.category, role)
           }));
         })();
+        // The section a subsection belongs to, for the two actions that are really its parent's.
+        const home = target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name;
+        // How a subsection counts is written in its section's calculation, so this opens that one dialog with this
+        // subsection picked out in it, rather than inventing a second place to say the same thing.
+        const setupItems = target.kindOf && home && !isEvent
+          ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `in “${home}”`, run: () => openSectionSetup(mKey, property, home, target.category) }]
+          : [];
         return write([
           { icon: 'plus', label: 'Add entry', run: add },
-          ...[aboutAction(target)].filter(Boolean),
-          ...pickItems(),
           ...roleItems,
-          { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
-          { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, target.section || panelScope(mKey, property).sections().find(item => item.type === target.type && item.subsections.includes(target.category))?.name, target.category) },
+          ...setupItems,
+          ...[aboutAction(target)].filter(Boolean),
+          ...cutItems(),
+          { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, home, target.category) },
           ...pasteAction,
+          { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
           { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, section: target.section, category: target.category }) }
         ]);
       }
       if (kind === 'entry') {
         // Money laid out for a group is divided, so the entry itself says how much of it was mine. Only such an entry
-        // is asked: a repayment, a savings pot or an ordinary expense has nothing to split.
+        // is asked: a repayment, a savings pot or an ordinary expense has nothing to split. The choices sit together
+        // on one row, each drawn as the share of a circle it stands for — the whole of it, a half, a third, a
+        // quarter, none — so sharing reads as one setting rather than as five more commands mixed in with the rest.
         const splitItems = (() => {
           const row = transactions.find(item => item.id === target.id);
           if (!row || row.type !== 'net' || isEvent) return [];
@@ -3338,17 +3372,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const same = split => now && now.m === split.m && (split.m !== 'equal' || Number(now.n) === split.n);
           const gave = Number(row.amount) < 0;
           const choices = [
-            { split: { m: 'mine' }, icon: 'user', label: 'All of it was mine', hint: 'nothing owed either way' },
-            { split: { m: 'equal', n: 2 }, icon: 'users', label: 'Shared equally: 2 ways', hint: 'half of it was mine' },
-            { split: { m: 'equal', n: 3 }, icon: 'users', label: 'Shared equally: 3 ways', hint: 'a third of it was mine' },
-            { split: { m: 'equal', n: 4 }, icon: 'users', label: 'Shared equally: 4 ways', hint: 'a quarter of it was mine' },
-            { split: { m: 'none' }, icon: 'arrow-right', label: gave ? 'I gave it all' : 'I got it all', hint: gave ? 'none of it was mine — the lot is owed back to me' : 'none of it was mine — I owe the lot back' }
+            { split: { m: 'mine' }, share: 1, caption: 'All', label: 'All of it was mine', hint: 'nothing owed either way' },
+            { split: { m: 'equal', n: 2 }, share: 1 / 2, caption: '½', label: 'Shared equally: 2 ways', hint: 'half of it was mine' },
+            { split: { m: 'equal', n: 3 }, share: 1 / 3, caption: '⅓', label: 'Shared equally: 3 ways', hint: 'a third of it was mine' },
+            { split: { m: 'equal', n: 4 }, share: 1 / 4, caption: '¼', label: 'Shared equally: 4 ways', hint: 'a quarter of it was mine' },
+            { split: { m: 'none' }, share: 0, caption: 'None', label: gave ? 'I gave it all' : 'I got it all', hint: gave ? 'none of it was mine — the lot is owed back to me' : 'none of it was mine — I owe the lot back' }
           ];
+          // What the entry already says is marked rather than hidden, so the row always shows where it stands; clicking
+          // that one again takes it off, which is what the Clear chip beside them does too.
           return [
-            ...choices.filter(choice => !same(choice.split)).map(choice => ({
-              icon: choice.icon, label: choice.label, hint: choice.hint, run: () => setEntrySplit(target.id, choice.split)
+            { heading: 'How much of it was mine' },
+            ...choices.map(choice => ({
+              chip: true, share: choice.share, caption: choice.caption, label: choice.label, on: same(choice.split),
+              hint: same(choice.split) ? 'set — click again to clear it' : choice.hint,
+              run: () => setEntrySplit(target.id, same(choice.split) ? null : choice.split)
             })),
-            ...(now ? [{ icon: 'eraser', label: 'Nothing recorded as mine', hint: 'leaves the whole amount outstanding', run: () => setEntrySplit(target.id, null) }] : [])
+            ...(now ? [{ chip: true, icon: 'eraser', caption: 'Clear', label: 'Nothing recorded as mine', hint: 'leaves the whole amount outstanding', run: () => setEntrySplit(target.id, null) }] : [])
           ];
         })();
         return write([
@@ -3356,9 +3395,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ...splitItems,
           { icon: 'corner-down-right', label: 'Add note', run: add },
           ...[aboutAction(target)].filter(Boolean),
-          ...pickItems(),
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
           flowAction(target),
+          ...cutItems(),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
           { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
         ]);
@@ -3429,12 +3468,36 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(`Deleted “${target.section}”.`);
     }
+    // An action is drawn as a full-width line unless it asks to be a chip: chips that sit next to each other in the
+    // list become one row of small buttons, which is how a setting with a handful of values (how a cost was shared)
+    // stays one thing to read instead of that many commands among everything else the menu offers.
     function drawRowMenu(list, title, subtitle) {
       const { el } = rowMenu;
       rowMenu.actions = list;
       el.querySelector('.row-menu-title').innerHTML = `<b>${escapeHtml(title)}</b>${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ''}`;
-      el.querySelector('.row-menu-list').innerHTML = list.map((item, index) => `<button type="button" role="menuitem" class="row-menu-item${item.danger ? ' is-danger' : ''}" data-menu-index="${index}"><i class="ti ti-${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}${item.hint ? `<small>${escapeHtml(item.hint)}</small>` : ''}</span></button>`).join('')
-        || '<p class="row-menu-empty">Nothing to do here.</p>';
+      const parts = [];
+      list.forEach((item, index) => {
+        const last = parts[parts.length - 1];
+        if (item.chip && last?.chips) last.chips.push({ item, index });
+        else parts.push(item.chip ? { chips: [{ item, index }] } : { item, index });
+      });
+      el.querySelector('.row-menu-list').innerHTML = parts.map(part => {
+        if (part.chips) return `<div class="row-menu-chips" role="group">${part.chips.map(({ item, index }) => chipHtml(item, index)).join('')}</div>`;
+        const { item, index } = part;
+        if (item.heading) return `<p class="row-menu-head">${escapeHtml(item.heading)}</p>`;
+        return `<button type="button" role="menuitem" class="row-menu-item${item.danger ? ' is-danger' : ''}" data-menu-index="${index}"><i class="ti ti-${item.icon}" aria-hidden="true"></i><span>${escapeHtml(item.label)}${item.hint ? `<small>${escapeHtml(item.hint)}</small>` : ''}</span></button>`;
+      }).join('') || '<p class="row-menu-empty">Nothing to do here.</p>';
+    }
+    // One chip: an icon, or a circle filled to the share it stands for, over a short caption. The words are kept for
+    // the tooltip and for a screen reader, so nothing is lost by the row being short.
+    function chipHtml(item, index) {
+      const mark = item.icon
+        ? `<i class="ti ti-${item.icon}" aria-hidden="true"></i>`
+        : `<span class="row-menu-pie${item.share ? '' : ' is-empty'}" style="--share:${item.share}" aria-hidden="true"></span>`;
+      // A share is one of a set, so it is a radio; the Clear chip beside them is an ordinary command.
+      const role = item.icon ? 'role="menuitem"' : `role="menuitemradio" aria-checked="${item.on ? 'true' : 'false'}"`;
+      const tip = escapeHtml(`${item.label}${item.hint ? ` — ${item.hint}` : ''}`);
+      return `<button type="button" ${role} class="row-menu-chip${item.on ? ' is-on' : ''}" data-menu-index="${index}" title="${tip}" aria-label="${escapeHtml(item.label)}">${mark}<small>${escapeHtml(item.caption)}</small></button>`;
     }
     const KIND_NAMES = { month: 'Month', panel: 'Currency', group: 'Block', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
     function openRowMenu(target, point, touch, helpers) {
@@ -3457,7 +3520,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         el.style.top = `${Math.max(8, Math.min(point.y, innerHeight - height - 8))}px`;
       }
       requestAnimationFrame(() => el.classList.add('is-shown'));
-      el.querySelector('.row-menu-item')?.focus({ preventScroll: true });
+      el.querySelector('.row-menu-item, .row-menu-chip')?.focus({ preventScroll: true });
     }
     function closeRowMenu() {
       if (!rowMenu.open) return;
@@ -3483,6 +3546,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (!item) return;
         const action = rowMenu.actions[Number(item.dataset.menuIndex)];
         if (action.back) return drawRowMenu(menuActions(rowMenu.target, rowMenu.helpers), `${KIND_NAMES[rowMenu.target.kind]} · ${rowMenu.target.label}`, rowMenu.target.kind === 'month' ? '' : scopeName(rowMenu.target.mKey, rowMenu.target.property));
+        // An action that asks something first draws its own page, with a way back to the menu it came from.
+        if (action.submenu) {
+          return drawRowMenu([...action.submenu.items, { icon: 'arrow-left', label: 'Back', back: true }], action.submenu.title, action.submenu.subtitle);
+        }
         if (action.paste) {
           const target = action.target || rowMenu.target;
           // Entries can come along only where they fit (same currency, same kind); then ask which.
@@ -3504,7 +3571,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         action.run?.();
       });
       el.addEventListener('keydown', event => {
-        const items = [...el.querySelectorAll('.row-menu-item')];
+        const items = [...el.querySelectorAll('.row-menu-item, .row-menu-chip')];
         const at = items.indexOf(document.activeElement);
         if (event.key === 'Escape') { event.preventDefault(); closeRowMenu(); }
         else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

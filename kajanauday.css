@@ -1065,6 +1065,19 @@
 .row-menu-item:hover i, .row-menu-item:focus-visible i { color: var(--brand); }
 .row-menu-item.is-danger, .row-menu-item.is-danger i { color: var(--expense); }
 .row-menu-empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12px; }
+/* A setting with a handful of values sits on one row under a small heading: each chip is a circle filled to the share
+   it stands for (the whole of it, a half, a third, a quarter, or none at all in red), captioned underneath. */
+.row-menu-head { margin: 6px 0 2px; padding: 0 8px; color: var(--muted); font: 600 10px var(--display); letter-spacing: .07em; text-transform: uppercase; }
+.row-menu-chips { display: flex; gap: 2px; padding: 0 4px 2px; }
+.row-menu-chip { display: grid; flex: 1 1 0; justify-items: center; gap: 3px; min-width: 0; padding: 6px 2px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; font: 500 13px var(--display); }
+.row-menu-chip i { color: var(--muted); font-size: 17px; line-height: 1; }
+.row-menu-chip small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.row-menu-chip:hover, .row-menu-chip:focus-visible { outline: 0; background: var(--hover); }
+.row-menu-chip:hover i, .row-menu-chip:focus-visible i { color: var(--brand); }
+.row-menu-chip.is-on { border-color: var(--brand); background: var(--brand-soft); }
+.row-menu-chip.is-on small { color: var(--brand); }
+.row-menu-pie { width: 17px; height: 17px; border-radius: 50%; background: conic-gradient(var(--brand) calc(var(--share) * 360deg), transparent 0); box-shadow: inset 0 0 0 1.5px var(--brand); }
+.row-menu-pie.is-empty { background: none; box-shadow: inset 0 0 0 1.5px var(--expense); }
 .row-menu-backdrop { position: fixed; z-index: 69; inset: 0; background: rgba(0, 0, 0, .28); }
 .row-menu-backdrop[hidden], .row-menu[hidden] { display: none; }
 /* The row the menu is about keeps a quiet outline while the menu is open. */
@@ -1077,6 +1090,13 @@
 .row-menu.is-sheet .row-menu-item { min-height: 46px; padding: 8px 10px; font-size: 15px; }
 .row-menu.is-sheet .row-menu-item i { font-size: 19px; }
 .row-menu.is-sheet .row-menu-list { max-height: 62vh; }
+.row-menu.is-sheet .row-menu-head { padding: 0 6px; font-size: 11px; }
+.row-menu.is-sheet .row-menu-chips { gap: 4px; padding: 0 2px 4px; }
+.row-menu.is-sheet .row-menu-chip { min-height: 54px; padding: 8px 2px; }
+.row-menu.is-sheet .row-menu-chip i { font-size: 21px; }
+.row-menu.is-sheet .row-menu-chip small { font-size: 11px; }
+.row-menu.is-sheet .row-menu-pie { width: 22px; height: 22px; box-shadow: inset 0 0 0 2px var(--brand); }
+.row-menu.is-sheet .row-menu-pie.is-empty { box-shadow: inset 0 0 0 2px var(--expense); }
 @media (prefers-reduced-motion: reduce) { .row-menu, .row-menu.is-sheet { transition: none; } }
 /* The year card: the first card of a year's list, the year's months as one ledger. Inside a subsection, each month's
    entries follow a "from <Month>" line with what that month came to; the month name opens the month there. */
@@ -1361,12 +1381,6 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .ledger-state { flex: none; padding: 1px 8px; border-radius: 99px; background: var(--st-dropped-bg); color: var(--st-dropped);
   font: 700 9.5px/16px var(--display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .ledger-state.is-open { background: var(--st-waiting-bg); color: var(--st-waiting); }
-/* Setting up how a settlement or a pot counts: the gear keeps to the heading line beside the name, icon only, so the
-   figures beside it lose none of their room. It stays quiet until the row is hovered or it has the focus. */
-.ledger-type-section > summary > .section-setup-btn { width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
-.ledger-type-section > summary > .section-setup-btn i { font-size: 15px; }
-.ledger-type-section > summary > .section-setup-btn:hover { border-color: var(--line); background: var(--surface); color: var(--brand); }
-.section-setup-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .ledger-state.is-clear { background: var(--st-done-bg); color: var(--st-done); }
 .ledger-state.is-settled { background: rgba(91, 157, 255, .14); color: var(--tag0); }
 .ledger-state.is-merged { background: rgba(177, 140, 255, .14); color: var(--tag1); }
