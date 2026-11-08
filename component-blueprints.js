@@ -460,7 +460,7 @@
   // There is never more than one of each: a settlement is not a sibling of Income and Expenses any more, it is a
   // section inside Settlements, so the panel reads Expenses / Income / Settlements / Savings and nothing else.
   // Closed sections fold away into "Settled" at the bottom, where two or more of them can be merged into one.
-  const GroupBlock = (kind, sections, { mKey, property, title }, state, ctx) => {
+  const GroupBlock = (kind, sections, { mKey, property, title, blockRun = null }, state, ctx) => {
     const group = GROUPS[kind];
     const heading = title || group.title;
     const l = state.ledgerDraft;
@@ -491,8 +491,10 @@
       ? `<form class="ledger-form cat-rename-form block-rename-form" data-ledger-form="rename-block" data-month="${mKey}" data-property="${property}" data-block="${kind}" novalidate><input name="name" value="${ctx.esc(heading)}" maxlength="40" aria-label="Name for this block" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames this block for this month · leave it empty to go back to “${ctx.esc(group.title)}”</p></form>`
       : '';
     const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${settledHtml}`;
-    const settlementNet = sections.reduce((sum, section) =>
-      sum + (Number(section._meta.stats?.balance ?? (section._meta.settle?.cashIn - section._meta.settle?.cashOut)) || 0), 0);
+    const settlementNet = blockRun
+      ? Number(blockRun.stats?.balance ?? ((blockRun.adds?.income || 0) - (blockRun.adds?.expenses || 0))) || 0
+      : sections.reduce((sum, section) =>
+        sum + (Number(section._meta.stats?.balance ?? (section._meta.settle?.cashIn - section._meta.settle?.cashOut)) || 0), 0);
     const totalsHtml = kind === 'settlement'
       ? (sections.length ? SettleTotals(settlementNet, property, ctx) : '')
       : Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
@@ -607,8 +609,8 @@
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
-        + GroupBlock('settlement', settlements, { mKey, property, title: m.blockNames?.settlement }, state, ctx)
-        + GroupBlock('savings', savings, { mKey, property, title: m.blockNames?.savings }, state, ctx)
+        + GroupBlock('settlement', settlements, { mKey, property, title: m.blockNames?.settlement, blockRun: blockRun('settlement') }, state, ctx)
+        + GroupBlock('savings', savings, { mKey, property, title: m.blockNames?.savings, blockRun: blockRun('savings') }, state, ctx)
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
