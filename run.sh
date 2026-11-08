@@ -66,7 +66,7 @@ command -v python3 >/dev/null || { echo "run.sh needs python3." >&2; exit 1; }
 # answers /sw.js with a worker that takes itself off instead of the real one — the real one serves the scripts
 # from its own copy keyed by their ?v= tag, so a local edit would go on showing the previous build until the tag
 # was bumped by hand. --sw gives the real one back, for when the offline behaviour is what is being tested.
-SERVER_PY="$(mktemp "${TMPDIR:-/tmp}/kajanauday-serve-XXXXXX.py")"
+SERVER_PY="$(mktemp "${TMPDIR:-/tmp}/kajanauday-serve-XXXXXX")"
 trap 'rm -f "$SERVER_PY"' EXIT
 
 cat > "$SERVER_PY" <<'PY'

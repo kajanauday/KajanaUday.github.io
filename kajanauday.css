@@ -1401,6 +1401,10 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .merge-row:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); }
 .merge-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
 .merge-target select { height: 34px; flex: 1; min-width: 150px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font-size: 12.5px; }
+.legacy-unpack-list { display: grid; gap: 6px; max-height: 48vh; overflow: auto; }
+.legacy-unpack-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, .8fr); align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); font-size: 12px; }
+.legacy-unpack-row > span { overflow-wrap: anywhere; }
+.legacy-unpack-row select { min-width: 0; height: 32px; padding: 0 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12px; }
 
 /* Month settings: which block a section belongs to, whether it is closed, and what each subsection counts as. */
 .config-closed { padding: 2px 0; }

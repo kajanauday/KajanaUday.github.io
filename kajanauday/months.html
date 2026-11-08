@@ -18,7 +18,7 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
-  <link rel="stylesheet" href="../kajanauday.css?v=20261113b">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261113c">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
@@ -26,7 +26,7 @@
   <script src="../ledger-search.js?v=20261101b" defer></script>
   <script src="../component-blueprints.js?v=20261113b" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261113a" defer></script>
+  <script src="../kajanauday.js?v=20261113c" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -133,6 +133,14 @@
       <label class="merge-target"><span>Keep it all under</span><select id="merge-target" name="target" aria-label="The section everything is kept under"></select></label>
       <p class="settings-error" id="merge-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Merge</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog legacy-unpack-dialog" id="legacy-unpack-dialog" aria-labelledby="legacy-unpack-title">
+    <form id="legacy-unpack-form" novalidate>
+      <div class="modal-header"><div><p id="legacy-unpack-where">Unpack older merge</p><h2 id="legacy-unpack-title">Restore sections</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="merge-blurb">Choose which original section each subsection belongs to. Older merges did not save each section’s calculation settings, so restored sections other than the retained one use defaults. Review their setup after unpacking.</p>
+      <div class="legacy-unpack-list" id="legacy-unpack-list"></div>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Unpack sections</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog" id="month-settings-dialog" aria-labelledby="month-settings-title">

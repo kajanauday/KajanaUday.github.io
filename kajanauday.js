@@ -580,8 +580,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return ExpenseStore.runCalc(section, amounts).settle;
     }
     // Closed sections of one kind, brought together into one. Their subsections move across (a name already taken is
-    // kept apart by its section's name), every entry is re-pointed at the section it lands in, and the sections it came
-    // from are recorded on it. Only closed ones merge: a settlement still in progress has somewhere else to go.
+    // kept apart by its section's name), every entry is re-pointed at the section it lands in, and enough of each
+    // original section is retained to put it back. Only closed ones merge: a settlement still in progress has
+    // somewhere else to go.
     function mergeSections(mKey, property, kind, names, targetName) {
       const scope = panelScope(mKey, property);
       const own = scope.own();
@@ -589,13 +590,23 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (sources.length < 2) return showToast('Pick at least two closed sections to merge.');
       const target = sources.find(item => item.name === targetName) || sources[0];
       const rest = sources.filter(item => item !== target);
+      const copy = value => JSON.parse(JSON.stringify(value));
+      const targetParts = target.mergedSections?.length
+        ? copy(target.mergedSections)
+        : [{ section: copy(target), subsections: (target.subsections || []).map(name => ({ from: name, to: name })) }];
+      const addedParts = [];
       target.roles ||= {};
       target.mergedFrom = [...new Set([...(target.mergedFrom || []), ...rest.flatMap(item => [...(item.mergedFrom || []), item.name])])];
       rest.forEach(source => {
+        const sourceParts = source.mergedSections?.length
+          ? copy(source.mergedSections)
+          : [{ section: copy(source), subsections: (source.subsections || []).map(name => ({ from: name, to: name })) }];
+        const landedBySub = new Map();
         (source.subsections || []).forEach(sub => {
           const taken = target.subsections.some(item => ExpenseStore.nameKey(item) === ExpenseStore.nameKey(sub));
           const landed = taken ? `${sub} (${source.name})` : sub;
           target.subsections.push(landed);
+          landedBySub.set(sub, landed);
           target.roles[landed] = ExpenseStore.subsectionRole(source, sub);
           const note = source.subAbout?.[sub];
           if (note) (target.subAbout ||= {})[landed] = note;
@@ -603,8 +614,16 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             && (item.section === source.name || (!item.section && (source.subsections || []).includes(item.category))))
             .forEach(item => Object.assign(item, { section: target.name, category: landed }));
         });
+        sourceParts.forEach(part => addedParts.push({
+          section: part.section,
+          subsections: part.subsections.map(mapping => ({
+            from: mapping.from,
+            to: landedBySub.get(mapping.to) || mapping.to
+          }))
+        }));
         own.splice(own.indexOf(source), 1);
       });
+      target.mergedSections = [...targetParts, ...addedParts];
       // Ids follow the subsections that moved in, so any equation already written on the target still means the same.
       ExpenseStore.ensureCalc(target);
       target.closed = true;
@@ -613,6 +632,142 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       scope.save();
       renderLedger();
       showToast(`Merged ${sources.length} into “${target.name}”.`);
+    }
+    function unpackSection(mKey, property, name) {
+      if (isViewer) return viewOnly();
+      const scope = panelScope(mKey, property);
+      const own = scope.own();
+      const merged = own.find(item => item.type === 'net' && item.name === name);
+      const parts = merged?.mergedSections;
+      if (!merged || !Array.isArray(parts) || parts.length < 2) return showToast('This section does not have enough saved merge details to unpack.');
+      if (parts.some(part => !part?.section?.name || !Array.isArray(part.subsections))) {
+        return showToast('Cannot unpack: the saved merge details are incomplete.');
+      }
+      const originals = parts.map(part => part.section?.name).filter(Boolean);
+      const conflicts = originals.filter(original => original !== merged.name
+        && own.some(item => item !== merged && item.type === 'net' && item.name === original));
+      if (conflicts.length) return showToast(`Cannot unpack: ${conflicts.map(original => `“${original}”`).join(', ')} already ${conflicts.length === 1 ? 'exists' : 'exist'} here.`);
+
+      const currentParts = parts.map(part => ({
+        ...copySection(part.section),
+        subsections: [...(part.section.subsections || [])],
+        roles: { ...(part.section.roles || {}) },
+        subAbout: { ...(part.section.subAbout || {}) }
+      }));
+      const restoredName = new Map(parts.map((part, index) => [part.section.name, currentParts[index]]));
+      const mappings = parts.flatMap(part => part.subsections.map(mapping => ({
+        from: mapping.from, to: mapping.to, section: part.section.name
+      })));
+      const assigned = new Set(mappings.map(mapping => mapping.to));
+      // Subsections added after the merge have no original home; keep them with the section that was retained.
+      const retained = restoredName.get(merged.name) || currentParts[0];
+      (merged.subsections || []).filter(sub => !assigned.has(sub)).forEach(sub => {
+        if (!retained.subsections.includes(sub)) retained.subsections.push(sub);
+        if (merged.roles?.[sub]) retained.roles[sub] = merged.roles[sub];
+        if (merged.subAbout?.[sub]) retained.subAbout[sub] = merged.subAbout[sub];
+      });
+      mappings.forEach(mapping => {
+        transactions.filter(item => scope.match(item) && item.type === 'net'
+          && item.section === merged.name && item.category === mapping.to)
+          .forEach(item => Object.assign(item, { section: mapping.section, category: mapping.from }));
+      });
+      const index = own.indexOf(merged);
+      own.splice(index, 1, ...currentParts);
+      saveTransactions();
+      scope.save();
+      renderLedger();
+      showToast(`Unpacked “${name}” into ${currentParts.length} sections.`);
+    }
+    function copySection(section) {
+      const copy = JSON.parse(JSON.stringify(section));
+      delete copy.mergedSections;
+      delete copy.mergedFrom;
+      return copy;
+    }
+    const legacyUnpackState = { month: null, property: null, name: null };
+    function legacyUnpackParts() {
+      const merged = panelScope(legacyUnpackState.month, legacyUnpackState.property).own()
+        .find(item => item.type === 'net' && item.name === legacyUnpackState.name);
+      if (!merged) return { merged: null, names: [], subsections: [] };
+      const names = [...new Set([merged.name, ...(Array.isArray(merged.mergedFrom) ? merged.mergedFrom : [])].filter(Boolean))];
+      return { merged, names, subsections: merged.subsections || [] };
+    }
+    function renderLegacyUnpackDialog() {
+      const { merged, names, subsections } = legacyUnpackParts();
+      const list = document.querySelector('#legacy-unpack-list');
+      if (!merged || names.length < 2) {
+        list.innerHTML = '<p class="config-muted">This section no longer has enough merge history to unpack.</p>';
+        return;
+      }
+      const options = names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+      list.innerHTML = subsections.map((sub, index) =>
+        `<label class="legacy-unpack-row"><span>${escapeHtml(sub)}</span><select data-legacy-unpack="${index}" aria-label="Restore ${escapeHtml(sub)} under">${options}</select></label>`
+      ).join('') || '<p class="config-muted">This merged section has no subsections.</p>';
+      list.querySelectorAll('[data-legacy-unpack]').forEach(select => { select.value = names.slice(1).find(name => subsections[Number(select.dataset.legacyUnpack)].endsWith(` (${name})`)) || merged.name; });
+    }
+    function openLegacyUnpackDialog(mKey, property, name) {
+      if (isViewer) return viewOnly();
+      const section = panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === name);
+      if (!section || !Array.isArray(section.mergedFrom) || !section.mergedFrom.length) return showToast('This section does not have enough saved merge history to unpack.');
+      Object.assign(legacyUnpackState, { month: mKey, property, name });
+      document.querySelector('#legacy-unpack-where').textContent = `${regions[property].code} · ${panelScope(mKey, property).label}`;
+      renderLegacyUnpackDialog();
+      document.querySelector('#legacy-unpack-dialog').showModal();
+    }
+    function unpackLegacySection() {
+      const { merged, names, subsections } = legacyUnpackParts();
+      if (!merged || names.length < 2) return showToast('This section no longer has enough merge history to unpack.');
+      const own = panelScope(legacyUnpackState.month, legacyUnpackState.property).own();
+      const conflicts = names.filter(name => name !== merged.name
+        && own.some(item => item !== merged && item.type === 'net' && item.name === name));
+      if (conflicts.length) return showToast(`Cannot unpack: ${conflicts.map(name => `“${name}”`).join(', ')} already ${conflicts.length === 1 ? 'exists' : 'exist'} here.`);
+      const destinations = [...document.querySelectorAll('#legacy-unpack-list [data-legacy-unpack]')].map(select => select.value);
+      if (destinations.length !== subsections.length || destinations.some(name => !names.includes(name))) {
+        return showToast('Choose a destination for every subsection first.');
+      }
+      const kind = ExpenseStore.sectionKind(merged);
+      const currentParts = names.map(name => {
+        const part = name === merged.name
+          ? copySection(merged)
+          : { name, type: 'net', kind, block: true, subsections: [], roles: {}, subAbout: {}, calc: ExpenseStore.defaultCalc(kind), closed: true,
+            ...(merged.closedOn ? { closedOn: merged.closedOn } : {}) };
+        part.subsections = [];
+        part.roles = {};
+        part.subAbout = {};
+        delete part.mergedFrom;
+        delete part.mergedSections;
+        return part;
+      });
+      const byName = new Map(currentParts.map(part => [part.name, part]));
+      const mappings = subsections.map((sub, index) => {
+        const owner = byName.get(destinations[index]);
+        const source = names.slice(1).find(name => sub.endsWith(` (${name})`));
+        const originalName = source === owner.name ? sub.slice(0, -(source.length + 3)) : sub;
+        owner.subsections.push(originalName);
+        if (merged.roles?.[sub]) owner.roles[originalName] = merged.roles[sub];
+        if (merged.subAbout?.[sub]) owner.subAbout[originalName] = merged.subAbout[sub];
+        return { sub, originalName, owner: owner.name };
+      });
+      const scope = panelScope(legacyUnpackState.month, legacyUnpackState.property);
+      mappings.forEach(({ sub, originalName, owner }) => {
+        transactions.filter(item => scope.match(item) && item.type === 'net' && item.section === merged.name && item.category === sub)
+          .forEach(item => Object.assign(item, { section: owner, category: originalName }));
+      });
+      currentParts.forEach(part => ExpenseStore.ensureCalc(part));
+      own.splice(own.indexOf(merged), 1, ...currentParts);
+      saveTransactions();
+      scope.save();
+      document.querySelector('#legacy-unpack-dialog').close();
+      renderLedger();
+      showToast(`Unpacked “${merged.name}” into ${currentParts.length} sections. Review their calculation settings.`);
+    }
+    function setupLegacyUnpackDialog() {
+      const form = document.querySelector('#legacy-unpack-form');
+      if (!form) return;
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        unpackLegacySection();
+      });
     }
     function saveEntryDraft(form) {
       const fields = form.elements;
@@ -3593,8 +3748,17 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (kind === 'section') {
         const custom = target.section && target.type === 'net';
         const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
+        const section = custom && !isEvent
+          ? panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === target.section)
+          : null;
         return write([
           { icon: 'plus', label: 'Add subsection', run: add },
+          ...(section?.mergedSections?.length > 1
+            ? [{ icon: 'arrow-merge', label: 'Unpack merged sections', hint: 'restore the original sections and entries', run: () => unpackSection(mKey, property, target.section) }]
+            : []),
+          ...(section?.mergedFrom?.length && !section.mergedSections?.length
+            ? [{ icon: 'arrow-merge', label: 'Unpack older merge…', hint: 'assign subsections to the original sections', run: () => openLegacyUnpackDialog(mKey, property, target.section) }]
+            : []),
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…',
             hint: target.kindOf === 'savings' ? 'this section and its subsections' : 'what it posts to Income and Expenses',
             run: () => openSectionSetup(mKey, property, target.section) }] : []),
@@ -4843,6 +5007,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupSectionSetup();
     setupAllocDialog();
     setupMergeDialog();
+    setupLegacyUnpackDialog();
     setupAboutPop();
     setupHub();
     setupTagPicker();
