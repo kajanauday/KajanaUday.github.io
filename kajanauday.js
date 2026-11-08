@@ -3477,6 +3477,53 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           moved += cut ? moveEntry(item, mKey, property, into.name, target.category, into.type) : cloneEntry(item, mKey, property, into.name, target.category, into.type);
         });
         if (moved) saveTransactions();
+      } else if (clipboard.itemKind === 'subsection' && target.kind === 'subsection') {
+        const into = sectionFor(target.section);
+        if (!into) return showToast('That has no section to put them in.');
+        if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        if (clipboard.items.some(pick => pick.section === into.name && pick.category === target.category)) {
+          return showToast('Choose a different subsection to move into.');
+        }
+        let movedSubsections = 0;
+        clipboard.items.forEach(pick => {
+          const source = from.own().find(item => item.type === clipboard.type && item.name === pick.section);
+          if (!source || !source.subsections.includes(pick.category)) return;
+          const rows = entriesOf(clipboard.mKey, clipboard.property, clipboard.type, pick.section, pick.category);
+          rows.forEach(item => {
+            moveEntry(item, mKey, property, into.name, target.category, into.type);
+            if (source !== into && item.type === 'net') delete item.alloc;
+            moved += 1;
+          });
+          if (source === into && into.type === 'net') {
+            transactions.filter(item => scope.match(item) && item.type === 'net' && item.section === into.name && item.alloc)
+              .forEach(item => {
+                const allocations = new Map();
+                item.alloc.forEach(part => {
+                  const name = part.to === pick.category ? target.category : part.to;
+                  allocations.set(name, (allocations.get(name) || 0) + part.a);
+                });
+                item.alloc = [...allocations].map(([to, a]) => ({ to, a }));
+              });
+          } else if (source !== into && source.type === 'net') {
+            transactions.filter(item => scope.match(item) && item.type === 'net' && item.section === source.name && item.alloc)
+              .forEach(item => {
+                item.alloc = item.alloc.filter(part => part.to !== pick.category);
+                if (!item.alloc.length) delete item.alloc;
+              });
+          }
+          source.subsections = source.subsections.filter(name => name !== pick.category);
+          delete source.roles?.[pick.category];
+          delete source.subAbout?.[pick.category];
+          movedSubsections += 1;
+        });
+        if (!movedSubsections) return showToast('The cut subsection is no longer available.');
+        scope.save();
+        if (moved) saveTransactions();
+        clipboard = null;
+        clearPicks();
+        renderLedger();
+        const details = moved ? ` and ${moved} ${moved === 1 ? 'entry' : 'entries'}` : '';
+        return showToast(`Moved ${movedSubsections} ${movedSubsections === 1 ? 'subsection' : 'subsections'}${details} into “${target.category}” in ${scopeName(mKey, property)}.${crossedNote()}`);
       } else if (clipboard.itemKind === 'subsection') {
         const into = sectionFor(target.section);
         if (!into) return showToast('That has no section to put them in.');
@@ -3503,6 +3550,61 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         });
         if (added || cut) { scope.save(); if (cut) from.save(); }
         if (moved) saveTransactions();
+      } else if (cut && clipboard.itemKind === 'section' && target.kind === 'section') {
+        const into = own.find(item => item.type === intoType && item.name === target.section);
+        if (!into) return showToast('That destination section is no longer available.');
+        if (into.closed) return showToast(`“${into.name}” is closed. Reopen it first.`);
+        if (clipboard.items.some(pick => pick.section === into.name && pick.type === into.type)) {
+          return showToast('Choose a different destination section.');
+        }
+        let movedSections = 0;
+        clipboard.items.forEach(pick => {
+          const source = from.own().find(item => item.type === clipboard.type && item.name === pick.section);
+          if (!source) return;
+          const subsectionNames = new Map();
+          source.subsections.forEach(sub => {
+            let landed = sub;
+            if (into.subsections.includes(landed)) {
+              landed = `${sub} (${source.name})`;
+              let suffix = 2;
+              while (into.subsections.includes(landed)) landed = `${sub} (${source.name} ${suffix++})`;
+            }
+            subsectionNames.set(sub, landed);
+            into.subsections.push(landed);
+            if (into.type === 'net') {
+              (into.roles ||= {})[landed] = source.type === 'net' && ExpenseStore.sectionKind(source) === ExpenseStore.sectionKind(into)
+                ? ExpenseStore.subsectionRole(source, sub)
+                : roleArriving(into, source.type);
+              if (source.subAbout?.[sub]) (into.subAbout ||= {})[landed] = source.subAbout[sub];
+            }
+          });
+          const rows = entriesOf(clipboard.mKey, clipboard.property, source.type, source.name);
+          rows.forEach(item => {
+            const landed = subsectionNames.get(item.category) || item.category;
+            moveEntry(item, mKey, property, into.name, landed, into.type);
+            if (into.type === 'net' && source.type === 'net'
+              && ExpenseStore.sectionKind(source) === ExpenseStore.sectionKind(into) && item.alloc) {
+              item.alloc = item.alloc.map(part => ({ ...part, to: subsectionNames.get(part.to) || part.to }));
+            } else if (item.type === 'net') {
+              delete item.alloc;
+              delete item.split;
+            }
+            moved += 1;
+          });
+          const at = from.own().indexOf(source);
+          if (at >= 0) from.own().splice(at, 1);
+          if (into.type === 'net') ExpenseStore.ensureCalc(into);
+          movedSections += 1;
+        });
+        if (!movedSections) return showToast('The cut section is no longer available.');
+        scope.save();
+        from.save();
+        if (moved) saveTransactions();
+        clipboard = null;
+        clearPicks();
+        renderLedger();
+        const details = moved ? ` and ${moved} ${moved === 1 ? 'entry' : 'entries'}` : '';
+        return showToast(`Moved ${movedSections} ${movedSections === 1 ? 'section' : 'sections'}${details} into “${target.section}” in ${scopeName(mKey, property)}.${crossedNote()}`);
       } else {
         clipboard.items.forEach(pick => {
           const source = from.own().find(item => item.type === clipboard.type && item.name === pick.section);
@@ -4011,6 +4113,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         }
         if (action.paste) {
           const target = action.target || rowMenu.target;
+          if (action.paste.fold === 'entry') { closeRowMenu(); return paste(target, true); }
           // Entries can come along only where they fit (same currency, same kind); then ask which.
           if (action.paste.only || (clipboard.kind === 'picks' && clipboard.mode === 'cut')) { closeRowMenu(); return paste(target, true); }
           if (!action.paste.entries) { closeRowMenu(); return paste(target, false); }

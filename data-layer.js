@@ -980,13 +980,14 @@
     section.calc = calc;
     return calc;
   }
-  function docTotals(buckets, rules = new Map()) {
+  function docTotals(buckets, rules = new Map(), blockCalcs = {}) {
     const totals = zeroTotals();
     const balances = new Map();
     // An entry written before sections had names carries only its subsection; it belongs to whichever section lists
     // that subsection, so it is counted under that section's roles rather than falling back to the bare defaults.
     const homeOf = new Map();
     rules.forEach((section, name) => (section?.subsections || []).forEach(sub => { if (!homeOf.has(nameKey(sub))) homeOf.set(nameKey(sub), name); }));
+    rules.forEach((_, name) => balances.set(name, {}));
     BUCKETS.forEach(([bucket]) => (buckets?.[bucket] || []).forEach(group => {
       totals.entries += group.count;
       if (bucket !== 'net') {
@@ -995,14 +996,29 @@
       }
       (group.entries || []).forEach(entry => {
         const key = entry.section || homeOf.get(nameKey(group.category)) || '';
-        const bySub = balances.get(key) || balances.set(key, {}).get(key);
+        const sectionName = rules.has(key) ? key : otherSectionName('net');
+        const bySub = balances.get(sectionName) || balances.set(sectionName, {}).get(sectionName);
         (bySub[group.category] ||= []).push({ amount: noteTotal(entry.amount, entry.notes || []), split: entry.split || null, alloc: entry.alloc || null });
       });
     }));
-    balances.forEach((amountsBySub, key) => {
-      const { adds } = netSectionSummary(rules.get(key), amountsBySub);
-      totals.income += adds.income;
-      totals.expenses += adds.expenses;
+    const partsByKind = { settlement: [], savings: [] };
+    balances.forEach((amountsBySub, name) => {
+      const section = rules.get(name) || { name, subsections: Object.keys(amountsBySub) };
+      const summary = netSectionSummary(section, amountsBySub);
+      totals.income += summary.adds.income;
+      totals.expenses += summary.adds.expenses;
+      partsByKind[summary.kind].push({ name, stats: summary.stats, settle: summary.settle, adds: summary.adds });
+    });
+    Object.entries(partsByKind).forEach(([kind, parts]) => {
+      const calc = blockCalcs?.[kind];
+      if (!calc || !parts.length) return;
+      const before = parts.reduce((sum, part) => ({
+        income: sum.income + part.adds.income,
+        expenses: sum.expenses + part.adds.expenses
+      }), { income: 0, expenses: 0 });
+      const run = runBlockCalc({ name: BLOCK_NAMES[kind], kind, calc }, parts);
+      totals.income += run.adds.income - before.income;
+      totals.expenses += run.adds.expenses - before.expenses;
     });
     return totals;
   }
@@ -1138,7 +1154,8 @@
       const node = this.year(year);
       const month = node.monthSections[monthIdOf(year, monthIndex)] ||= {};
       const names = month[currency]?.names;
-      month[currency] = { own: true, sections: normalizeSections(sections), ...(names ? { names } : {}) };
+      const blockCalc = month[currency]?.blockCalc;
+      month[currency] = { own: true, sections: normalizeSections(sections), ...(names ? { names } : {}), ...(blockCalc ? { blockCalc } : {}) };
       const update = this.recomputeFrom(String(year));
       return this.queue(() => this.db.patch(update));
     }
@@ -1185,6 +1202,7 @@
           const items = flattenMonth(id, data, this.currencyKeys());
           this.transactions.push(...items);
           this.synced.set(id, JSON.stringify(monthDoc(items)));
+          this.recomputeYear(id.slice(0, 4));
           this.changed(id);
         }).finally(() => this.loading.delete(id)));
       }
@@ -1277,7 +1295,7 @@
         const doc = this.synced.has(id) ? JSON.parse(this.synced.get(id)) : null;
         const metadata = { entries: 0 };
         active.forEach(key => {
-          const own = this.synced.has(id) ? docTotals(doc?.[key], this.netRules(year, monthIndex, key)) : rawFromStored(node.months[id]?.metadata?.[key]);
+          const own = this.synced.has(id) ? docTotals(doc?.[key], this.netRules(year, monthIndex, key), this.blockCalcs(year, monthIndex, key)) : rawFromStored(node.months[id]?.metadata?.[key]);
           const fromEvents = this.eventMonthTotals(year, monthIndex, key);
           const raw = { income: own.income + fromEvents.income, expenses: own.expenses + fromEvents.expenses, entries: own.entries + fromEvents.entries };
           const first = !(key in running);

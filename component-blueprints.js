@@ -516,9 +516,11 @@
     // An event's own section (the first expense section) fills the panel untitled, other expense sections are open blocks
     // under their own names, and an Income block follows for money the event brought in (gifts, refunds…).
     const isEvent = isEventKey(mKey);
-    // What each custom section adds to Income and Expenses this month, as its rules work it out (see
-    // ExpenseStore.runCalc): one line per side it is sent to, shown only or added to the total.
-    const lines = blocks.filter(section => section._meta.type === 'net' && section._meta.adds).flatMap(section => section._meta.adds.lines);
+    // Only counted postings belong in Income or Expenses. Show-only values remain visible in their own settlement or
+    // savings block, but must not be duplicated here.
+    const lines = blocks.filter(section => section._meta.type === 'net' && section._meta.adds)
+      .flatMap(section => section._meta.adds.lines)
+      .filter(line => line.counted);
     // How much of a settlement or a pot the main blocks spell out. A control account posts one figure and keeps its
     // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so
     // Income and Expenses carry one line per block by default and the settlements themselves are read below, where
