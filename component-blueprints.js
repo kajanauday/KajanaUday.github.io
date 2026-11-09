@@ -582,7 +582,7 @@
         // A block with a calculation of its own posts what that works out to, in place of its sections' own figures.
         GROUPS_KINDS.forEach(kind => {
           const run = blockRun(kind);
-          (run?.adds.lines || []).filter(line => line.type === type && line.amount).forEach(line => {
+          (run?.adds.lines || []).filter(line => line.type === type && line.counted && line.amount).forEach(line => {
             groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, {
               ...line, label: blockTitleOf(kind), kind, section: null,
               from: (line.parts || []).map(part => part.label),
