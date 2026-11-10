@@ -2598,7 +2598,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // One shared entry: its dot (settled is one colour, open keeps its series colour), the date, what, who, my share and state.
     function sharedRowLine(item, owed) {
       const settled = Boolean(owed?.settled);
-      const colour = settled ? 'var(--st-done)' : (item.series?.colour || '#94a3b8');
+      const colour = settled ? 'var(--st-done)' : SharedLedger.fixedColour(item.series?.colour, item.series?.id || item.sid);
       const share = SharedLedger.split({ amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his }).myShare;
       const whole = formatMoney(Math.abs(Number(item.amount)), item.property);
       const theyOwe = item.shared.by !== 'friend';

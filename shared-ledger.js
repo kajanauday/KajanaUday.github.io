@@ -170,7 +170,15 @@
     return SERIES_COLOURS[n % SERIES_COLOURS.length];
   }
 
-  const api = { DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
+  // The colour a series is drawn in: its stored colour when it is one of the fixed list, otherwise one from the list picked
+  // by its id, so old series with other colours still show one of the same twelve.
+  function fixedColour(stored, key) {
+    if (SERIES_COLOURS.includes(stored)) return stored;
+    const hash = [...String(key || '')].reduce((n, ch) => (n * 31 + ch.codePointAt(0)) >>> 0, 7);
+    return SERIES_COLOURS[hash % SERIES_COLOURS.length];
+  }
+
+  const api = { fixedColour, DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
   if (typeof module === 'object' && module.exports) module.exports = api;
   global.SharedLedger = api;
 })(typeof window !== 'undefined' ? window : globalThis);

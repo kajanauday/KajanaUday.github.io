@@ -203,14 +203,11 @@
   const DayOrb = (entry, text, ctx) => {
     // A plain entry keeps its bare day number; the number still opens the day, for its hashtags.
     if (!entry.shared) return `<span class="day-num" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="Open this day: hashtags">${text}</span>`;
-    const status = ctx.sharedSeries ? ctx.sharedSeries(entry) : null;
-    const owed = ctx.sharedOwed ? ctx.sharedOwed(entry) : null;
-    // Settled is one colour for every settled entry; an entry still open keeps its series colour.
-    const settled = Boolean(owed?.settled);
-    const colour = settled ? 'var(--st-done)' : (entry.series?.colour || '#94a3b8');
-    const state = settled ? 'is-done' : status?.state === 'merged' ? 'is-merged' : 'is-open';
+    // The disc takes its series colour from the fixed list; a settled entry also has its bottom 15% filled dark green.
+    const settled = Boolean(ctx.sharedOwed && ctx.sharedOwed(entry)?.settled);
+    const colour = window.SharedLedger.fixedColour(entry.series?.colour, entry.series?.id || entry.sid);
     const note = `${entry.shared.by === 'friend' ? `${entry.shared.with} paid` : 'I paid'} · ${entry.shared.with}’s part ${entry.shared.his}% · open this day`;
-    return `<span class="day-orb ${state}" style="--c:${colour}" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="${ctx.esc(note)}">${text}</span>`;
+    return `<span class="day-orb${settled ? ' is-settled' : ''}" style="--c:${colour}" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="${ctx.esc(note)}">${text}</span>`;
   };
   // The CLEARED mark on an entry that settled a shared balance: the series colour as a ball, then the word.
   const ClearedMark = entry => (entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');

@@ -1490,23 +1490,17 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .day-num { cursor: pointer; border-radius: 3px; }
 .day-num:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
 .day-num:focus-visible { outline: 1px solid var(--brand); outline-offset: 2px; }
-/* The day number as a small coloured glass disc. The whole disc is one flat colour, translucent, so the page shows through
-   it like coloured glass; a single crisp line along its top edge is the only gloss. The number is thin and in the theme's
-   ink. Open shows the colour, merged adds a ring, settled fades to a dashed outline. */
+/* A shared entry's day number sits in a pale disc, with the number in bold. Dark theme: a light disc and a near-black
+   number. Light theme: a clear blue disc and a white number, so the number stays readable on both. The same for every
+   shared entry, whatever its series or state. */
 .day-orb {
-  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
-  font-size: 9.5px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1; cursor: pointer; vertical-align: middle;
-  border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); color: var(--ink);
-  background: color-mix(in srgb, var(--c) 26%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 1px 2px rgba(0, 0, 0, .10);
-  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-  transition: transform .15s, background-color .15s;
+  display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box;
+  border: 0; background: color-mix(in srgb, var(--c) 26%, #ffffff); color: color-mix(in srgb, var(--c) 55%, #000000);
+  font: 700 7px/1 var(--display); font-variant-numeric: tabular-nums; cursor: pointer; vertical-align: middle; transition: transform .15s, background-color .15s;
 }
-.day-orb:hover, .day-orb:focus-visible { transform: scale(1.12); outline: none; background: color-mix(in srgb, var(--c) 36%, transparent); }
-.day-orb.is-open { background: color-mix(in srgb, var(--c) 30%, transparent); }
-.day-orb.is-merged { background: color-mix(in srgb, var(--c) 42%, transparent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 0 0 2px color-mix(in srgb, var(--c) 24%, transparent); }
-.day-orb.is-done { background: color-mix(in srgb, var(--c) 30%, transparent); border-color: color-mix(in srgb, var(--c) 60%, transparent); color: var(--ink); }
-:root[data-theme="light"] .day-orb:not(.is-merged) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 1px 2px rgba(0, 0, 0, .06); }
+.day-orb:hover, .day-orb:focus-visible { transform: scale(1.1); outline: none; background: color-mix(in srgb, var(--c) 40%, #ffffff); }
+:root[data-theme="light"] .day-orb { background: var(--c); color: #ffffff; }
+:root[data-theme="light"] .day-orb:hover, :root[data-theme="light"] .day-orb:focus-visible { background: color-mix(in srgb, var(--c) 85%, #000000); }
 
 /* The day pop-up: the same look as the month pane. Settlements in the top 80%, hashtags in the bottom 20%. */
 .day-dialog { width: min(600px, calc(100% - 26px)); padding: 16px 18px; overflow: hidden; }
@@ -1605,3 +1599,6 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .settle-item-amount span { color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .settle-item-amount input { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: 400 14px var(--mono); }
 .settle-item-amount input:disabled { opacity: .6; }
+
+/* A settled shared expense: the bottom 15% of its circle is dark green. Not one of the year colours. */
+:root .day-orb.is-settled { background-image: linear-gradient(to top, #166534 15%, transparent 15%); background-repeat: no-repeat; }
