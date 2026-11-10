@@ -222,8 +222,11 @@
         const list = normalizeAlloc(row.alloc);
         return list.length ? { alloc: list } : {};
       };
+      // A shared expense's stable key and its marker (see shared-ledger.js). The key is what a settlement points at: an
+      // entry's own id is only its place in the month, and it changes on every load.
+      const sharedOf = row => (row.sid && row.shared ? { sid: String(row.sid), shared: { by: row.shared.by === 'friend' ? 'friend' : 'me', his: Math.min(100, Math.max(0, Math.round(Number(row.shared.his) || 0))), with: String(row.shared.with || '').trim() || 'Friend' } } : {});
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item) };
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -1458,6 +1461,28 @@
       this.transactions.forEach(item => { if (item.flow === id) delete item.flow; });
       return Promise.all([this.queue(() => this.db.patch({ [`years/${at}/flows/${id}`]: null })), this.saveTransactions()]);
     }
+
+    // ---- shared costs (see shared-ledger.js and years/<year>/settles) ----
+    // Every settlement of every loaded year, newest first. A settlement is kept in the year it is dated in.
+    settleList() {
+      return Object.entries(this.years).flatMap(([year, node]) => Object.entries(node.settles || {}).map(([id, settle]) => ({ ...settle, id, year: Number(year) })))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)) || a.id.localeCompare(b.id));
+    }
+    saveSettle(settle) {
+      const at = String(settle.date).slice(0, 4);
+      const node = this.year(at);
+      if (!node) return Promise.reject(new Error(`No year ${at} to keep the settlement in.`));
+      const settles = node.settles ||= {};
+      settles[settle.id] = settle;
+      return this.queue(() => this.db.patch({ [`years/${at}/settles/${settle.id}`]: settle }));
+    }
+    // What is still open on one shared entry, from every settlement made so far. Null for anything not shared.
+    sharedOwed(item) {
+      if (!item?.sid || !item.shared) return null;
+      return global.SharedLedger.outstanding({ id: item.sid, amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his, shared: true }, this.settleList());
+    }
+    // Pending settlements need every month of every year that exists, so they are all loaded before they are worked out.
+    ensureAllYears() { return Promise.all(this.yearIds().map(year => this.ensureYear(year))); }
 
     // ---- year card: a whole year as one ledger ----
     // One currency's year in the same shape as country(), so the month panel draws it: every section, subsection and entry

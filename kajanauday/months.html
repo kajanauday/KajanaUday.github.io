@@ -22,11 +22,12 @@
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../data-layer.js?v=20261113b" defer></script>
+  <script src="../shared-ledger.js?v=20261114a" defer></script>
+  <script src="../data-layer.js?v=20261114a" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261113d" defer></script>
+  <script src="../component-blueprints.js?v=20261114a" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261113h" defer></script>
+  <script src="../kajanauday.js?v=20261114a" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -43,11 +44,67 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
+      <button type="button" class="quiet-button shared-open" data-shared-open title="Shared costs: what is open with people, and settling it">Shared</button>
       <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards, flows and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
 
+  <dialog class="modal month-dialog shared-dialog" id="shared-dialog" aria-labelledby="shared-dialog-title">
+    <form id="shared-form" novalidate>
+      <div class="modal-header"><div><p>Shared costs</p><h2 id="shared-dialog-title">Settle with someone</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <label class="shared-who"><span>Person and currency</span><select id="shared-who" name="who" aria-label="Person and currency"></select></label>
+      <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
+      <div class="shared-lists">
+        <h3>They owe me</h3>
+        <div id="shared-owed-list"></div>
+        <h3>I owe them</h3>
+        <div id="shared-owe-list"></div>
+      </div>
+      <div class="shared-settle" id="shared-settle">
+        <h3>Settle now</h3>
+        <p class="shared-hint">Tick what this payment clears. Each amount starts at what is open; change it for a part payment.</p>
+        <div class="shared-cash-row">
+          <label><span>Date</span><input type="date" name="date" required></label>
+          <label><span>Amount that moved</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+        </div>
+        <div class="shared-dir" role="group" aria-label="Which way the money moved">
+          <label><input type="radio" name="dir" value="in" checked> He paid me</label>
+          <label><input type="radio" name="dir" value="out"> I paid him</label>
+        </div>
+        <p class="shared-net" id="shared-net" aria-live="polite"></p>
+        <div class="shared-forgive" id="shared-forgive" hidden>
+          <p id="shared-forgive-text"></p>
+          <label><input type="radio" name="forgive" value="yes"> <span id="shared-forgive-yes"></span></label>
+          <label><input type="radio" name="forgive" value="no"> Leave it out</label>
+        </div>
+        <label><span>Note (optional)</span><input name="note" maxlength="80" autocomplete="off"></label>
+      </div>
+      <div class="shared-history"><h3>Settled so far</h3><ul id="shared-history"></ul></div>
+      <p class="settings-error" id="shared-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button">Save settlement</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog shared-mark-dialog" id="shared-mark-dialog" aria-labelledby="shared-mark-title">
+    <form id="shared-mark-form" novalidate>
+      <div class="modal-header"><div><p id="shared-mark-where"></p><h2 id="shared-mark-title">Mark as shared</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <label><span>Shared with</span><input name="with" list="shared-names" maxlength="30" autocomplete="off" required></label>
+      <datalist id="shared-names"></datalist>
+      <fieldset class="shared-by"><legend>Who paid</legend>
+        <label><input type="radio" name="by" value="me" checked> I paid</label>
+        <label><input type="radio" name="by" value="friend"> He paid</label>
+      </fieldset>
+      <label><span>His part, in %</span><input name="his" type="number" min="0" max="100" step="1" inputmode="numeric" required></label>
+      <div class="shared-quick" role="group" aria-label="Quick splits">
+        <button type="button" class="quiet-button" data-his="50">Half</button>
+        <button type="button" class="quiet-button" data-his="100">All his</button>
+        <button type="button" class="quiet-button" data-his="0">All mine</button>
+      </div>
+      <p class="shared-hint" id="shared-mark-hint" aria-live="polite"></p>
+      <p class="settings-error" id="shared-mark-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" id="shared-mark-stop">Stop sharing</button><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
   <dialog class="modal sync-dialog" id="sync-dialog" aria-labelledby="sync-dialog-title">
     <div class="modal-header"><div><p>This device and Firebase</p><h2 id="sync-dialog-title">Sync</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
     <div id="sync-body"></div>

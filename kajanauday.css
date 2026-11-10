@@ -1523,3 +1523,27 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 #ledger details.ledger-type-section.is-picked > summary, #ledger details.ledger-cat.is-picked > summary { background: var(--brand-soft); box-shadow: inset 2px 0 0 var(--brand); border-radius: 4px; }
 #ledger .ledger-entry-cell.is-picked > .ledger-entry-line { background: var(--brand-soft); box-shadow: inset 2px 0 0 var(--brand); border-radius: 4px; }
 #ledger .ledger-entry-cell.is-picked { background: transparent; box-shadow: none; }
+
+/* Shared costs: the marker on a shared expense, and the pending view. Red while something is open, green once settled. */
+.shared-mark { display: inline-block; margin-right: 5px; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.shared-mark.is-open { color: var(--expense); background: color-mix(in srgb, var(--expense) 14%, transparent); }
+.shared-mark.is-settled { color: var(--income); background: color-mix(in srgb, var(--income) 14%, transparent); }
+.shared-dialog .shared-who select, .shared-mark-dialog label { display: grid; gap: 4px; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+.shared-dialog select, .shared-mark-dialog input, .shared-dialog input[type="text"], .shared-dialog input[type="date"], .shared-dialog input[name="note"] { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.shared-summary { font-size: 13px; color: var(--ink); margin: 6px 0 10px; }
+.shared-lists h3, .shared-settle h3, .shared-history h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 4px; }
+.shared-open-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 96px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.shared-open-what small { display: block; color: var(--muted); font-size: 11px; }
+.shared-open-amount { width: 96px; height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: right; }
+.shared-none { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.shared-cash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.shared-cash-row label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.shared-dir { display: flex; gap: 14px; font-size: 13px; margin: 8px 0; }
+.shared-net { font-size: 13px; margin: 6px 0; }
+.shared-forgive { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 8px 0; display: grid; gap: 6px; }
+.shared-history ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+.shared-history li { padding: 6px 0; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+.shared-history small { color: var(--muted); }
+.shared-by { border: 0; padding: 0; margin: 0 0 10px; display: flex; gap: 14px; font-size: 13px; }
+.shared-quick { display: flex; gap: 6px; margin-bottom: 8px; }
+.shared-open { font-size: 12px; }

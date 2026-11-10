@@ -202,6 +202,17 @@
         : split.m === 'none' ? 'None of it was mine — the whole amount is owed' : 'Part of it was mine';
     return `<span class="split-mark ${tone}" data-split-mark title="${ctx.esc(`${says} · right-click the row to change it`)}">${ctx.esc(text)}</span>`;
   };
+  // A shared expense's marker: whose it is, the friend's part, and whether anything is still open on it. Red while
+  // something is open, green once it is settled. Nothing else on the row changes.
+  const SharedMark = (entry, ctx) => {
+    if (!entry.shared) return '';
+    const state = store()?.sharedOwed ? store().sharedOwed(entry) : null;
+    const open = state && !state.settled;
+    const name = entry.shared.with;
+    const label = open ? `Shared · ${name} · open ${ctx.fmt(state.owed, entry.property)}` : `Shared · ${name} · settled`;
+    const who = entry.shared.by === 'friend' ? `${name} paid` : 'I paid';
+    return `<span class="shared-mark ${open ? 'is-open' : 'is-settled'}" data-shared-mark title="${ctx.esc(`${who} · ${name}’s part is ${entry.shared.his}% · right-click the row to change or settle it`)}">${ctx.esc(label)}</span>`;
+  };
   // What a repayment, or money arriving, said it was for. One payment usually covers more than one thing, so the mark
   // names the one thing when there is one and counts them when there are several; the whole list is in its title, with
   // anything not yet accounted for. A row that has said nothing carries no mark at all, exactly as before.
@@ -247,7 +258,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${SharedMark(entry, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------

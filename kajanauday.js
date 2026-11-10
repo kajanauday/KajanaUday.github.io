@@ -1213,6 +1213,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // A year tab switches years; the year already shown opens its settings.
         // The ★ # button opens the special cards and hashtags page, and from there goes back to the year's months; a
         // year tab goes back to that year's months (and, when that year is already showing, opens its settings).
+        if (event.target.closest('[data-shared-open]')) {
+          event.preventDefault();
+          return openSharedPanel();
+        }
         if (event.target.closest('[data-ledger-special]')) {
           setSpecialMode(!specialMode);
           renderLedger();
@@ -2408,6 +2412,316 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         || '<option value="">Pick two or more first</option>';
       if (chosen.some(section => section.name === was)) target.value = was;
       target.disabled = chosen.length < 2;
+    }
+    // ---- Shared costs -------------------------------------------------------------------------
+    // An expense can be marked as shared: who paid it and the friend's part of it (see shared-ledger.js). The entry stays
+    // an ordinary entry in its month; the marker alone says whether anything is still open. A settlement is one payment
+    // that clears any number of open items, and it lives in the year it is dated in.
+    const SHARED_SEP = '::';
+    const sharedKeyOf = (property, name) => `${property}${SHARED_SEP}${name}`;
+    const sharedParse = key => { const at = key.indexOf(SHARED_SEP); return { property: key.slice(0, at), name: key.slice(at + SHARED_SEP.length) }; };
+    const sharedRows = () => transactions.filter(item => item.sid && item.shared && !item.parentId && !item.eventId);
+    const newSharedKey = prefix => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    const sharedState = { mark: null, key: null };
+    const sharedMoney = (minor, property) => formatMoney(Math.abs(minor), property);
+    const sharedSettlesOf = sid => store.settleList().filter(settle => settle.items.some(item => item.to === sid));
+    // Everyone with a shared entry or a settlement, one line per person and currency.
+    function sharedPeople() {
+      const keys = new Set([
+        ...sharedRows().map(item => sharedKeyOf(item.property, item.shared.with)),
+        ...store.settleList().map(settle => sharedKeyOf(settle.property, settle.with))
+      ]);
+      return [...keys].sort().map(key => ({ key, ...sharedParse(key) }));
+    }
+    // One person's shared entries and settlements in one currency, in the shape shared-ledger.js reads.
+    function sharedBundle(property, name) {
+      const entries = sharedRows().filter(item => item.property === property && item.shared.with === name).map(item => ({
+        id: item.sid, amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his, shared: true,
+        date: item.date, description: item.description, item
+      }));
+      const settles = store.settleList().filter(settle => settle.property === property && settle.with === name);
+      return { entries, settles, pending: SharedLedger.pending(entries, settles) };
+    }
+    // What a shared expense still has open, read for the marker and the row menu.
+    function sharedStatusText(item) {
+      const state = store.sharedOwed(item);
+      if (!state) return '';
+      return state.settled ? 'settled: nothing open' : `open: ${sharedMoney(state.owed, item.property)}`;
+    }
+    // The row menu's share item for an expense. Only an expense can be shared: money in is never a share of anything.
+    function sharedAction(id) {
+      const item = transactions.find(row => row.id === id);
+      if (!item || item.type !== 'expense') return [];
+      return [item.shared
+        ? { icon: 'users', label: `Shared with ${item.shared.with}…`, hint: sharedStatusText(item), run: () => openSharedMark(item) }
+        : { icon: 'users', label: 'Mark as shared…', hint: 'split with someone; settle it later', run: () => openSharedMark(item) }];
+    }
+
+    // Marking one expense: who paid it, and the friend's part as a whole percentage.
+    function openSharedMark(item) {
+      if (isViewer) return viewOnly();
+      sharedState.mark = item.id;
+      const form = document.querySelector('#shared-mark-form');
+      const shared = item.shared || {};
+      const names = [...new Set([...sharedRows().map(row => row.shared.with), ...store.settleList().map(settle => settle.with)])].sort();
+      document.querySelector('#shared-names').innerHTML = names.map(name => `<option value="${escapeHtml(name)}"></option>`).join('');
+      form.elements.with.value = shared.with || (names.length === 1 ? names[0] : '');
+      form.querySelector(`[name="by"][value="${shared.by === 'friend' ? 'friend' : 'me'}"]`).checked = true;
+      form.elements.his.value = shared.his ?? 50;
+      document.querySelector('#shared-mark-where').textContent = `${regions[item.property]?.code || item.property} · ${item.description}`;
+      document.querySelector('#shared-mark-title').textContent = item.shared ? 'Shared expense' : 'Mark as shared';
+      document.querySelector('#shared-mark-stop').hidden = !item.shared;
+      document.querySelector('#shared-mark-error').hidden = true;
+      updateSharedMarkHint();
+      document.querySelector('#shared-mark-dialog').showModal();
+    }
+    // Says in plain words what the split means for each of us, as the numbers are typed.
+    function updateSharedMarkHint() {
+      const form = document.querySelector('#shared-mark-form');
+      const item = transactions.find(row => row.id === sharedState.mark);
+      const hint = document.querySelector('#shared-mark-hint');
+      if (!item) return;
+      const his = Number(form.elements.his.value);
+      if (!Number.isInteger(his) || his < 0 || his > 100) return (hint.textContent = 'Enter a whole number from 0 to 100.');
+      const by = form.elements.by.value === 'friend' ? 'friend' : 'me';
+      const name = form.elements.with.value.trim() || 'they';
+      const parts = SharedLedger.split({ amount: item.amount, paidBy: by, hisPct: his });
+      const money = minor => formatMoney(minor, item.property);
+      hint.textContent = by === 'me'
+        ? `You paid ${money(parts.cost)}. ${name} owes you ${money(parts.friendShare)}. Your part, ${money(parts.myShare)}, is your expense.`
+        : `${name} paid ${money(parts.cost)}. You owe ${name} ${money(parts.myShare)}, your part. Your expense is ${money(parts.myShare)}; his is ${money(parts.friendShare)}.`;
+    }
+    function saveSharedMark(form) {
+      const item = transactions.find(row => row.id === sharedState.mark);
+      const error = document.querySelector('#shared-mark-error');
+      const fail = message => { error.textContent = message; error.hidden = false; };
+      if (!item) return fail('Could not find that entry. Refresh and try again.');
+      const name = form.elements.with.value.trim();
+      const his = Number(form.elements.his.value);
+      const by = form.elements.by.value === 'friend' ? 'friend' : 'me';
+      if (!name) return fail('Name the person you share it with.');
+      if (!Number.isInteger(his) || his < 0 || his > 100) return fail('The friend’s part is a whole number from 0 to 100.');
+      const changes = !item.shared || item.shared.by !== by || item.shared.his !== his || item.shared.with !== name;
+      if (item.sid && changes && sharedSettlesOf(item.sid).length) return fail('A settlement already covers this. Its split cannot change until that settlement is taken off.');
+      item.sid ||= newSharedKey('sh');
+      item.shared = { by, his, with: name };
+      saveTransactions();
+      document.querySelector('#shared-mark-dialog').close();
+      renderLedger();
+      showToast(`Shared with ${name}.`);
+    }
+    function stopSharing() {
+      const item = transactions.find(row => row.id === sharedState.mark);
+      if (!item?.sid) return;
+      if (sharedSettlesOf(item.sid).length) return showToast('A settlement already covers this, so it stays shared.');
+      delete item.sid;
+      delete item.shared;
+      saveTransactions();
+      document.querySelector('#shared-mark-dialog').close();
+      renderLedger();
+      showToast('No longer shared.');
+    }
+
+    // The pending view: everything open with one person in one currency, and a payment that clears some or all of it.
+    async function openSharedPanel(key = null) {
+      try {
+        showToast('Loading every year’s shared costs…');
+        await store.ensureAllYears();
+      } catch (error) {
+        return showToast('Could not load every year yet. Try again.');
+      }
+      sharedState.key = key || sharedState.key;
+      renderSharedPanel();
+      document.querySelector('#shared-dialog').showModal();
+    }
+    // The open items as checkboxes with an amount each, starting at what is still open.
+    function sharedOpenRows(list, name, property) {
+      return list.map(row => {
+        const entry = row.entry;
+        const who = entry.paidBy === 'friend' ? `${name} paid` : 'I paid';
+        return `<label class="shared-open-row"><input type="checkbox" name="pick" value="${escapeHtml(row.id)}" aria-label="Clear ${escapeHtml(entry.description)}">
+          <span class="shared-open-what"><b>${escapeHtml(entry.description)}</b><small>${escapeHtml(entry.date)} · ${escapeHtml(who)} · ${entry.hisPct}% his</small></span>
+          <span class="shared-open-owed">${sharedMoney(row.owed, property)}</span>
+          <input class="shared-open-amount" type="text" inputmode="decimal" autocomplete="off" data-sid="${escapeHtml(row.id)}" value="${(row.owed / 100).toFixed(2)}" aria-label="Amount to clear for ${escapeHtml(entry.description)}"></label>`;
+      }).join('') || '<p class="shared-none">Nothing open here.</p>';
+    }
+    function renderSharedPanel() {
+      const people = sharedPeople();
+      const select = document.querySelector('#shared-who');
+      const summary = document.querySelector('#shared-summary');
+      const settle = document.querySelector('#shared-settle');
+      const form = document.querySelector('#shared-form');
+      if (!people.length) {
+        select.innerHTML = '';
+        summary.textContent = 'Nothing shared yet. Right-click an expense and choose “Mark as shared…”.';
+        document.querySelector('#shared-owed-list').innerHTML = '';
+        document.querySelector('#shared-owe-list').innerHTML = '';
+        document.querySelector('#shared-history').innerHTML = '';
+        settle.hidden = true;
+        return;
+      }
+      if (!people.some(person => person.key === sharedState.key)) sharedState.key = people[0].key;
+      select.innerHTML = people.map(person => `<option value="${escapeHtml(person.key)}"${person.key === sharedState.key ? ' selected' : ''}>${escapeHtml(person.name)} · ${escapeHtml(regions[person.property]?.code || person.property)}</option>`).join('');
+      const { property, name } = sharedParse(sharedState.key);
+      const { pending, settles, entries } = sharedBundle(property, name);
+      const money = minor => sharedMoney(minor, property);
+      summary.textContent = `${name} owes you ${money(pending.receivableTotal)} · you owe ${name} ${money(pending.payableTotal)} · ${pending.net === 0 ? 'all square' : pending.net > 0 ? `${name} owes you ${money(pending.net)} overall` : `you owe ${name} ${money(pending.net)} overall`}`;
+      document.querySelector('#shared-owed-list').innerHTML = sharedOpenRows(pending.receivable, name, property);
+      document.querySelector('#shared-owe-list').innerHTML = sharedOpenRows(pending.payable, name, property);
+      const describe = sid => entries.find(entry => entry.id === sid)?.description || 'an item';
+      document.querySelector('#shared-history').innerHTML = settles.slice().sort((a, b) => b.date.localeCompare(a.date)).map(settle => {
+        const covers = settle.items.map(item => describe(item.to)).join(', ');
+        const letGo = settle.forgiven ? ` · ${money(Math.abs(settle.forgiven))} let go (${settle.treatment === 'none' ? 'left out' : settle.treatment === 'expense' ? 'counted as expense' : 'counted as income'})` : '';
+        return `<li><span>${escapeHtml(settle.date)}</span> <b class="${settle.cash >= 0 ? 'income' : 'expense'}">${settle.cash >= 0 ? '+' : '−'} ${money(settle.cash)}</b> <small>covers ${escapeHtml(covers)}${letGo}${settle.note ? ` · ${escapeHtml(settle.note)}` : ''}</small></li>`;
+      }).join('') || '<li class="shared-none">No settlements yet.</li>';
+      settle.hidden = isViewer;
+      if (!form.elements.date.value) {
+        const now = new Date();
+        form.elements.date.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      }
+      sharedRecalc();
+    }
+    // What the ticked items add up to, and the cash that will move. Green is money in, red money out.
+    function sharedPicked(form) {
+      const { property, name } = sharedParse(sharedState.key);
+      const { pending } = sharedBundle(property, name);
+      return [...pending.receivable, ...pending.payable]
+        .filter(row => form.querySelector(`[name="pick"][value="${CSS.escape(row.id)}"]`)?.checked)
+        .map(row => {
+          const typed = ExpenseStore.readAmount(form.querySelector(`[data-sid="${CSS.escape(row.id)}"]`).value);
+          const a = typed.error || typed.empty ? 0 : Math.round(Math.abs(typed.value) * 100);
+          return { to: row.id, a, direction: row.direction };
+        });
+    }
+    // The cash in minor units, signed from my side: positive when he paid me, negative when I paid him.
+    function sharedCash(form) {
+      const typed = ExpenseStore.readAmount(form.elements.amount.value);
+      if (typed.error || typed.empty) return null;
+      const minor = Math.round(Math.abs(typed.value) * 100);
+      return form.elements.dir.value === 'out' ? -minor : minor;
+    }
+    // Fills the amount with what the ticks net to, so the usual case (clearing both ways) needs no typing.
+    function sharedFillCash(form) {
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      const received = items.filter(item => item.direction === 'friend-owes-me').reduce((sum, item) => sum + item.a, 0);
+      const paid = items.filter(item => item.direction === 'i-owe-friend').reduce((sum, item) => sum + item.a, 0);
+      const net = received - paid;
+      form.elements.amount.value = items.length ? (Math.abs(net) / 100).toFixed(2) : '';
+      form.querySelector(`[name="dir"][value="${net < 0 ? 'out' : 'in'}"]`).checked = true;
+    }
+    // Live: what the payment nets to, and whether anything is let go (which the user must decide about).
+    function sharedRecalc() {
+      if (!sharedState.key) return;
+      const form = document.querySelector('#shared-form');
+      const { property, name } = sharedParse(sharedState.key);
+      const money = minor => sharedMoney(minor, property);
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      const received = items.filter(item => item.direction === 'friend-owes-me').reduce((sum, item) => sum + item.a, 0);
+      const paid = items.filter(item => item.direction === 'i-owe-friend').reduce((sum, item) => sum + item.a, 0);
+      const net = received - paid;
+      const cash = sharedCash(form);
+      const net_line = document.querySelector('#shared-net');
+      net_line.textContent = items.length
+        ? `Clears ${money(received + paid)} · ${net >= 0 ? `${name} pays you ${money(net)}` : `you pay ${name} ${money(net)}`}`
+        : 'Tick the items this payment clears.';
+      const forgiven = cash === null || !items.length ? 0 : net - cash;
+      document.querySelector('#shared-forgive').hidden = forgiven === 0;
+      if (forgiven !== 0) {
+        document.querySelector('#shared-forgive-text').textContent = forgiven > 0
+          ? `${name} lets go of ${money(forgiven)} he owes you.`
+          : `You let go of ${money(-forgiven)} you owe ${name}.`;
+        document.querySelector('#shared-forgive-yes').textContent = forgiven > 0
+          ? 'Count it as my expense (it was money I never got back)'
+          : 'Count it as my income (a debt I no longer owe)';
+      }
+    }
+    function saveSharedSettlement(form) {
+      const error = document.querySelector('#shared-error');
+      const fail = message => { error.textContent = message; error.hidden = false; };
+      if (!sharedState.key) return fail('Pick a person first.');
+      const { property, name } = sharedParse(sharedState.key);
+      const bundle = sharedBundle(property, name);
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      const cash = sharedCash(form);
+      const date = form.elements.date.value;
+      if (!items.length) return fail('Tick the items this payment clears.');
+      if (cash === null) return fail('Enter the amount that moved.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Pick the date.');
+      const plain = items.map(({ to, a }) => ({ to, a }));
+      const probe = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: plain, cash });
+      if (!probe.ok) return fail(probe.error);
+      let treatment = 'none';
+      if (probe.forgiven !== 0) {
+        const answer = form.elements.forgive.value;
+        if (!answer) return fail('Say whether the amount let go counts as income or expense, or is left out.');
+        treatment = answer === 'yes' ? (probe.forgiven > 0 ? 'expense' : 'income') : 'none';
+      }
+      const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: plain, cash, treatment });
+      if (!result.ok) return fail(result.error);
+      // What is let go becomes a real entry in the date’s month, so it reaches that month’s income or expenses like any other.
+      let entry = null;
+      if (treatment !== 'none') {
+        const type = treatment;
+        const mKey = date.slice(0, 7);
+        const scope = panelScope(mKey, property);
+        const section = scope.sections().find(item => item.type === type && !item.closed && item.subsections?.length);
+        if (!section) return fail(`Add a ${type} section with a subsection in that month first, so the amount has somewhere to go.`);
+        entry = {
+          id: `new-${Date.now()}`, property, date, section: section.name, category: section.subsections[0],
+          description: `Let go by ${name}`, place: '', amount: Math.abs(result.forgiven), type, ...scope.fields
+        };
+      }
+      const record = {
+        id: newSharedKey('st'), date, property, with: name, items: result.settlement.items,
+        cash: result.settlement.cash, forgiven: result.forgiven, treatment, note: form.elements.note.value.trim()
+      };
+      if (entry) {
+        transactions.push(entry);
+        saveTransactions();
+      }
+      trackSave(store.saveSettle(record));
+      form.elements.note.value = '';
+      document.querySelector('#shared-dialog').querySelector('[name="amount"]').value = '';
+      document.querySelector('#shared-dialog').close();
+      renderLedger();
+      showToast(`Settled with ${name}.`);
+    }
+    function setupSharedDialogs() {
+      const panel = document.querySelector('#shared-dialog');
+      if (!panel) return;
+      const form = document.querySelector('#shared-form');
+      form.addEventListener('change', event => {
+        const target = event.target;
+        if (target.name === 'who') {
+          sharedState.key = target.value;
+          form.elements.amount.value = '';
+          form.querySelectorAll('[name="forgive"]').forEach(radio => { radio.checked = false; });
+          return renderSharedPanel();
+        }
+        if (target.name === 'pick') sharedFillCash(form);
+        sharedRecalc();
+      });
+      form.addEventListener('input', event => {
+        if (event.target.name === 'amount' || event.target.dataset.sid) sharedRecalc();
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        saveSharedSettlement(form);
+      });
+      const mark = document.querySelector('#shared-mark-form');
+      mark.addEventListener('input', updateSharedMarkHint);
+      mark.addEventListener('change', updateSharedMarkHint);
+      mark.addEventListener('click', event => {
+        const quick = event.target.closest('[data-his]');
+        if (!quick) return;
+        mark.elements.his.value = quick.dataset.his;
+        updateSharedMarkHint();
+      });
+      mark.addEventListener('submit', event => {
+        event.preventDefault();
+        saveSharedMark(mark);
+      });
+      document.querySelector('#shared-mark-stop').addEventListener('click', stopSharing);
     }
     function openMergeDialog(month, property, kind) {
       if (isViewer) return viewOnly();
@@ -3810,6 +4124,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         })();
         return write([
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
+          ...sharedAction(target.id),
           ...splitItems,
           ...allocItems,
           { icon: 'corner-down-right', label: 'Add note', run: add },
@@ -4959,6 +5274,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupSectionSetup();
     setupAllocDialog();
     setupMergeDialog();
+    setupSharedDialogs();
     setupLegacyUnpackDialog();
     setupAboutPop();
     setupHub();
