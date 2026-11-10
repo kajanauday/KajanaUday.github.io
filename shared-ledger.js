@@ -111,7 +111,65 @@
     return Object.fromEntries(Object.entries(people || {}).map(([name, bundle]) => [name, pending(bundle.entries, bundle.settlements)]));
   }
 
-  const api = { DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend };
+  // ---- series: a run of shared items with one person in one currency, from the first item until it is repaid ----
+  // Each series keeps one colour for as long as it lives. A series is done when its balance is back to zero; the next
+  // shared item then starts a new series with a new colour. When an item is on the other side of the running balance
+  // the series is merged: its items show <--> and the balance, instead of a plain ball. Nothing is ever deleted, so
+  // the balance is always what the items and settlements say.
+  const PALETTE = ['#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed', '#0d9488', '#db2777', '#65a30d', '#0891b2', '#ea580c'];
+  const signOf = value => (value > 0 ? 1 : value < 0 ? -1 : 0);
+  // +: the friend owes me this share; -: I owe him it.
+  const signedShare = entry => (isPayerMe(entry) ? split(entry).friendOwes : -split(entry).iOwe);
+  // Items: [{ id, amount, paidBy, hisPct, date, series?: { id, colour } }]. Returns Map id → { seriesId, colour, state,
+  // balance } where state is 'open', 'merged' or 'done', and balance is what is still owed across the series (+ owed to me).
+  function runSeries(items, settlements) {
+    const groups = new Map();
+    (items || []).forEach(item => {
+      const seriesId = item.series?.id || `loose-${item.id}`;
+      if (!groups.has(seriesId)) groups.set(seriesId, []);
+      groups.get(seriesId).push(item);
+    });
+    const out = new Map();
+    groups.forEach((list, seriesId) => {
+      const ordered = list.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      const balance = ordered.reduce((sum, item) => sum + signOf(signedShare(item)) * outstanding(item, settlements).owed, 0);
+      let running = 0;
+      let merged = false;
+      ordered.forEach(item => {
+        const share = signedShare(item);
+        if (running !== 0 && share !== 0 && signOf(share) !== signOf(running)) merged = true;
+        running += share;
+      });
+      const state = balance === 0 ? 'done' : merged ? 'merged' : 'open';
+      ordered.forEach(item => out.set(item.id, { seriesId, colour: item.series?.colour || null, state, balance }));
+    });
+    return out;
+  }
+  // The open series (balance not zero) a new item belongs to: the latest one with the same person and currency, or null.
+  // `items` and `settlements` must already be the same person and currency.
+  function joinSeries(items, settlements) {
+    const groups = new Map();
+    (items || []).forEach(item => {
+      const key = item.series?.id;
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, { id: key, colour: item.series.colour, latest: '', list: [] });
+      const group = groups.get(key);
+      group.list.push(item);
+      if (String(item.date || '') > group.latest) group.latest = String(item.date || '');
+    });
+    const open = [...groups.values()].filter(group => group.list.reduce((sum, item) => sum + signOf(signedShare(item)) * outstanding(item, settlements).owed, 0) !== 0);
+    open.sort((a, b) => b.latest.localeCompare(a.latest));
+    return open.length ? { id: open[0].id, colour: open[0].colour } : null;
+  }
+  // A colour for a new series: random, but not one an open series is already using.
+  function pickColour(inUse = []) {
+    const taken = new Set(inUse);
+    const free = PALETTE.filter(colour => !taken.has(colour));
+    const pool = free.length ? free : PALETTE;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  const api = { DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, PALETTE, runSeries, joinSeries, pickColour };
   if (typeof module === 'object' && module.exports) module.exports = api;
   global.SharedLedger = api;
 })(typeof window !== 'undefined' ? window : globalThis);

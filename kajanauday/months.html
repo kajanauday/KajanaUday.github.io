@@ -22,12 +22,12 @@
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../shared-ledger.js?v=20261114a" defer></script>
-  <script src="../data-layer.js?v=20261114a" defer></script>
+  <script src="../shared-ledger.js?v=20261114c" defer></script>
+  <script src="../data-layer.js?v=20261114c" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261114a" defer></script>
+  <script src="../component-blueprints.js?v=20261114c" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261114a" defer></script>
+  <script src="../kajanauday.js?v=20261114c" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -50,6 +50,12 @@
     <div class="month-ledger" id="month-ledger"></div>
   </main>
 
+  <dialog class="modal month-dialog series-dialog" id="series-dialog" aria-labelledby="series-title">
+    <div class="modal-header"><div><p>Shared series</p><h2 id="series-title"></h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <p class="shared-summary" id="series-summary" aria-live="polite"></p>
+    <ul class="series-list" id="series-list"></ul>
+    <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button></div>
+  </dialog>
   <dialog class="modal month-dialog shared-dialog" id="shared-dialog" aria-labelledby="shared-dialog-title">
     <form id="shared-form" novalidate>
       <div class="modal-header"><div><p>Shared costs</p><h2 id="shared-dialog-title">Settle with someone</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>

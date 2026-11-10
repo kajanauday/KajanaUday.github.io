@@ -1547,3 +1547,19 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .shared-by { border: 0; padding: 0; margin: 0 0 10px; display: flex; gap: 14px; font-size: 13px; }
 .shared-quick { display: flex; gap: 6px; margin-bottom: 8px; }
 .shared-open { font-size: 12px; }
+
+/* Shared series: a coloured ball right after the day, with no margin or padding. Hollow while open, filled once done.
+   A merged series shows the balance's sign in a pill with <--> in place of the ball. */
+.sh-ball, .sh-merge { display: inline-block; margin: 0; padding: 0; vertical-align: middle; }
+.sh-ball { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.sh-ball.is-open { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.sh-merge { height: 14px; line-height: 14px; padding: 0 3px; border-radius: 7px; background: var(--c); color: #fff; font-size: 10px; font-weight: 700; white-space: nowrap; }
+
+/* Series pop-up: every item of one shared series, across months. */
+.series-list { list-style: none; padding: 0; margin: 8px 0 0; max-height: 50vh; overflow: auto; }
+.series-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.series-what small { display: block; color: var(--muted); font-size: 11px; }
+.series-amount { font-variant-numeric: tabular-nums; }
+.series-state { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.series-state.is-open { color: var(--expense); }
+.series-state.is-settled { color: var(--income); }

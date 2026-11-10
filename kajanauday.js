@@ -240,9 +240,16 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
     function renderMonthGroups(year) { return ledgerRenderer.monthGroups(year, renderState()); }
     // loadMissing: false redraws from what is already in memory only, without starting any Firebase load.
+    let allYearsRequested = false;
     function renderLedger({ loadMissing = true } = {}) {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
+      store.refreshSeries();
+      // Every year is read once in the background, so a series that runs past its own month shows its colour in every month.
+      if (!allYearsRequested) {
+        allYearsRequested = true;
+        store.ensureAllYears().then(() => renderLedger({ loadMissing: false })).catch(() => {});
+      }
       const year = currentMonth.getFullYear();
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year, specialMode);
       const specialButton = document.querySelector('[data-ledger-special]');
@@ -1156,6 +1163,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // A subsection's Day or Amount sort button: orders its entries and their notes. It sits in the row's <summary>,
         // so the default (opening or closing the row) is prevented, and it never counts toward a double-click rename.
         // Only what is already loaded is redrawn: nothing is fetched from or written to Firebase.
+        const ball = event.target.closest('[data-shared-ball]');
+        if (ball) {
+          event.preventDefault();
+          return openSeriesPopup(ball.dataset.series);
+        }
         const sortButton = event.target.closest('[data-sort-cat]');
         if (sortButton) {
           event.preventDefault();
@@ -2457,6 +2469,29 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         : { icon: 'users', label: 'Mark as shared…', hint: 'split with someone; settle it later', run: () => openSharedMark(item) }];
     }
 
+    // The series a shared ball stands for: every item in it, across all months and years, in one pop-up.
+    async function openSeriesPopup(seriesId) {
+      try { await store.ensureAllYears(); } catch (error) { return showToast('Could not load every year yet. Try again.'); }
+      store.refreshSeries();
+      const items = sharedRows().filter(row => row.series?.id === seriesId).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      if (!items.length) return showToast('Nothing in this series is loaded.');
+      const first = items[0];
+      const name = first.shared.with;
+      const balance = store.sharedSeriesStatus(first)?.balance || 0;
+      const money = minor => formatMoney(Math.abs(minor), first.property);
+      const colour = first.series.colour || '#94a3b8';
+      document.querySelector('#series-title').innerHTML = `<span class="sh-ball is-open" style="--c:${escapeHtml(colour)}"></span> ${escapeHtml(name)} · ${escapeHtml(regions[first.property]?.code || first.property)}`;
+      document.querySelector('#series-summary').textContent = balance === 0
+        ? 'Done: nothing is open in this series.'
+        : `${balance > 0 ? `${name} owes me` : 'I owe'} ${money(balance)} across this series.`;
+      document.querySelector('#series-list').innerHTML = items.map(item => {
+        const owed = store.sharedOwed(item);
+        const open = owed && !owed.settled;
+        const who = item.shared.by === 'friend' ? `${name} paid` : 'I paid';
+        return `<li class="series-row"><span class="series-when">${escapeHtml(item.date)}</span><span class="series-what"><b>${escapeHtml(item.description)}</b><small>${escapeHtml(who)} · ${item.shared.his}% his · ${escapeHtml(item.category)}</small></span><span class="series-amount">${money(item.amount)}</span><span class="series-state ${open ? 'is-open' : 'is-settled'}">${open ? `open ${money(owed.owed)}` : 'settled'}</span></li>`;
+      }).join('');
+      document.querySelector('#series-dialog').showModal();
+    }
     // Marking one expense: who paid it, and the friend's part as a whole percentage.
     function openSharedMark(item) {
       if (isViewer) return viewOnly();
@@ -2504,6 +2539,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const changes = !item.shared || item.shared.by !== by || item.shared.his !== his || item.shared.with !== name;
       if (item.sid && changes && sharedSettlesOf(item.sid).length) return fail('A settlement already covers this. Its split cannot change until that settlement is taken off.');
       item.sid ||= newSharedKey('sh');
+      if (!item.series || item.shared?.with !== name) {
+        // Joins the open series of this person and currency, or starts a new one with a colour no open series is using.
+        store.refreshSeries();
+        const toItem = row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series });
+        const same = sharedRows().filter(row => row !== item && row.property === item.property && row.shared.with === name);
+        const join = SharedLedger.joinSeries(same.map(toItem), store.settleList().filter(settle => settle.property === item.property && settle.with === name));
+        const inUse = sharedRows().filter(row => row.series && store.sharedSeriesStatus(row)?.state !== 'done').map(row => row.series.colour);
+        item.series = join || { id: newSharedKey('se'), colour: SharedLedger.pickColour(inUse) };
+      }
       item.shared = { by, his, with: name };
       saveTransactions();
       document.querySelector('#shared-mark-dialog').close();

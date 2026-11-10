@@ -224,7 +224,7 @@
       };
       // A shared expense's stable key and its marker (see shared-ledger.js). The key is what a settlement points at: an
       // entry's own id is only its place in the month, and it changes on every load.
-      const sharedOf = row => (row.sid && row.shared ? { sid: String(row.sid), shared: { by: row.shared.by === 'friend' ? 'friend' : 'me', his: Math.min(100, Math.max(0, Math.round(Number(row.shared.his) || 0))), with: String(row.shared.with || '').trim() || 'Friend' } } : {});
+      const sharedOf = row => (row.sid && row.shared ? { ...(row.series?.id && { series: { id: String(row.series.id), colour: String(row.series.colour || '') } }), sid: String(row.sid), shared: { by: row.shared.by === 'friend' ? 'friend' : 'me', his: Math.min(100, Math.max(0, Math.round(Number(row.shared.his) || 0))), with: String(row.shared.with || '').trim() || 'Friend' } } : {});
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
       const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item) };
       if (item.formula) entry.formula = item.formula;
@@ -1480,6 +1480,17 @@
     sharedOwed(item) {
       if (!item?.sid || !item.shared) return null;
       return global.SharedLedger.outstanding({ id: item.sid, amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his, shared: true }, this.settleList());
+    }
+    // Each shared item's series status, read across every loaded month and year. Built once per redraw (refreshSeries).
+    refreshSeries() { this.seriesIndex = null; }
+    sharedSeriesStatus(item) {
+      if (!item?.sid || !item.shared) return null;
+      if (!this.seriesIndex) {
+        const rows = this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId)
+          .map(row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series }));
+        this.seriesIndex = global.SharedLedger.runSeries(rows, this.settleList());
+      }
+      return this.seriesIndex.get(item.sid) || null;
     }
     // Pending settlements need every month of every year that exists, so they are all loaded before they are worked out.
     ensureAllYears() { return Promise.all(this.yearIds().map(year => this.ensureYear(year))); }

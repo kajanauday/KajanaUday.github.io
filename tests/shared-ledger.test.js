@@ -75,3 +75,41 @@ test('a payment can clear items across months: the open part carries until it is
   const m6 = SL.settle({ entries: [rent], settlements: [m3.settlement], items: [{ to: 'rent', a: 300000 }], cash: 300000 });
   assert.equal(SL.pending([rent], [m3.settlement, m6.settlement]).net, 0);
 });
+
+// ---- series: colour, merge and done ----
+const bill100 = { id: 'b1', shared: true, amount: 10000, paidBy: 'friend', hisPct: 50, date: '2026-12-01', series: { id: 'S1', colour: '#2563eb' } };
+const pay120 = { id: 'b2', shared: true, amount: 12000, paidBy: 'me', hisPct: 50, date: '2026-12-05', series: { id: 'S1', colour: '#2563eb' } };
+
+test('a series with an opposite item is merged, and its balance is the net (100 paid by him, 120 by me → 10 back)', () => {
+  const r = SL.runSeries([bill100, pay120], []);
+  assert.equal(r.get('b1').state, 'merged');
+  assert.equal(r.get('b2').state, 'merged');
+  assert.equal(r.get('b2').balance, 1000); // +10: he owes me
+});
+
+test('a series with same-side items only stays open, not merged', () => {
+  const r = SL.runSeries([bill100, { ...bill100, id: 'b3', paidBy: 'friend' }], []);
+  assert.equal(r.get('b1').state, 'open');
+});
+
+test('a series is done when its balance is paid back to zero, and its colour stays', () => {
+  const pay = SL.settle({ entries: [bill100, pay120], settlements: [], items: [{ to: 'b2', a: 1000 }], cash: 1000 });
+  const r = SL.runSeries([bill100, pay120], [pay.settlement]);
+  assert.equal(r.get('b1').state, 'done');
+  assert.equal(r.get('b2').colour, '#2563eb');
+});
+
+test('the balance can flip: an item bigger than the opposite one turns the sign', () => {
+  const big = { id: 'b4', shared: true, amount: 30000, paidBy: 'me', hisPct: 50, date: '2026-12-09', series: { id: 'S1', colour: '#2563eb' } };
+  assert.equal(SL.runSeries([bill100, big], []).get('b4').balance, 10000); // he owes me 15,000 - 5,000 = 10,000
+});
+
+test('a new item joins the open series, and a finished one is not joined', () => {
+  assert.equal(SL.joinSeries([bill100, pay120], []).id, 'S1');
+  const pay = SL.settle({ entries: [bill100, pay120], settlements: [], items: [{ to: 'b2', a: 1000 }], cash: 1000 });
+  assert.equal(SL.joinSeries([bill100, pay120], [pay.settlement]), null);
+});
+
+test('a new colour avoids the colours in use', () => {
+  for (let i = 0; i < 50; i++) assert.notEqual(SL.pickColour(['#2563eb']), '#2563eb');
+});
