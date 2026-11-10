@@ -223,28 +223,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function saveSortModes() {
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
     }
-    // How far the main blocks spell out what a settlement or a pot posts into them: 'total' (one figure for the whole
-    // block, the default), 'section' (one per settlement) or 'sub' (every subsection on its own line). Income and
-    // Expenses read as a control account: the block posts one line under its own name and keeps the settlement-by-
-    // settlement detail in the Settlements block below, where the reader can already see it. A way of reading the
-    // month, not a fact about it, so like the sort order it stays in this browser and is never written to Firebase.
-    const POSTING_KEY = `${STORAGE_KEY}-posting`;
-    const POSTING_MODES = ['total', 'section', 'sub'];
-    const POSTING_LABELS = {
-      total: { label: 'the block as one figure', hint: 'the default · Settlements posts a single total; the detail stays in its own block' },
-      section: { label: 'one line per settlement', hint: 'each settlement posts under its own name' },
-      sub: { label: 'a line for every subsection', hint: 'each subsection posts on its own, named after its settlement' }
-    };
-    let postingMode = (() => {
-      try { const saved = localStorage.getItem(POSTING_KEY); return POSTING_MODES.includes(saved) ? saved : 'total'; } catch (error) { return 'total'; }
-    })();
-    function setPostingMode(mode) {
-      if (!POSTING_MODES.includes(mode) || mode === postingMode) return;
-      postingMode = mode;
-      try { localStorage.setItem(POSTING_KEY, mode); } catch (error) { /* Not remembered; still applies now. */ }
-      renderLedger({ loadMissing: false });
-      showToast(`Income and Expenses now show ${POSTING_LABELS[mode].label}.`);
-    }
     // The ledger shows one year's months, or (the ★ tab beside the years) the special cards and hashtags page (see
     // renderHub). Remembered for the tab.
     let specialMode = sessionStorage.getItem(`${STORAGE_KEY}-special`) === 'true';
@@ -252,7 +230,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       specialMode = Boolean(on);
       sessionStorage.setItem(`${STORAGE_KEY}-special`, String(specialMode));
     }
-    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes, postingMode });
+    const renderState = () => ({ expandedEntries, expandedMonths, monthCurrencies: Object.fromEntries(monthCurrencies), entryDraft, subEntryDraftParentId, ledgerDraft, editDraft, sortModes });
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
@@ -944,7 +922,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       let section = group || named;
       if (!section) {
         const shown = [...new Set([...block.querySelectorAll('.ledger-cat:not([data-event-id])')].map(cat => cat.dataset.section))];
-        if (shown.length !== 1) return showToast(shown.length ? 'Double-click a section’s own name below to rename it.' : 'No section to rename here.');
+        if (shown.length !== 1) return showToast(shown.length ? 'Right-click a section’s own name below to rename it.' : 'No section to rename here.');
         section = shown[0];
       }
       editDraft = { kind: 'year-section', month: key, property, type, block: named, group, section };
@@ -1155,36 +1133,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
-      // A 0.8s hold adds a child (entry → note, subsection → entry, Income/Expenses → subsection); a double-click edits
-      // the row itself. A hold re-renders under the pointer, so the click that follows it is swallowed. Rows re-render
-      // on the first click, so a double-click is detected as two clicks on the same row within DOUBLE_CLICK_MS.
+      // A press of about 0.8s on a phone opens the row's menu, the same one a right-click opens. Nothing is added,
+      // edited or renamed by a gesture: that all happens from the menu.
       let longPressFired = false;
       let suppressClickUntil = 0;
-      let lastClick = { key: null, time: 0 };
-      let lastMonthClick = { key: null, time: 0 };
-      const DOUBLE_CLICK_MS = 400;
-      // Whether the last press was a mouse or a finger: a double-tap opens the row menu, a double-click edits.
-      let lastPointerType = 'mouse';
-      ledger.addEventListener('pointerdown', event => { lastPointerType = event.pointerType || 'mouse'; }, true);
-      const rowKeyFor = target => {
-        const el = getElement(target);
-        if (!el || el.closest('form') || el.closest(ROW_BUTTONS)) return null;
-        // The year card's section headings and descriptions rename for the whole year.
-        const yearSection = el.closest('.ledger-year-group > summary[data-year-section]');
-        if (yearSection) return `ysec:${yearSection.parentElement.dataset.key}`;
-        const yearItem = el.closest('[data-year-item]');
-        if (yearItem) return `yitem:${yearItem.closest('.ledger-year-items')?.dataset.key}|${yearItem.dataset.yearItem}`;
-        const note = el.closest('[data-note-id]');
-        if (note) return `note:${note.dataset.noteId}`;
-        const entryCell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
-        const toggle = entryCell?.querySelector('[data-toggle-entry]');
-        if (toggle) return `entry:${toggle.dataset.entryId}`;
-        const cat = el.closest('.ledger-cat > summary');
-        if (cat) return `cat:${cat.parentElement.dataset.key}`;
-        const type = el.closest('.ledger-type-section > summary');
-        if (type) return `type:${type.closest('.month-block')?.dataset.monthKey}|${type.closest('.ledger-panel')?.className}|${type.querySelector('strong')?.textContent}`;
-        return null;
-      };
       // Shows or hides an entry's notes in place; no re-render, so a second click lands on the same element.
       const setEntryOpen = (toggle, open) => {
         const entryId = toggle.dataset.entryId;
@@ -1207,7 +1159,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const sortButton = event.target.closest('[data-sort-cat]');
         if (sortButton) {
           event.preventDefault();
-          lastClick = { key: null, time: 0 };
           const { sortCat: key, sortTo: to, sortField: field, sortName: name } = sortButton.dataset;
           if (to === 'date-desc') delete sortModes[key];
           else sortModes[key] = to;
@@ -1259,33 +1210,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.preventDefault();
           return deleteRow(deleteButton.dataset);
         }
-        const rowKey = rowKeyFor(event.target);
-        if (rowKey) {
-          const isDouble = lastClick.key === rowKey && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
-          lastClick = isDouble ? { key: null, time: 0 } : { key: rowKey, time: Date.now() };
-          if (isDouble) {
-            event.preventDefault();
-            // A double-tap on a phone opens the row menu; the first tap's opening or closing is undone first.
-            const target = lastPointerType !== 'mouse' ? menuTargetFor(event.target) : null;
-            if (target) {
-              if (target.kind === 'entry') {
-                const toggle = target.row.querySelector('[data-toggle-entry]');
-                if (toggle) setEntryOpen(toggle, !expandedEntries.has(target.id));
-              } else if (['group', 'section', 'subsection'].includes(target.kind)) target.row.parentElement.open = !target.row.parentElement.open;
-              return openRowMenu(target, null, true, { triggerLongPress });
-            }
-            return triggerEdit(event.target, rowKey);
-          }
-        }
-        // A currency panel's header has no edit of its own: on a phone, its double-tap opens the row menu too.
-        const panelHead = lastPointerType !== 'mouse' && !event.target.closest('button, input') ? event.target.closest('.ledger-panel-head') : null;
-        if (panelHead) {
-          const key = `head:${panelHead.closest('.month-block')?.dataset.monthKey}|${panelHead.closest('.ledger-panel')?.dataset.property}`;
-          const isDouble = lastClick.key === key && Date.now() - lastClick.time < DOUBLE_CLICK_MS;
-          lastClick = isDouble ? { key: null, time: 0 } : { key, time: Date.now() };
-          const target = isDouble ? menuTargetFor(event.target) : null;
-          if (target) return openRowMenu(target, null, true, { triggerLongPress });
-        }
         // A year tab switches years; the year already shown opens its settings.
         // The ★ # button opens the special cards and hashtags page, and from there goes back to the year's months; a
         // year tab goes back to that year's months (and, when that year is already showing, opens its settings).
@@ -1335,20 +1259,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const eye = event.target.closest('[data-toggle-month]');
         if (eye) {
           const key = eye.dataset.toggleMonth;
-          const isDouble = lastMonthClick.key === key && Date.now() - lastMonthClick.time < DOUBLE_CLICK_MS;
-          lastMonthClick = isDouble ? { key: null, time: 0 } : { key, time: Date.now() };
           if (expandedMonths.has(key)) expandedMonths.delete(key);
           else expandedMonths.add(key);
           monthCurrencies.delete(key);
           saveMonthCurrencies();
-          if (isDouble) {
-            saveExpandedMonths();
-            renderLedger();
-            // An event's settings live with its year's events.
-            if (key.startsWith('ev:')) return openYearSettings(store.events[key.slice(3)]?.year || currentMonth.getFullYear());
-            if (key.startsWith('yr:')) return openYearSettings(Number(key.slice(3)));
-            return openMonthSettings(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1);
-          }
           saveExpandedMonths();
           if (ledgerDraft?.month === key) ledgerDraft = null;
           if (entryDraft?.month === key) entryDraft = null;
@@ -1532,7 +1446,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
       // Opens the inline add form for whatever was pressed: an entry → sub-entry, a category → entry,
       // an Income/Expenses header → subsection, a month's currency header → section. Month and currency come from the pressed panel, not the page state.
-      const triggerLongPress = (element) => {
+      const addAtRow = (element) => {
         if (isViewer) return false;
         element = getElement(element);
         if (!element || element.closest('form')) return false;
@@ -1588,7 +1502,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const candidates = sections.filter(item => item.type === type);
           const section = candidates.find(item => item.name === namedSection) || candidates.find(item => item.subsections.includes(categoryName)) || candidates[0];
           if (!section) {
-            showToast('Add a section for this month first: double-click the month name.');
+            showToast('Add a section for this month first: right-click the currency header.');
             return true;
           }
           if (section.closed) {
@@ -1604,7 +1518,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (typeSection) {
           const section = sections.find(item => item.type === type && item.name === namedSection) || sections.find(item => item.type === type);
           if (!section) {
-            showToast('Add a section for this month first: double-click the month name.');
+            showToast('Add a section for this month first: right-click the currency header.');
             return true;
           }
           if (section.closed) {
@@ -1619,61 +1533,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return false;
       };
 
-      // Double-click: edit the row in place. Entries and notes get their own fields back; a subsection gets a rename
-      // field; Income/Expenses opens the month's settings, where its sections are named.
-      const triggerEdit = (element, rowKey) => {
-        if (isViewer) return viewOnly();
-        element = getElement(element);
-        const panel = element?.closest('.ledger-panel');
-        const monthBlock = element?.closest('.month-block');
-        if (!panel || !monthBlock) return;
-        if (blockEventRow(element)) return;
-        if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
-        const [kind, ...rest] = rowKey.split(':');
-        const id = rest.join(':');
-        // The first click of the pair already toggled what was clicked; undo that so a double-click only edits.
-        if (kind === 'entry') {
-          const toggle = element.closest('.ledger-entry-cell')?.querySelector('[data-toggle-entry]');
-          if (toggle) setEntryOpen(toggle, !expandedEntries.has(id));
-          editDraft = { kind: 'entry', id };
-        } else if (kind === 'note') {
-          editDraft = { kind: 'note', id };
-        } else if (kind === 'cat') {
-          const cat = element.closest('.ledger-cat');
-          const blockType = element.closest('.ledger-type-section')?.dataset.type;
-          const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
-          editDraft = { kind: 'category', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, category: catName(cat), section: cat.dataset.section };
-        } else if (kind === 'ysec') {
-          // The first click folded or unfolded the section; put that back.
-          const group = element.closest('.ledger-year-group');
-          group.open = !group.open;
-          return startYearSectionRename(monthBlock.dataset.monthKey, panel.dataset.property, element.closest('.ledger-type-section'), group.querySelector(':scope > summary').dataset.yearSection);
-        } else if (kind === 'yitem') {
-          const cat = element.closest('.ledger-cat');
-          const blockType = element.closest('.ledger-type-section')?.dataset.type;
-          const type = ['income', 'net'].includes(blockType) ? blockType : 'expense';
-          editDraft = { kind: 'year-item', month: monthBlock.dataset.monthKey, property: panel.dataset.property, type, section: cat.dataset.section, category: catName(cat), item: element.closest('[data-year-item]').dataset.yearItem };
-        } else {
-          const section = element.closest('.ledger-type-section');
-          if (section) section.open = !section.open;
-          const mKey = monthBlock.dataset.monthKey;
-          if (mKey.startsWith('yr:')) return startYearSectionRename(mKey, panel.dataset.property, section);
-          if (mKey.startsWith('ev:')) return showToast('Press and hold the section name to add a subsection.');
-          // A block heading and a settlement or pot inside it are renamed right here; Income and Expenses are named
-          // in Month settings, where the rest of a month's taxonomy lives.
-          if (section?.classList.contains('is-group')) {
-            editDraft = { kind: 'block', month: mKey, property: panel.dataset.property, block: section.dataset.group };
-            section.open = true;
-          } else if (section?.dataset.kind && section.dataset.section) {
-            editDraft = { kind: 'section', month: mKey, property: panel.dataset.property, section: section.dataset.section };
-            section.open = true;
-          } else {
-            return openMonthSettings(...yearMonthOf(mKey));
-          }
-        }
-        renderLedger();
-      };
-
       // The row a hold acts on: a note, an entry, a subsection, Income/Expenses, or a panel's currency header.
       const pressRowFor = target => {
         const el = getElement(target);
@@ -1682,12 +1541,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (note) return note.querySelector('.ledger-entry-line') || note;
         const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
         if (cell) return cell.querySelector(':scope > .ledger-entry-line');
-        return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .ledger-panel-head');
+        return el.closest('.ledger-cat > summary, .ledger-type-section > summary, .ledger-panel-head, .month-ledger-head, [data-year-item], .ledger-year-group > summary');
       };
       let pressedRow = null;
       const pointOf = e => e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
       const startLongPress = (target, e) => {
-        if (isViewer) return; // no hold to add
         suppressClickUntil = 0; // a new press means the previous press's click has happened or never will
         longPressFired = false;
         const row = pressRowFor(target);
@@ -1699,11 +1557,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
           pressedRow?.classList.remove('is-pressing');
-          longPressFired = triggerLongPress(longPressTarget);
-          if (longPressFired) {
-            // The hold re-rendered the row; swallow the click that the release will produce, whenever it comes.
+          const target = menuTargetFor(longPressTarget);
+          longPressFired = Boolean(target);
+          if (target) {
+            // The menu opens instead of the click the release would give; swallow that click, whenever it comes.
             suppressClickUntil = Infinity;
             navigator.vibrate?.(12);
+            openRowMenu(target, null, true, { addAt: addAtRow });
           }
         }, LONG_PRESS_DURATION);
       };
@@ -1731,13 +1591,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
 
       ledger.addEventListener('touchstart', (e) => {
-        // A second finger on a row: tag it, instead of the hold the first finger started (or a pinch).
-        if (e.touches.length === 2 && taggableRow(e.target)) {
-          endLongPress();
-          e.preventDefault();
-          openTagPicker(e.target);
-          return;
-        }
         startLongPress(e.target, e);
       }, { passive: false });
 
@@ -1751,15 +1604,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       };
       window.addEventListener('pointerup', endPointer);
       window.addEventListener('pointercancel', endLongPress);
-      // A finger or the mouse moving away during the hold cancels it (watched on the window, as the row may re-render).
+      // A finger moving away during the hold cancels it (watched on the window, as the row may re-render).
       window.addEventListener('touchmove', checkLongPressMove, { passive: true });
-      window.addEventListener('mousemove', checkLongPressMove);
 
-      ledger.addEventListener('mousedown', (e) => {
-        if (e.button === 0 && Date.now() - lastTouchEnd > 500) startLongPress(e.target, e);
-      });
-
-      ledger.addEventListener('mouseup', endLongPress);
       // Android raises the context menu mid-hold and cancels the touch; keep the hold alive.
       ledger.addEventListener('contextmenu', (e) => {
         if (longPressTimer || longPressFired || Date.now() < suppressClickUntil) return e.preventDefault();
@@ -1767,7 +1614,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const target = Date.now() - lastTouchEnd > 500 && (!e.pointerType || e.pointerType === 'mouse') ? menuTargetFor(e.target) : null;
         if (target) {
           e.preventDefault();
-          openRowMenu(target, { x: e.clientX, y: e.clientY }, false, { triggerLongPress });
+          openRowMenu(target, { x: e.clientX, y: e.clientY }, false, { addAt: addAtRow });
         }
       });
 
@@ -3315,7 +3162,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!list.length) return showToast('Nothing to copy here yet.');
       clipboard = { kind: 'sections', mKey, property, type, sections: JSON.parse(JSON.stringify(list)), label: sectionName || (type === 'income' ? 'Income' : 'Expenses') };
       clearPicks();
-      showToast(`Copied “${clipboard.label}” (${list.reduce((sum, item) => sum + item.subsections.length, 0)} subsections). Right-click or double-tap where it should go, then Paste.`);
+      showToast(`Copied “${clipboard.label}” (${list.reduce((sum, item) => sum + item.subsections.length, 0)} subsections). Right-click (or long-press on a phone) where it should go, then Paste.`);
     }
     function copySubsection(mKey, property, type, section, name) {
       const home = panelScope(mKey, property).sections().find(item => item.type === type && item.name === section);
@@ -3720,14 +3567,25 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
 
     // ---- Row menu: a right-click (computer) or a double-tap (phone) on a month, a currency panel, a section, a subsection,
     // an entry or a note lists what can be done there. On a computer it opens at the pointer; on a phone it is a sheet at
-    // the bottom of the screen (tap outside or swipe it down to close). Holding and double-clicking still work as before.
+    // the bottom of the screen (tap outside or swipe it down to close). A long press on a phone opens the same menu.
     const rowMenu = { el: null, open: false, actions: [], target: null };
     // What a ledger element stands for, or null.
     function menuTargetFor(element) {
       const el = element?.nodeType === Node.TEXT_NODE ? element.parentElement : element;
       if (!el || el.closest('form') || el.closest('.ledger-cat[data-event-id]')) return null;
       const block = el.closest('.month-block');
-      if (!block || block.classList.contains('is-year')) return null;
+      if (!block) return null;
+      // The year card has no rows of its own, but its section and item names rename for the whole year.
+      const panelProperty = el.closest('.ledger-panel')?.dataset.property;
+      const yearSection = el.closest('.ledger-year-group > summary[data-year-section]');
+      if (yearSection) return { kind: 'yearsection', mKey: block.dataset.monthKey, property: panelProperty, name: yearSection.dataset.yearSection, block: yearSection.closest('.ledger-type-section'), row: yearSection, label: yearSection.dataset.yearSection };
+      const yearItem = el.closest('[data-year-item]');
+      if (yearItem) {
+        const cat = yearItem.closest('.ledger-cat');
+        const typeBlock = yearItem.closest('.ledger-type-section');
+        return { kind: 'yearitem', mKey: block.dataset.monthKey, property: panelProperty, type: ['income', 'net'].includes(typeBlock?.dataset.type) ? typeBlock.dataset.type : 'expense', section: cat?.dataset.section || null, category: cat ? catName(cat) : '', item: yearItem.dataset.yearItem, row: yearItem, label: yearItem.querySelector('.ledger-cat-name')?.textContent.trim() || yearItem.dataset.yearItem };
+      }
+      if (block.classList.contains('is-year')) return null;
       const mKey = block.dataset.monthKey;
       const panel = el.closest('.ledger-panel');
       const property = panel?.dataset.property;
@@ -3761,7 +3619,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         editDraft = draft;
         renderLedger();
       };
-      const add = () => helpers.triggerLongPress(target.row);
+      const add = () => helpers.addAt(target.row);
       const fits = pasteFits(target);
       const pasteAction = fits ? [clipboard.kind === 'picks'
         ? { icon: clipboard.mode === 'cut' ? 'cut' : 'clipboard', label: `${clipboard.mode === 'cut' ? 'Move' : 'Paste'} ${clipboard.label} here`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }
@@ -3794,8 +3652,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       //   4. moving it about           Cut, Copy, Move / Paste — always the three together, in that order
       //   5. renaming it               Rename…
       //   6. taking it away            Delete, last, and the only red line
-      // Anything about more than this row (open or close all, how the block posts, month settings) comes after all of
-      // it, because it is a different subject: those act on the panel or the month, not on what was clicked.
+      // Anything about more than this row (how the block posts, month settings) comes after all of it, because it is a
+      // different subject: those act on the panel or the month, not on what was clicked.
       if (kind === 'month') {
         const panels = [...document.querySelectorAll(`.month-block[data-month-key="${CSS.escape(mKey)}"] .ledger-panel`)].map(panel => panel.dataset.property);
         const pastes = clipboard ? panels.map(cur => ({ cur, fits: pasteFits({ kind: 'panel', mKey, property: cur }) })).filter(item => item.fits)
@@ -3818,7 +3676,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             { icon: 'pig-money', label: 'Add savings pot', hint: 'what you set aside', run: startBlock('savings') }
           ]),
           ...pasteAction,
-          { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.querySelector('[data-panel-expand]')?.click() },
           { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
@@ -3839,11 +3696,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ...setupItems,
           ...(closed.length > 1 ? [{ icon: 'arrow-merge', label: `Merge settled (${closed.length})…`, hint: 'bring closed ones together', run: () => openMergeDialog(mKey, property, target.group) }] : []),
           { icon: 'pencil', label: 'Rename this block…', hint: 'here, in this month', run: edit({ kind: 'block', month: mKey, property, block: target.group }) },
-          { icon: 'arrows-vertical', label: 'Open or close all subsections', read: true, run: () => target.row.closest('.ledger-panel')?.querySelector('[data-panel-expand]')?.click() },
-          ...POSTING_MODES.filter(mode => mode !== postingMode).map(mode => ({
-            icon: 'list-details', label: `Post to Income/Expenses as: ${POSTING_LABELS[mode].label}`,
-            hint: POSTING_LABELS[mode].hint, read: true, run: () => setPostingMode(mode)
-          })),
           { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
@@ -3906,6 +3758,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, section: target.section, category: target.category }) }
         ]);
       }
+      if (kind === 'yearsection') return write([
+        { icon: 'pencil', label: 'Rename…', hint: 'in every month of the year', run: () => startYearSectionRename(target.mKey, target.property, target.block, target.name) }
+      ]);
+      if (kind === 'yearitem') return write([
+        { icon: 'pencil', label: 'Rename…', hint: 'in every month of the year', run: edit({ kind: 'year-item', month: target.mKey, property: target.property, type: target.type, section: target.section, category: target.category, item: target.item }) }
+      ]);
       if (kind === 'entry') {
         // Money laid out for a group is divided, so the entry itself says how much of it was mine. Only such an entry
         // is asked: a repayment, a savings pot or an ordinary expense has nothing to split. The choices sit together
@@ -4060,7 +3918,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const tip = escapeHtml(`${item.label}${item.hint ? ` — ${item.hint}` : ''}`);
       return `<button type="button" ${role} class="row-menu-chip${item.on ? ' is-on' : ''}" data-menu-index="${index}" title="${tip}" aria-label="${escapeHtml(item.label)}">${mark}<small>${escapeHtml(item.caption)}</small></button>`;
     }
-    const KIND_NAMES = { month: 'Month', panel: 'Currency', group: 'Block', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note' };
+    const KIND_NAMES = { month: 'Month', panel: 'Currency', group: 'Block', section: 'Section', subsection: 'Subsection', entry: 'Entry', note: 'Note', yearsection: 'Year section', yearitem: 'Year item' };
     function openRowMenu(target, point, touch, helpers) {
       const { el } = rowMenu;
       rowMenu.target = target;
@@ -4265,15 +4123,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       document.addEventListener('pointerdown', event => {
         if (!pop.hidden && !pop.contains(event.target) && !event.target.closest?.('.ledger-entry-line time')) closeTagPicker();
-      }, true);
-      // A click on a row's day (an entry or a note, once added) opens its tags, without opening or editing the row.
-      document.querySelector('#ledger').addEventListener('click', event => {
-        const day = event.target.closest('.ledger-entry-line time');
-        if (!day || !taggableRow(day)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (!pop.hidden && tagPicker.row === day.closest('.ledger-entry-cell')) return closeTagPicker();
-        openTagPicker(day);
       }, true);
       addEventListener('scroll', () => { if (!pop.hidden) placeTagPicker(); }, true);
     }
@@ -4748,7 +4597,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const tagSection = hubFold('tags', 'hub-section', `${chevron}<h2><i class="ti ti-hash" aria-hidden="true"></i>Hashtags</h2><small>${plural(tags.length, 'tag')}</small>${loading}`,
         `<div class="hub-section-body">${tagBlocks || `<p class="ledger-none">${hubLoading ? 'Loading every month…' : 'No hashtags yet. Add one like #gold to an entry’s description or comment, or to a subsection’s name.'}</p>`}</div>`);
       const flowSection = hubFold('flows', 'hub-section', `${chevron}<h2><i class="ti ti-arrows-exchange" aria-hidden="true"></i>Flows</h2><small>${plural(flows.length, 'flow')}</small>${loading}`,
-        `<div class="hub-section-body">${flows.map(hubFlowBlock).join('') || '<p class="ledger-none">No flows yet. Right-click (or double-tap) an entry or a note, then “Add to a flow…”: a loan and its repayments, an advance and its refund.</p>'}</div>`);
+        `<div class="hub-section-body">${flows.map(hubFlowBlock).join('') || '<p class="ledger-none">No flows yet. Right-click (or long-press) an entry or a note, then “Add to a flow…”: a loan and its repayments, an advance and its refund.</p>'}</div>`);
       return `<div class="hub">${legend}<div class="hub-main">${cards}${flowSection}${tagSection}</div></div>`;
     }
     // The legend's filter hides the tags (in the legend and on the page) that do not match what is typed.

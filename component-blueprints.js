@@ -284,7 +284,7 @@
       const label = renamingKey === item.key
         ? `<form class="ledger-item-form" data-ledger-form="rename-year-item" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}" data-item="${ctx.esc(item.key)}" data-name="${ctx.esc(item.name)}" data-count="${item.count}" novalidate><input name="name" value="${ctx.esc(item.name)}" maxlength="80" aria-label="New name for ${ctx.esc(item.name)}, in every month of ${mKey.slice(3)}" autocomplete="off" spellcheck="false" enterkeyhint="done"><p class="ledger-form-hint" aria-live="polite">Renames it in every entry and note of ${mKey.slice(3)}</p></form>`
         : `<span class="ledger-item-name">${ctx.esc(item.name)}</span>`;
-      return `<li class="ledger-item${renamingKey === item.key ? ' is-renaming' : ''}"${canRename ? ` data-year-item="${ctx.esc(item.key)}"` : ''} title="${ctx.esc(item.name)} · ${item.count} ${item.count === 1 ? 'time' : 'times'} in ${item.months} ${item.months === 1 ? 'month' : 'months'}${canRename ? ' · double-click to rename' : ''}">${label}<span class="ledger-share-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span><small class="ledger-item-count">${item.count}× · ${item.months} mo</small><span class="ledger-share">${share}%</span><strong class="${toneOf(type, item.total)}">${amountText(type, item.total, property, ctx)}</strong></li>`;
+      return `<li class="ledger-item${renamingKey === item.key ? ' is-renaming' : ''}"${canRename ? ` data-year-item="${ctx.esc(item.key)}"` : ''} title="${ctx.esc(item.name)} · ${item.count} ${item.count === 1 ? 'time' : 'times'} in ${item.months} ${item.months === 1 ? 'month' : 'months'}${canRename ? ' · right-click to rename' : ''}">${label}<span class="ledger-share-bar" aria-hidden="true"><i style="width:${Math.max(share, 1)}%"></i></span><small class="ledger-item-count">${item.count}× · ${item.months} mo</small><span class="ledger-share">${share}%</span><strong class="${toneOf(type, item.total)}">${amountText(type, item.total, property, ctx)}</strong></li>`;
     }).join('');
     return `<details class="ledger-year-items" data-key="${ctx.esc(key)}|items"${renamingKey ? ' open' : ''}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>By description</span><small>${items.length}</small></summary><ul>${rows}</ul></details>`;
   };
@@ -408,7 +408,7 @@
       const rows = categoryRows(own, sectionTotal);
       if (e?.kind === 'year-section' && e.month === mKey && e.property === property && e.type === type && e.group === name) return `<div class="ledger-year-group is-renaming">${YearSectionForm(name)}${rows}</div>`;
       const renamable = !section._meta.event;
-      return `<details class="ledger-year-group" data-key="${ctx.esc(`${typeKey}|${name}`)}" open><summary${renamable ? ` data-year-section="${ctx.esc(name)}"` : ''} title="${ctx.esc(name)}${renamable ? ' · double-click to rename it in every month' : ''}"><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-year-group-name">${ctx.esc(name)}</span>${MonthsUsed(monthsOf(own.map(item => item.category)))}</span><span class="ledger-share" title="Share of ${type === 'income' ? 'Income' : 'Expenses'}">${shareOf(sectionTotal, sumOf(categories))}%</span><strong class="${toneOf(type, sectionTotal)}">${amountText(type, sectionTotal, property, ctx)}</strong></summary><div>${rows}</div></details>`;
+      return `<details class="ledger-year-group" data-key="${ctx.esc(`${typeKey}|${name}`)}" open><summary${renamable ? ` data-year-section="${ctx.esc(name)}"` : ''} title="${ctx.esc(name)}${renamable ? ' · right-click to rename it in every month' : ''}"><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-year-group-name">${ctx.esc(name)}</span>${MonthsUsed(monthsOf(own.map(item => item.category)))}</span><span class="ledger-share" title="Share of ${type === 'income' ? 'Income' : 'Expenses'}">${shareOf(sectionTotal, sumOf(categories))}%</span><strong class="${toneOf(type, sectionTotal)}">${amountText(type, sectionTotal, property, ctx)}</strong></summary><div>${rows}</div></details>`;
     }).join('');
     const l = state.ledgerDraft;
     const draftSection = l && l.month === mKey && l.property === property ? sections.find(section => section._meta.id === l.section) : null;
@@ -430,7 +430,7 @@
     // A settlement and a pot are both set up from their row menus (see openSectionSetup).
     const mergedNote = meta?.mergedFrom?.length ? `<p class="ledger-merged-note" title="Closed sections brought together here"><i class="ti ti-arrow-merge" aria-hidden="true"></i>Merged from ${meta.mergedFrom.map(from => ctx.esc(from)).join(', ')}</p>` : '';
     if (heading?.bare) {
-      return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Press and hold ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
+      return `<div class="ledger-type-section is-bare" data-type="${type}" data-section="${ctx.esc(heading.section)}"><div>${subForm}${categoriesHtml || (subForm ? '' : `<p class="ledger-none">Nothing yet. Right-click (long-press on a phone) ${heading.panel} above to add a subsection.</p>`)}</div></div>`;
     }
     // Where this settlement or pot stands, and its own description, beside its name. A settlement says where it
     // stands in its own description, as a status line of its own ("=paid"), so a worked-out capsule beside it would be
@@ -447,7 +447,7 @@
         ? StatusCapsule(meta.about, ctx)
         : AboutTags(meta.about, { kind: 'section', mKey, property, type, section: heading.section }, ctx);
     const emptyNote = heading
-      ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Press and hold the name above to add a subsection.')
+      ? (meta?.closed ? 'Closed with nothing in it.' : 'Nothing yet. Right-click (long-press on a phone) the name above to add a subsection.')
       : 'Nothing recorded';
     // A settlement shows the one figure it posts; other custom sections keep their own totals.
     const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle
@@ -523,11 +523,8 @@
       .filter(line => line.counted);
     // How much of a settlement or a pot the main blocks spell out. A control account posts one figure and keeps its
     // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so
-    // Income and Expenses carry one line per block by default and the settlements themselves are read below, where
-    // each already states its own cash and what is outstanding. The reader can still ask for one figure per
-    // settlement, or every subsection on its own line. It is a way of reading, not a fact about the month, so it is
-    // kept with the reader (see postingMode) and never written to the ledger.
-    const postingMode = ['total', 'section', 'sub'].includes(state.postingMode) ? state.postingMode : 'total';
+    // Income and Expenses carry one line per block, and the settlements themselves are read below, where each already
+    // states its own cash and what is outstanding. What each section posts is set in its own setup (how it counts).
     const GROUPS_KINDS = ['settlement', 'savings'];
     // A block only counts for itself once someone has set it up; until then its sections post themselves exactly as
     // they always have, so nothing here changes for a ledger that has never opened a block's setup. Worked out once
@@ -563,43 +560,33 @@
       const own = lines.filter(line => line.type === type && line.amount);
       // One figure per block. Counted and shown-only never go in the same total: one is money the month claims, the
       // other is only being reported, and adding them would say the month holds more than it does.
-      if (postingMode === 'total') {
-        const groups = new Map();
-        own.forEach(line => {
-          const kind = line.kind === 'savings' ? 'savings' : 'settlement';
-          if (blockRun(kind)) return; // a block that counts for itself says its own figure below
-          const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
-          const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [], parts: [] }).get(key);
-          group.amount += line.amount;
-          group.from.push(line.section);
-          // What the one figure is made of: the settlement that sent it, and the subsections its own equations read.
-          // Kept so the line can be opened; without it the reader would have to match names against the block below.
-          group.parts.push({
-            label: line.section, amount: line.amount, section: line.section,
-            parts: line.parts || null, inputs: line.parts ? null : inputsOf(line.section)
+      const groups = new Map();
+      own.forEach(line => {
+        const kind = line.kind === 'savings' ? 'savings' : 'settlement';
+        if (blockRun(kind)) return; // a block that counts for itself says its own figure below
+        const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
+        const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [], parts: [] }).get(key);
+        group.amount += line.amount;
+        group.from.push(line.section);
+        // What the one figure is made of: the settlement that sent it, and the subsections its own equations read.
+        // Kept so the line can be opened; without it the reader would have to match names against the block below.
+        group.parts.push({
+          label: line.section, amount: line.amount, section: line.section,
+          parts: line.parts || null, inputs: line.parts ? null : inputsOf(line.section)
+        });
+      });
+      // A block with a calculation of its own posts what that works out to, in place of its sections' own figures.
+      GROUPS_KINDS.forEach(kind => {
+        const run = blockRun(kind);
+        (run?.adds.lines || []).filter(line => line.type === type && line.counted && line.amount).forEach(line => {
+          groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, {
+            ...line, label: blockTitleOf(kind), kind, section: null,
+            from: (line.parts || []).map(part => part.label),
+            parts: (line.parts || []).map(part => ({ label: part.label, amount: part.amount, section: part.label, parts: null }))
           });
         });
-        // A block with a calculation of its own posts what that works out to, in place of its sections' own figures.
-        GROUPS_KINDS.forEach(kind => {
-          const run = blockRun(kind);
-          (run?.adds.lines || []).filter(line => line.type === type && line.counted && line.amount).forEach(line => {
-            groups.set(`${kind}|own|${line.counted ? 'counted' : 'shown'}`, {
-              ...line, label: blockTitleOf(kind), kind, section: null,
-              from: (line.parts || []).map(part => part.label),
-              parts: (line.parts || []).map(part => ({ label: part.label, amount: part.amount, section: part.label, parts: null }))
-            });
-          });
-        });
-        return [...groups.values()];
-      }
-      // Line by line, naming the settlement and the subsection it came from. A section whose equations reshape its
-      // figure has no honest breakdown (parts is null there), so it stays whole rather than being split by guesswork.
-      if (postingMode === 'sub') {
-        return own.flatMap(line => (line.parts
-          ? line.parts.map(part => ({ ...line, label: `${line.section} · ${part.label}`, amount: part.amount }))
-          : [line]));
-      }
-      return own;
+      });
+      return [...groups.values()];
     };
     // Every custom section belongs to one of the two blocks, so the panel holds four at most: Expenses, Income,
     // Settlements, Savings. An event's own sections are drawn as before — an event is not a month.
@@ -659,7 +646,7 @@
   const MonthBlock = ({ mKey, label, name, open, isNow, isFuture, isEmpty, isEvent, isYear, summaryHtml, panelsHtml, single }) =>
     `<section class="month-block${open ? ' is-open' : ''}${isNow ? ' is-now' : ''}${isFuture ? ' is-future' : ''}${isEmpty ? ' is-empty' : ''}${isEvent ? ' is-event' : ''}${isYear ? ' is-year' : ''}" data-month-key="${mKey}" aria-label="${label}">
         <header class="month-ledger-head">
-          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · double-click for ${isEvent || isYear ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${isYear ? '<i class="ti ti-calendar-stats month-name-star" aria-hidden="true"></i>' : ''}${name}</button></h2>
+          <h2><button type="button" class="month-name" data-toggle-month="${mKey}" aria-expanded="${open}" aria-controls="month-body-${mKey}" title="${open ? 'Hide' : 'Show'} ${label} · right-click for ${isEvent || isYear ? 'year' : 'month'} settings">${isEvent ? '<i class="ti ti-star-filled month-name-star" aria-hidden="true"></i>' : ''}${isYear ? '<i class="ti ti-calendar-stats month-name-star" aria-hidden="true"></i>' : ''}${name}</button></h2>
           ${summaryHtml}
         </header>
         ${open ? `<div class="ledger-panels${single ? ' is-single' : ''}" id="month-body-${mKey}">${panelsHtml}</div>` : ''}
