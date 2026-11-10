@@ -1600,5 +1600,6 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .settle-item-amount input { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: 400 14px var(--mono); }
 .settle-item-amount input:disabled { opacity: .6; }
 
-/* A settled shared expense: the bottom 15% of its circle is dark green. Not one of the year colours. */
-:root .day-orb.is-settled { background-image: linear-gradient(to top, #166534 15%, transparent 15%); background-repeat: no-repeat; }
+/* A settled shared expense: the bottom 20% of its circle is filled dark red, the rest keeps its series colour. Not one of the year colours. */
+:root .day-orb.is-settled, :root[data-theme="light"] .day-orb.is-settled { background-color: var(--c); background-image: linear-gradient(to top, #991b1b 20%, transparent 20%); background-repeat: no-repeat; color: #ffffff; }
+:root .day-orb.is-settled:hover, :root .day-orb.is-settled:focus-visible { background-image: linear-gradient(to top, #7f1d1d 20%, transparent 20%); }
