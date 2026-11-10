@@ -234,7 +234,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const B = () => window.LedgerBlueprints;
     const ledgerCtx = {
       fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
-      flow: id => store.flow(id),
+      // The shared lookups need the store's instance, which the blueprints cannot reach (they only see the class).
+      sharedSeries: entry => store.sharedSeriesStatus(entry),
+      sharedOwed: entry => store.sharedOwed(entry),
       today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; }
     };
     const ledgerRenderer = new LedgerRenderer(store, ledgerCtx);
@@ -254,7 +256,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       document.querySelector('#year-tabs').innerHTML = ledgerRenderer.yearTabs(year, specialMode);
       const specialButton = document.querySelector('[data-ledger-special]');
       specialButton.setAttribute('aria-pressed', String(specialMode));
-      specialButton.title = specialMode ? `Back to ${year}` : 'Special cards, flows and #hashtags';
+      specialButton.title = specialMode ? `Back to ${year}` : 'Special cards and #hashtags';
       // Keep open subsections open across re-renders (e.g. after saving an entry).
       const host = document.querySelector('#month-ledger');
       const keepOpen = [...host.querySelectorAll('.ledger-cat[open], .ledger-cat.is-editing')].map(cat => cat.dataset.key);
@@ -1163,10 +1165,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // A subsection's Day or Amount sort button: orders its entries and their notes. It sits in the row's <summary>,
         // so the default (opening or closing the row) is prevented, and it never counts toward a double-click rename.
         // Only what is already loaded is redrawn: nothing is fetched from or written to Firebase.
-        const ball = event.target.closest('[data-shared-ball]');
-        if (ball) {
+        const dayOrb = event.target.closest('[data-day-orb]');
+        if (dayOrb) {
           event.preventDefault();
-          return openSeriesPopup(ball.dataset.series);
+          return openDayPopup(dayOrb.dataset.entryId);
         }
         const sortButton = event.target.closest('[data-sort-cat]');
         if (sortButton) {
@@ -1225,10 +1227,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // A year tab switches years; the year already shown opens its settings.
         // The ★ # button opens the special cards and hashtags page, and from there goes back to the year's months; a
         // year tab goes back to that year's months (and, when that year is already showing, opens its settings).
-        if (event.target.closest('[data-shared-open]')) {
-          event.preventDefault();
-          return openSharedPanel();
-        }
         if (event.target.closest('[data-ledger-special]')) {
           setSpecialMode(!specialMode);
           renderLedger();
@@ -2434,6 +2432,26 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const sharedParse = key => { const at = key.indexOf(SHARED_SEP); return { property: key.slice(0, at), name: key.slice(at + SHARED_SEP.length) }; };
     const sharedRows = () => transactions.filter(item => item.sid && item.shared && !item.parentId && !item.eventId);
     const newSharedKey = prefix => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    // A shared item joins the open series of the same person and currency, or starts a new one. A new series takes the
+    // next colour of the list for its month: the first series that starts in a month is colour 1, the next colour 2.
+    function assignSeries(item, name) {
+      const others = sharedRows().filter(row => row.sid !== item.sid && row.property === item.property && row.shared.with === name);
+      const joinable = SharedLedger.joinSeries(
+        others.map(row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series })),
+        store.settleList().filter(settle => settle.property === item.property && settle.with === name)
+      );
+      if (joinable) { item.series = { id: joinable.id, colour: joinable.colour }; return; }
+      // The date each series starts on, so a series is counted in the month it began.
+      const starts = new Map();
+      sharedRows().forEach(row => {
+        if (!row.series?.id || row.sid === item.sid) return;
+        const date = String(row.date || '');
+        if (!starts.has(row.series.id) || date < starts.get(row.series.id)) starts.set(row.series.id, date);
+      });
+      const month = String(item.date || '').slice(0, 7);
+      const started = [...starts.values()].filter(date => date.slice(0, 7) === month).length;
+      item.series = { id: newSharedKey('se'), colour: SharedLedger.colourAt(started) };
+    }
     const sharedState = { mark: null, key: null };
     const sharedMoney = (minor, property) => formatMoney(Math.abs(minor), property);
     const sharedSettlesOf = sid => store.settleList().filter(settle => settle.items.some(item => item.to === sid));
@@ -2469,28 +2487,184 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         : { icon: 'users', label: 'Mark as shared…', hint: 'split with someone; settle it later', run: () => openSharedMark(item) }];
     }
 
-    // The series a shared ball stands for: every item in it, across all months and years, in one pop-up.
-    async function openSeriesPopup(seriesId) {
-      try { await store.ensureAllYears(); } catch (error) { return showToast('Could not load every year yet. Try again.'); }
-      store.refreshSeries();
-      const items = sharedRows().filter(row => row.series?.id === seriesId).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-      if (!items.length) return showToast('Nothing in this series is loaded.');
-      const first = items[0];
-      const name = first.shared.with;
-      const balance = store.sharedSeriesStatus(first)?.balance || 0;
-      const money = minor => formatMoney(Math.abs(minor), first.property);
-      const colour = first.series.colour || '#94a3b8';
-      document.querySelector('#series-title').innerHTML = `<span class="sh-ball is-open" style="--c:${escapeHtml(colour)}"></span> ${escapeHtml(name)} · ${escapeHtml(regions[first.property]?.code || first.property)}`;
-      document.querySelector('#series-summary').textContent = balance === 0
-        ? 'Done: nothing is open in this series.'
-        : `${balance > 0 ? `${name} owes me` : 'I owe'} ${money(balance)} across this series.`;
-      document.querySelector('#series-list').innerHTML = items.map(item => {
+    // ---- The day pop-up: a day's settlements (top, 80%) and its hashtags (bottom, 20%) ----------------------
+    // The day number is an orb in the ledger; clicking it opens this, for that one entry.
+    const dayState = { id: null };
+    function openDayPopup(id) {
+      if (!transactions.find(row => row.id === id)) return showToast('Could not find that day. Refresh and try again.');
+      dayState.id = id;
+      renderDayPopup();
+      document.querySelector('#day-dialog').showModal();
+    }
+    // A section of the day pop-up, drawn like a section of the month card: a header with its total, then its rows.
+    function daySection(title, total, tone, body) {
+      return `<section class="day-sec"><header class="day-sec-head"><strong>${title}</strong>${total ? `<span class="${tone}">${total}</span>` : ''}</header>${body}</section>`;
+    }
+    // One shared entry of the series: the day, what, who paid, my share (the figure) and the full sum, and its state.
+    function dayItemRow(row, money) {
+      const owed = store.sharedOwed(row);
+      const open = owed && !owed.settled;
+      const who = row.shared.by === 'friend' ? `${row.shared.with} paid` : 'I paid';
+      const share = SharedLedger.split({ amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his }).myShare;
+      const state = open
+        ? `<span class="day-state ${row.shared.by === 'friend' ? 'expense' : 'income'}">open ${money(owed.owed)}</span>`
+        : '<span class="day-state is-settled">settled</span>';
+      return `<div class="day-row"><span class="day-when">${escapeHtml(row.date.slice(8))}</span><span class="day-what"><span class="ledger-entry-desc">${escapeHtml(row.description)}</span><small>${escapeHtml(who)} · ${row.shared.his}% his</small></span><span class="day-amt has-formula" data-formula="${escapeHtml(`Actual amount ${money(Math.abs(Number(row.amount)))}`)}">${money(share)}</span>${state}</div>`;
+    }
+    function renderDayPopup() {
+      const item = transactions.find(row => row.id === dayState.id);
+      if (!item) return document.querySelector('#day-dialog').close();
+      const money = minor => formatMoney(Math.abs(minor), item.property);
+      document.querySelector('#day-when').textContent = `${item.date} · ${regions[item.property]?.code || item.property}`;
+      document.querySelector('#day-title').textContent = item.description;
+      const summary = document.querySelector('#day-summary');
+      const list = document.querySelector('#day-series');
+      list.innerHTML = '';
+      if (item.sid && item.shared) {
+        const items = sharedRows().filter(row => (item.series?.id ? row.series?.id === item.series.id : row === item))
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const name = escapeHtml(item.shared.with);
         const owed = store.sharedOwed(item);
-        const open = owed && !owed.settled;
-        const who = item.shared.by === 'friend' ? `${name} paid` : 'I paid';
-        return `<li class="series-row"><span class="series-when">${escapeHtml(item.date)}</span><span class="series-what"><b>${escapeHtml(item.description)}</b><small>${escapeHtml(who)} · ${item.shared.his}% his · ${escapeHtml(item.category)}</small></span><span class="series-amount">${money(item.amount)}</span><span class="series-state ${open ? 'is-open' : 'is-settled'}">${open ? `open ${money(owed.owed)}` : 'settled'}</span></li>`;
-      }).join('');
-      document.querySelector('#series-dialog').showModal();
+        const openHere = Boolean(owed && !owed.settled);
+        const theyOwe = item.shared.by !== 'friend';
+        const settleBody = openHere
+          ? `<p class="day-sec-note">${theyOwe ? `${name} owes you` : `You owe ${name}`} on this entry.</p>${isViewer ? '' : `<div class="day-sec-foot"><button type="button" class="primary-button day-settle" data-day-settle-item="${escapeHtml(item.id)}">${theyOwe ? 'Settle this (he paid me)' : 'Settle my share'}</button></div>`}`
+          : '<p class="day-sec-note">Settled: nothing is open on this entry.</p>';
+        const tone = !openHere ? 'is-settled' : theyOwe ? 'income' : 'expense';
+        summary.innerHTML = daySection('Settlement', openHere ? money(owed.owed) : 'Settled', tone, settleBody)
+          + daySection(`Shared with ${name}`, `${items.length} ${items.length === 1 ? 'entry' : 'entries'}`, '', items.map(row => dayItemRow(row, money)).join(''));
+      } else {
+        const income = item.type === 'income';
+        const body = `<div class="day-row"><span class="day-when">${escapeHtml(item.date.slice(8))}</span><span class="day-what"><span class="ledger-entry-desc">${escapeHtml(item.description)}</span>${item.place ? `<small>${escapeHtml(item.place)}</small>` : ''}</span><span class="day-amt">${money(item.amount)}</span></div>`
+          + (item.type === 'expense' && !isViewer ? `<div class="day-sec-foot"><button type="button" class="quiet-button day-share" data-day-share="${escapeHtml(item.id)}">Mark as shared…</button></div>` : '');
+        summary.innerHTML = daySection(income ? 'Income' : 'Expenses', money(item.amount), income ? 'income' : 'expense', body);
+      }
+      renderDayTags(item);
+    }
+    function renderDayTags(item) {
+      const tags = LedgerSearch.rowTags({ tags: item.tags });
+      const add = isViewer ? '' : '<form class="day-add" id="day-tag-form"><input name="tag" placeholder="add #hashtag" maxlength="30" autocomplete="off" aria-label="Add a hashtag"><button type="submit" class="quiet-button">Add</button></form>';
+      const chips = tags.map(tag => `<span class="hashtag-chip">#${escapeHtml(tag)}${isViewer ? '' : ` <button type="button" class="day-tag-x" data-day-tag-remove="${escapeHtml(tag)}" aria-label="Remove #${escapeHtml(tag)}"><i class="ti ti-x" aria-hidden="true"></i></button>`}</span>`).join('');
+      document.querySelector('#day-tags').innerHTML = `<div class="day-tags">${chips || '<span class="day-none">No hashtags yet.</span>'}</div>${add}`;
+    }
+    function setDayTags(item, tags) {
+      if (tags.size) item.tags = [...tags]; else delete item.tags;
+      saveTransactions();
+      renderLedger();
+      renderDayPopup();
+    }
+    function setupDayDialog() {
+      const dialog = document.querySelector('#day-dialog');
+      if (!dialog) return;
+      dialog.addEventListener('submit', event => {
+        if (event.target.id === 'day-tag-form') {
+          event.preventDefault();
+          const item = transactions.find(row => row.id === dayState.id);
+          const input = event.target.elements.tag;
+          const clean = String(input.value).trim().replace(/^#+/, '').toLocaleLowerCase();
+          if (!item) return;
+          if (!LedgerSearch.hashtags(`#${clean}`).includes(clean)) return showToast('A tag is letters, digits, _ and -, like gold or trip-2026.');
+          setDayTags(item, new Set([...LedgerSearch.rowTags({ tags: item.tags }), clean]));
+        }
+      });
+      dialog.addEventListener('click', event => {
+        const settle = event.target.closest('[data-day-settle-item]');
+        if (settle) return openSettleItem(settle.dataset.daySettleItem);
+        const share = event.target.closest('[data-day-share]');
+        if (share) {
+          const item = transactions.find(row => row.id === share.dataset.dayShare);
+          if (!item) return;
+          dialog.close();
+          return openSharedMark(item);
+        }
+        const remove = event.target.closest('[data-day-tag-remove]');
+        if (!remove) return;
+        const item = transactions.find(row => row.id === dayState.id);
+        if (!item) return;
+        const tags = new Set(LedgerSearch.rowTags({ tags: item.tags }));
+        tags.delete(remove.dataset.dayTagRemove);
+        setDayTags(item, tags);
+      });
+    }
+    // ---- Settle up, and the settlements list on the special page ---------------------------------------------------
+    // Every series of shared items, one line each: active while money is still open, closed once it is back to zero.
+    // ---- Shared expenses: each shared entry on its own. Active while money is open on it, closed once it is settled. ----
+    // A row on the Special page (and in the settle dialog) jumps to the entry in its month.
+    function sharedJump(item) {
+      const year = Number(item.date.slice(0, 4));
+      const month = Number(item.date.slice(5, 7)) - 1;
+      return { year, mKey: keyOf(year, month), property: item.property, type: item.type, entryId: item.id, noteId: null, category: item.category };
+    }
+    // One shared entry: its dot (settled is one colour, open keeps its series colour), the date, what, who, my share and state.
+    function sharedRowLine(item, owed) {
+      const settled = Boolean(owed?.settled);
+      const colour = settled ? 'var(--st-done)' : (item.series?.colour || '#94a3b8');
+      const share = SharedLedger.split({ amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his }).myShare;
+      const whole = formatMoney(Math.abs(Number(item.amount)), item.property);
+      const theyOwe = item.shared.by !== 'friend';
+      const who = theyOwe ? 'I paid' : `${item.shared.with} paid`;
+      const state = settled ? 'settled' : `${theyOwe ? 'owes you' : 'you owe'} ${formatMoney(owed.owed, item.property)}`;
+      return `<button type="button" class="shared-row${settled ? ' is-settled' : ''}" data-shared-jump="${escapeHtml(JSON.stringify(sharedJump(item)))}" title="Go to this entry in the ledger"><span class="shared-dot" style="--c:${colour}" aria-hidden="true"></span><span class="shared-when">${escapeHtml(item.date)}</span><span class="shared-what"><b>${escapeHtml(item.description)}</b><small>${escapeHtml(item.shared.with)} · ${escapeHtml(who)} · <span class="has-formula" data-formula="${escapeHtml(`Actual amount ${whole}`)}">my share ${formatMoney(share, item.property)}</span></small></span><span class="shared-state ${settled ? 'is-settled' : theyOwe ? 'income' : 'expense'}">${escapeHtml(state)}</span></button>`;
+    }
+    // The settle dialog for one entry: what is open on it, paid in full or in a different amount. The entry is marked
+    // settled when all of it is paid, or partly settled when some is left.
+    const settleItem = { id: null };
+    function openSettleItem(id) {
+      if (isViewer) return viewOnly();
+      const item = transactions.find(row => row.id === id);
+      const owed = item?.shared ? store.sharedOwed(item) : null;
+      if (!owed || owed.settled) return showToast('Nothing is open on this entry.');
+      settleItem.id = id;
+      const form = document.querySelector('#settle-item-form');
+      const money = formatMoney(owed.owed, item.property);
+      const theyOwe = item.shared.by !== 'friend';
+      document.querySelector('#settle-item-where').textContent = `${regions[item.property]?.code || item.property} · ${item.date} · ${item.description}`;
+      document.querySelector('#settle-item-title').textContent = theyOwe ? 'Settle this' : 'Settle my share';
+      document.querySelector('#settle-item-what').textContent = theyOwe ? `${item.shared.with} owes you ${money} on this entry.` : `You owe ${item.shared.with} ${money} for your share of this entry.`;
+      document.querySelector('#settle-item-full').textContent = `Full amount: ${money}`;
+      form.querySelector('[name="mode"][value="full"]').checked = true;
+      form.elements.amount.value = (owed.owed / 100).toFixed(2);
+      form.elements.amount.disabled = true;
+      document.querySelector('#settle-item-error').hidden = true;
+      const day = document.querySelector('#day-dialog');
+      if (day.open) day.close();
+      document.querySelector('#settle-item-dialog').showModal();
+    }
+    function saveItemSettlement(form) {
+      const error = document.querySelector('#settle-item-error');
+      const fail = message => { error.textContent = message; error.hidden = false; };
+      const item = transactions.find(row => row.id === settleItem.id);
+      const owed = item?.shared ? store.sharedOwed(item) : null;
+      if (!owed || owed.settled) return fail('Nothing is open on this entry any more.');
+      const typed = Math.round(Number(String(form.elements.amount.value).replace(/[,\s]/g, '')) * 100);
+      const amount = form.elements.mode.value === 'full' ? owed.owed : typed;
+      if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount above zero.');
+      if (amount > owed.owed) return fail(`Only ${formatMoney(owed.owed, item.property)} is open on this entry.`);
+      const bundle = sharedBundle(item.property, item.shared.with);
+      // Money from him to me is positive, so my share of his payment is negative: the same sign the settle dialog uses.
+      const cash = item.shared.by === 'friend' ? -amount : amount;
+      const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: [{ to: item.sid, a: amount }], cash, treatment: 'none' });
+      if (!result.ok) return fail(result.error);
+      const now = new Date();
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      trackSave(store.saveSettle({ id: newSharedKey('st'), date, property: item.property, with: item.shared.with, items: result.settlement.items, cash: result.settlement.cash, forgiven: 0, treatment: 'none', note: '' }));
+      document.querySelector('#settle-item-dialog').close();
+      renderLedger();
+      showToast(amount === owed.owed ? `Settled in full with ${item.shared.with}.` : `Part settled with ${item.shared.with}; the rest stays open.`);
+    }
+    function setupSettleItemDialog() {
+      const form = document.querySelector('#settle-item-form');
+      if (!form) return;
+      form.addEventListener('change', event => {
+        if (event.target.name !== 'mode') return;
+        const other = event.target.value === 'other';
+        form.elements.amount.disabled = !other;
+        if (other) form.elements.amount.focus();
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        saveItemSettlement(form);
+      });
     }
     // Marking one expense: who paid it, and the friend's part as a whole percentage.
     function openSharedMark(item) {
@@ -2520,7 +2694,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!Number.isInteger(his) || his < 0 || his > 100) return (hint.textContent = 'Enter a whole number from 0 to 100.');
       const by = form.elements.by.value === 'friend' ? 'friend' : 'me';
       const name = form.elements.with.value.trim() || 'they';
-      const parts = SharedLedger.split({ amount: item.amount, paidBy: by, hisPct: his });
+      const parts = SharedLedger.split({ amount: Math.abs(Number(item.amount)), paidBy: by, hisPct: his });
       const money = minor => formatMoney(minor, item.property);
       hint.textContent = by === 'me'
         ? `You paid ${money(parts.cost)}. ${name} owes you ${money(parts.friendShare)}. Your part, ${money(parts.myShare)}, is your expense.`
@@ -2539,15 +2713,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const changes = !item.shared || item.shared.by !== by || item.shared.his !== his || item.shared.with !== name;
       if (item.sid && changes && sharedSettlesOf(item.sid).length) return fail('A settlement already covers this. Its split cannot change until that settlement is taken off.');
       item.sid ||= newSharedKey('sh');
-      if (!item.series || item.shared?.with !== name) {
-        // Joins the open series of this person and currency, or starts a new one with a colour no open series is using.
-        store.refreshSeries();
-        const toItem = row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series });
-        const same = sharedRows().filter(row => row !== item && row.property === item.property && row.shared.with === name);
-        const join = SharedLedger.joinSeries(same.map(toItem), store.settleList().filter(settle => settle.property === item.property && settle.with === name));
-        const inUse = sharedRows().filter(row => row.series && store.sharedSeriesStatus(row)?.state !== 'done').map(row => row.series.colour);
-        item.series = join || { id: newSharedKey('se'), colour: SharedLedger.pickColour(inUse) };
-      }
+      if (!item.series || item.shared?.with !== name) assignSeries(item, name);
+      // The amount stays as it is (the full cost); my share is worked out from it when the ledger draws it.
       item.shared = { by, his, with: name };
       saveTransactions();
       document.querySelector('#shared-mark-dialog').close();
@@ -2715,16 +2882,27 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           description: `Let go by ${name}`, place: '', amount: Math.abs(result.forgiven), type, ...scope.fields
         };
       }
+      // Optionally the money that moved is recorded as an income or expense entry, marked CLEARED in the series colour.
+      const settleId = newSharedKey('st');
+      const recordAs = form.elements.record?.value || 'no';
+      let recorded = null;
+      if (recordAs === 'expense' || recordAs === 'income') {
+        if (!result.settlement.cash) return fail('Nothing moved in cash, so there is nothing to record.');
+        const scope = panelScope(date.slice(0, 7), property);
+        const section = scope.sections().find(item => item.type === recordAs && !item.closed && item.subsections?.length);
+        if (!section) return fail(`Add a ${recordAs} section with a subsection in that month first, so the settlement has somewhere to go.`);
+        const colour = bundle.entries.find(row => row.id === result.settlement.items[0].to)?.item.series?.colour || '#94a3b8';
+        recorded = { id: `new-${Date.now()}-r`, property, date, section: section.name, category: section.subsections[0], description: `Settled with ${name}`, place: '', amount: Math.abs(result.settlement.cash), type: recordAs, cleared: { id: settleId, colour }, ...scope.fields };
+      }
       const record = {
-        id: newSharedKey('st'), date, property, with: name, items: result.settlement.items,
+        id: settleId, date, property, with: name, items: result.settlement.items,
         cash: result.settlement.cash, forgiven: result.forgiven, treatment, note: form.elements.note.value.trim()
       };
-      if (entry) {
-        transactions.push(entry);
-        saveTransactions();
-      }
+      [entry, recorded].filter(Boolean).forEach(row => transactions.push(row));
+      if (entry || recorded) saveTransactions();
       trackSave(store.saveSettle(record));
       form.elements.note.value = '';
+      form.querySelector('[name="record"][value="no"]').checked = true;
       document.querySelector('#shared-dialog').querySelector('[name="amount"]').value = '';
       document.querySelector('#shared-dialog').close();
       renderLedger();
@@ -3435,18 +3613,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = panelScope(mKey, property);
       const copy = carryRow({ ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields }, type);
       if (!scope.isEvent) delete copy.eventId;
-      // A flow follows one movement of money, so a copy is not part of it. What a repayment covered names the
+      // What a repayment covered names the
       // subsections of the settlement it was written in, and a copy landing anywhere else would be naming things
       // that are not there — so it arrives saying nothing about what it covers, to be said again where it lands.
-      delete copy.flow;
+      // A copy keeps the sharing (who paid, the friend's part) but gets a key of its own, so the original's settlements never
+      // apply to it. It then joins the open series of that person, the same way a new mark does.
+      if (item.sid && item.shared) { copy.sid = newSharedKey('sh'); delete copy.series; }
       if (section !== item.section || type !== 'net') delete copy.alloc;
       if (Array.isArray(item.tags)) copy.tags = [...item.tags];
       const notes = transactions.filter(note => note.parentId === item.id).map(note => carryRow({ ...note, id: newRowId(), parentId: copy.id, property, date: dateIn(mKey, note.date), category, ...(Array.isArray(note.tags) ? { tags: [...note.tags] } : {}), ...scope.fields }, type));
       notes.forEach(note => {
         if (!scope.isEvent) delete note.eventId;
-        delete note.flow;
       });
       transactions.push(copy, ...notes);
+      if (copy.sid) assignSeries(copy, copy.shared.with);
       return 1;
     }
     // ---- pasting across levels ------------------------------------------------------------------
@@ -3471,7 +3651,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const asNote = (row, amount) => {
         const note = carryRow({ ...row, id: newRowId(), parentId: parent.id, property, date: dateIn(mKey, row.date),
           section: into.name, category, amount, ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
-        delete note.flow;
         delete note.split;
         delete note.alloc;
         if (!scope.isEvent) delete note.eventId;
@@ -3500,7 +3679,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const made = carryRow({ ...row, id: newRowId(), property, date: dateIn(mKey, row.date), section: into.name,
           category: name, amount: Number(row.amount), ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
         delete made.parentId;
-        delete made.flow;
         if (!scope.isEvent) delete made.eventId;
         return made;
       });
@@ -3646,12 +3824,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return null;
     }
     // Moves one entry (and its notes) to another panel, section and subsection: the same rows, re-pointed, so their
-    // ids, notes, tags and flow stay with them. Used by a cut; a copy clones instead (see cloneEntry).
+    // ids, notes and tags stay with them. Used by a cut; a copy clones instead (see cloneEntry).
     function moveEntry(item, mKey, property, section, category, type = item.type) {
       const scope = panelScope(mKey, property);
+      const fromProperty = item.property;
       Object.assign(item, { property, date: dateIn(mKey, item.date), section, category, ...scope.fields });
       carryRow(item, type);
       if (!scope.isEvent) delete item.eventId;
+      // A series belongs to one person in one currency: moved to another currency, the item leaves its series and joins one there.
+      if (item.sid && item.shared && fromProperty !== property) { delete item.series; assignSeries(item, item.shared.with); }
       transactions.filter(note => note.parentId === item.id).forEach(note => {
         Object.assign(note, { property, date: dateIn(mKey, note.date), category, ...scope.fields });
         carryRow(note, type);
@@ -4006,7 +4187,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Every menu below reads in the same order, so a row's menu is learnt once rather than per kind:
       //   1. what this row is for      Edit, Add…
       //   2. how it counts             the share chips, settlement roles, savings setup, Close / Reopen
-      //   3. what is attached to it    Description…, Tags…, a flow
+      //   3. what is attached to it    Description…, Tags…
       //   4. moving it about           Cut, Copy, Move / Paste — always the three together, in that order
       //   5. renaming it               Rename…
       //   6. taking it away            Delete, last, and the only red line
@@ -4174,7 +4355,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'corner-down-right', label: 'Add note', run: add },
           ...[aboutAction(target)].filter(Boolean),
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
-          flowAction(target),
           ...cutItems(),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
           { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
@@ -4184,7 +4364,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
         ...[aboutAction(target)].filter(Boolean),
         { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
-        flowAction(target),
         { icon: 'trash', label: 'Delete note', danger: true, run: () => deleteRow({ deleteRow: 'note', entryId: target.id }) }
       ]);
     }
@@ -4657,201 +4836,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       addEventListener('scroll', () => { if (!pop.hidden) placeAboutPop(); }, true);
     }
 
-    // ---- Flows: money that goes out and comes back, or comes in and goes back (a loan and its repayments, an advance and
-    // its refund). Any entries and notes, in any month, year or special card, can be put in one flow; the flow adds them up
-    // per currency, income in and expenses out (a custom section's amount by its sign), and shows what is still open:
-    // less in than out is still to receive, more in than out is still to pay back. A note whose entry is in the same flow
-    // is counted with its entry. Flows show on the ★ page, as a statement with a running balance. ----
     const todayKey = () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; };
-    // Every flow with its rows (oldest first, each with its signed `value` and running balance per currency) and its
-    // totals per currency: { out, in, balance }.
-    function flowIndex() {
-      const flows = store.flowList().map(flow => ({ ...flow, rows: [], sums: new Map() }));
-      const byFlow = new Map(flows.map(flow => [flow.id, flow]));
-      const byId = new Map(transactions.map(item => [item.id, item]));
-      const members = transactions.filter(item => byFlow.has(item.flow) && !(item.parentId && byId.get(item.parentId)?.flow === item.flow));
-      if (!members.length) return flows;
-      const ids = new Set(members.map(item => item.id));
-      searchRows(null).filter(row => ids.has(row.id)).forEach(row => {
-        const flow = byFlow.get(byId.get(row.id).flow);
-        const value = row.type === 'income' ? row.amount : row.type === 'net' ? row.amount : -row.amount;
-        flow.rows.push({ ...row, value });
-      });
-      flows.forEach(flow => {
-        flow.rows.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-        flow.rows.forEach(row => {
-          const sum = flow.sums.get(row.property) || { out: 0, in: 0, balance: 0 };
-          if (row.value < 0) sum.out -= row.value; else sum.in += row.value;
-          sum.balance += row.value;
-          row.running = sum.balance;
-          flow.sums.set(row.property, sum);
-        });
-        flow.sums = new Map([...flow.sums].sort(([a], [b]) => store.currencyKeys().indexOf(a) - store.currencyKeys().indexOf(b)));
-      });
-      return flows;
-    }
-    // What is still open in one currency, in words.
-    function flowStatus(balance, property, compact = false) {
-      const money = compact ? compactMoney : formatMoney;
-      if (!balance) return { text: 'Settled', tone: 'is-settled' };
-      return balance < 0 ? { text: `${money(-balance, property)} to receive`, tone: 'is-receive' } : { text: `${money(balance, property)} to pay back`, tone: 'is-pay' };
-    }
-    // The row menu's flow item: which flow the row is in, or an offer to put it in one.
-    function flowAction(target) {
-      const flow = store.flow(transactions.find(item => item.id === target.id)?.flow);
-      return { icon: 'arrows-exchange', label: flow ? `Flow: ${flow.name}…` : 'Add to a flow…', hint: flow ? 'change or remove' : 'a loan and its repayments, a refund…', run: () => openFlowPicker({ mode: 'assign', id: target.id }, target.row) };
-    }
-
-    // The flow picker: puts a row in a flow (an existing one, or a new one named and coloured here) or takes it out; in
-    // 'edit' mode it renames, recolours or deletes a flow.
-    const flowPop = { el: null, state: null, anchor: null, colour: 0 };
-    const FLOW_COLOURS = 8;
-    function drawFlowPicker() {
-      const { el, state } = flowPop;
-      const flows = flowIndex();
-      const editing = state.mode === 'edit' ? flows.find(flow => flow.id === state.flowId) : null;
-      const item = state.mode === 'assign' ? transactions.find(row => row.id === state.id) : null;
-      if (state.mode === 'assign' && !item) return closeFlowPicker();
-      if (state.mode === 'edit' && !editing) return closeFlowPicker();
-      const statusOf = flow => [...flow.sums].map(([property, sum]) => flowStatus(sum.balance, property, true).text).join(' · ') || 'No entries yet';
-      const swatches = `<div class="flow-swatches" role="radiogroup" aria-label="Colour">${Array.from({ length: FLOW_COLOURS }, (_, n) => `<button type="button" class="flow-swatch tag-c${n}" data-flow-colour="${n}" role="radio" aria-checked="${flowPop.colour === n}" aria-label="Colour ${n + 1}"></button>`).join('')}</div>`;
-      if (editing) {
-        el.innerHTML = `<p class="flow-pop-title"><b>Edit flow</b><small>${escapeHtml(statusOf(editing))}</small></p>
-          <form class="flow-pop-new" data-flow-form="edit" novalidate><input name="name" value="${escapeHtml(editing.name)}" maxlength="60" aria-label="Flow name" autocomplete="off" spellcheck="false">${swatches}
-          <p class="flow-pop-hint" aria-live="polite"></p>
-          <div class="flow-pop-actions"><button type="button" class="quiet-button is-danger" data-flow-delete><i class="ti ti-trash" aria-hidden="true"></i> Delete flow</button><button type="submit" class="primary-button">Save</button></div></form>`;
-        return;
-      }
-      const current = item.flow;
-      el.innerHTML = `<p class="flow-pop-title"><b>Flow</b><small>${escapeHtml(item.description)}</small></p>
-        <div class="flow-pop-list">${flows.map(flow => `<button type="button" class="flow-choice tag-c${flow.colour}" data-pick-flow="${escapeHtml(flow.id)}" aria-pressed="${flow.id === current}"><span class="flow-dot" aria-hidden="true"></span><span class="flow-choice-name">${escapeHtml(flow.name)}</span><small>${escapeHtml(statusOf(flow))}</small>${flow.id === current ? '<i class="ti ti-check" aria-hidden="true"></i>' : ''}</button>`).join('') || '<p class="flow-pop-empty">No flows yet: name one below.</p>'}</div>
-        <form class="flow-pop-new" data-flow-form="new" novalidate><input name="name" maxlength="60" placeholder="New flow, e.g. Loan to Ravi" aria-label="New flow name" autocomplete="off" spellcheck="false" enterkeyhint="done">${swatches}
-        <p class="flow-pop-hint" aria-live="polite"></p><div class="flow-pop-actions">${current ? '<button type="button" class="quiet-button" data-flow-remove>Take out of the flow</button>' : ''}<button type="submit" class="primary-button"><i class="ti ti-plus" aria-hidden="true"></i> Create and add</button></div></form>`;
-      // Names already in use (sections and subsections of every kind) as suggestions.
-      const input = el.querySelector('[data-flow-form="new"] input');
-      suggest.attach(input, {
-        items: () => {
-          const seen = new Set();
-          return [...sectionChoices([]), ...['expense', 'income', 'net'].flatMap(type => subsectionChoices(type, []))].filter(choice => !seen.has(nameKey(choice.name)) && seen.add(nameKey(choice.name)));
-        },
-        onPick: choice => { input.value = choice.name; input.focus(); }
-      });
-    }
-    function placeFlowPicker() {
-      const { el, anchor } = flowPop;
-      if (!anchor?.isConnected) return;
-      const r = anchor.getBoundingClientRect();
-      const below = innerHeight - r.bottom > el.offsetHeight + 12 || r.top < el.offsetHeight + 12;
-      el.style.top = `${Math.max(8, below ? r.bottom + 4 : r.top - el.offsetHeight - 4)}px`;
-      el.style.left = `${Math.max(8, Math.min(r.left + 24, innerWidth - el.offsetWidth - 8))}px`;
-    }
-    function openFlowPicker(state, anchor) {
-      if (isViewer) return viewOnly();
-      const flows = store.flowList();
-      const own = state.mode === 'edit' ? flows.find(flow => flow.id === state.flowId) : null;
-      // A new flow takes the first colour no flow has yet.
-      const used = new Set(flows.map(flow => flow.colour));
-      flowPop.colour = own ? own.colour : Array.from({ length: FLOW_COLOURS }, (_, n) => n).find(n => !used.has(n)) ?? flows.length % FLOW_COLOURS;
-      Object.assign(flowPop, { state, anchor });
-      flowPop.el.hidden = false;
-      drawFlowPicker();
-      placeFlowPicker();
-      if (!isPhone()) flowPop.el.querySelector('input')?.focus();
-    }
-    function closeFlowPicker() {
-      if (!flowPop.el || flowPop.el.hidden) return;
-      flowPop.el.hidden = true;
-      flowPop.state = null;
-      flowPop.anchor = null;
-      suggest.close();
-    }
-    function setRowFlow(id, flowId) {
-      const item = transactions.find(row => row.id === id);
-      if (!item) return;
-      if (flowId) item.flow = flowId; else delete item.flow;
-      saveTransactions();
-      closeFlowPicker();
-      renderLedger();
-      const flow = flowId && flowIndex().find(entry => entry.id === flowId);
-      showToast(flow ? `“${item.description}” is in the flow “${flow.name}”: ${[...flow.sums].map(([property, sum]) => flowStatus(sum.balance, property).text).join(' · ') || 'nothing open'}.` : `“${item.description}” is out of its flow.`);
-    }
-    function saveFlowForm(form) {
-      const input = form.elements.name;
-      const hint = form.querySelector('.flow-pop-hint');
-      const name = input.value.trim().replace(/\s+/g, ' ');
-      const { state } = flowPop;
-      const fail = text => {
-        hint.textContent = text;
-        input.setAttribute('aria-invalid', 'true');
-        input.focus();
-      };
-      if (!name) return fail('Give the flow a name.');
-      const twin = store.flowList().find(flow => nameKey(flow.name) === nameKey(name) && flow.id !== state.flowId);
-      if (twin) return fail(`“${twin.name}” already exists${state.mode === 'assign' ? ': pick it above' : ''}.`);
-      if (state.mode === 'edit') {
-        trackSave(store.saveFlow(state.flowId, { name, colour: flowPop.colour }));
-        closeFlowPicker();
-        renderLedger();
-        return showToast(`Flow saved as “${name}”.`);
-      }
-      const year = store.year(currentMonth.getFullYear()) ? currentMonth.getFullYear() : Number(store.yearIds().pop());
-      const id = `fl${Date.now().toString(36)}`;
-      trackSave(store.saveFlow(id, { name, colour: flowPop.colour, created: todayKey() }, year));
-      setRowFlow(state.id, id);
-    }
-    async function deleteFlow(flowId) {
-      const flow = flowIndex().find(entry => entry.id === flowId);
-      if (!flow) return;
-      if (!window.confirm(`Delete the flow “${flow.name}”? Its ${flow.rows.length} ${flow.rows.length === 1 ? 'entry stays' : 'entries stay'} as ${flow.rows.length === 1 ? 'it is' : 'they are'}, only out of the flow.`)) return;
-      closeFlowPicker();
-      // Every year is loaded first, so no entry anywhere keeps the deleted flow.
-      try { await Promise.all(store.yearIds().map(year => store.ensureYear(Number(year)))); } catch (error) { return showToast('Could not load every month; the flow was not deleted.'); }
-      trackSave(store.deleteFlow(flowId));
-      renderLedger();
-      showToast(`Deleted the flow “${flow.name}”.`);
-    }
-    function setupFlowPicker() {
-      const el = document.createElement('div');
-      el.className = 'flow-pop';
-      el.setAttribute('role', 'dialog');
-      el.setAttribute('aria-label', 'Flow');
-      el.hidden = true;
-      document.body.append(el);
-      flowPop.el = el;
-      el.addEventListener('click', event => {
-        const colour = event.target.closest('[data-flow-colour]');
-        if (colour) {
-          flowPop.colour = Number(colour.dataset.flowColour);
-          return el.querySelectorAll('[data-flow-colour]').forEach(button => button.setAttribute('aria-checked', String(button === colour)));
-        }
-        const pick = event.target.closest('[data-pick-flow]');
-        if (pick) return setRowFlow(flowPop.state.id, pick.getAttribute('aria-pressed') === 'true' ? null : pick.dataset.pickFlow);
-        if (event.target.closest('[data-flow-remove]')) return setRowFlow(flowPop.state.id, null);
-        if (event.target.closest('[data-flow-delete]')) return deleteFlow(flowPop.state.flowId);
-      });
-      el.addEventListener('submit', event => {
-        event.preventDefault();
-        saveFlowForm(event.target);
-      });
-      el.addEventListener('keydown', event => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          closeFlowPicker();
-        }
-      });
-      document.addEventListener('pointerdown', event => {
-        if (!el.hidden && !el.contains(event.target) && !event.target.closest?.('.suggest-box, [data-flow-edit]')) closeFlowPicker();
-      }, true);
-      addEventListener('scroll', () => { if (!el.hidden) placeFlowPicker(); }, true);
-      // A row's flow mark opens its flow on the ★ page (and does not open or close the row).
-      document.querySelector('#ledger').addEventListener('click', event => {
-        const mark = event.target.closest('[data-flow-mark]');
-        if (!mark) return;
-        event.preventDefault();
-        event.stopPropagation();
-        goToFlow(mark.dataset.flowMark);
-      }, true);
-    }
 
     // ---- Special cards and hashtags, on one page (the ★ tab). A legend on the left lists every special card, by year,
     // and every hashtag; the right side holds the cards, grouped by year, then the hashtags. Each group, each card and each
@@ -4861,8 +4846,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       try { return JSON.parse(localStorage.getItem(HUB_FOLDS_KEY) || '{}') || {}; } catch (error) { return {}; }
     })();
     const hubOpenTags = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-hub-tags`) || '[]'));
-    const hubOpenFlows = new Set(JSON.parse(sessionStorage.getItem(`${STORAGE_KEY}-hub-flows`) || '[]'));
-    const saveHubFlows = () => sessionStorage.setItem(`${STORAGE_KEY}-hub-flows`, JSON.stringify([...hubOpenFlows]));
     let hubFilter = '';
     let hubLoading = false;
     // A group is open unless folded; the legend's groups start folded on a phone, where they sit above the cards.
@@ -4894,36 +4877,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           `<button type="button" class="search-row${row.kind === 'note' ? ' is-note' : ''}" ${jumpAttr(row.jump)}><span class="search-when">${escapeHtml(dayLabel(row.date))}</span><span class="search-main"><span class="search-desc">${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}${row.comment ? `<span class="search-comment">${LedgerSearch.markTags(escapeHtml(row.comment))}</span>` : ''}</span><span class="search-crumbs">${LedgerSearch.markTags(escapeHtml(row.crumbs))}${row.kind === 'note' && row.parent ? ` · in ${escapeHtml(row.parent)}` : ''}</span></span><strong class="search-amount ${row.type === 'net' ? (row.amount < 0 ? 'expense' : 'income') : row.type}">${hubMoney(row.type === 'net' ? Math.abs(row.amount) : row.amount, row.property)}<small>${escapeHtml(regions[row.property]?.code || '')}</small></strong></button>`).join('')}</section>`;
       }).join('');
     }
-    // A flow on the ★ page: its name and what is open per currency; opened, its statement oldest first: day, entry (and
-    // where it is), out, in and the balance after it, then the totals. A row opens where it lives.
-    function hubFlowBlock(flow) {
-      const open = hubOpenFlows.has(flow.id);
-      const dates = flow.rows.map(row => row.date);
-      const span = dates.length ? [dates[0], dates[dates.length - 1]].map(date => monthLabel(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1))) : [];
-      const when = span.length ? ` · ${span[0] === span[1] ? span[0] : `${span[0]} – ${span[1]}`}` : '';
-      const status = [...flow.sums].map(([property, sum]) => {
-        const state = flowStatus(sum.balance, property);
-        return `<span class="flow-status ${state.tone}"><b>${escapeHtml(regions[property]?.code || property)}</b><span class="expense" title="Out">${formatMoney(sum.out, property)}</span><span class="income" title="In">${formatMoney(sum.in, property)}</span><em>${state.tone === 'is-settled' ? '<i class="ti ti-circle-check" aria-hidden="true"></i>' : ''}${escapeHtml(state.text)}</em></span>`;
-      }).join('') || '<span class="flow-status is-empty"><em>No entries yet: right-click an entry, then Add to a flow</em></span>';
-      const jumpAttr = jump => `data-search-jump='${escapeHtml(JSON.stringify(jump))}'`;
-      const sheet = [...flow.sums.keys()].map(property => {
-        const own = flow.rows.filter(row => row.property === property);
-        const sum = flow.sums.get(property);
-        const code = escapeHtml(regions[property]?.code || property);
-        return `<div class="flow-sheet" role="table" aria-label="${escapeHtml(flow.name)} in ${code}">
-          <div class="flow-sheet-row is-head" role="row"><span role="columnheader">Day</span><span role="columnheader">Entry · ${code}</span><span role="columnheader">Out</span><span role="columnheader">In</span><span role="columnheader">Balance</span></div>
-          ${own.map(row => `<button type="button" class="flow-sheet-row" role="row" ${jumpAttr(row.jump)} title="Open it in ${escapeHtml(row.where)}"><span class="flow-day">${escapeHtml(dayLabel(row.date))} <small>${row.date.slice(0, 4)}</small></span><span class="flow-entry"><span>${row.kind === 'note' ? '<i class="ti ti-corner-down-right" aria-hidden="true"></i>' : ''}${LedgerSearch.markTags(escapeHtml(row.description))}</span><small>${escapeHtml(row.where)} · ${LedgerSearch.markTags(escapeHtml(row.crumbs))}</small></span><span class="expense">${row.value < 0 ? formatMoney(-row.value, property) : ''}</span><span class="income">${row.value > 0 ? formatMoney(row.value, property) : ''}</span><span class="flow-running">${hubMoney(row.running, property)}</span></button>`).join('')}
-          <div class="flow-sheet-row is-total" role="row"><span></span><span>${escapeHtml(flowStatus(sum.balance, property).text)}</span><span class="expense">${formatMoney(sum.out, property)}</span><span class="income">${formatMoney(sum.in, property)}</span><span class="flow-running">${hubMoney(sum.balance, property)}</span></div>
-        </div>`;
-      }).join('');
-      const edit = isViewer ? '' : `<div class="flow-tools"><button type="button" class="quiet-button flow-edit" data-flow-edit="${escapeHtml(flow.id)}" aria-label="Edit the flow ${escapeHtml(flow.name)}" title="Rename, recolour or delete"><i class="ti ti-pencil" aria-hidden="true"></i> Edit flow</button></div>`;
-      return `<details class="hub-flow tag-c${flow.colour}" data-hub-flow="${escapeHtml(flow.id)}"${open ? ' open' : ''}><summary>${chevron}<i class="ti ti-arrows-exchange flow-icon" aria-hidden="true"></i><b>${escapeHtml(flow.name)}</b><small>${flow.rows.length} ${flow.rows.length === 1 ? 'entry' : 'entries'}${when}</small><span class="flow-statuses">${status}</span></summary><div class="hub-flow-body">${edit}${sheet}</div></details>`;
-    }
     function renderHub() {
       const events = store.eventList();
       const years = [...new Set(events.map(event => event.year))].sort((a, b) => b - a);
       const tags = hashtagIndex();
-      const flows = flowIndex();
       const state = renderState();
       const entriesIn = id => store.eventItems(id).filter(item => !item.parentId).length;
       const plural = (n, word) => `${n} ${n === 1 ? word : `${word}s`}`;
@@ -4931,16 +4888,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const cardLinks = years.map(year => `<p class="hub-legend-year">${year}</p>${events.filter(event => event.year === year).map(event =>
         `<button type="button" class="hub-link${expandedMonths.has(`ev:${event.id}`) ? ' is-open' : ''}" data-hub-card="${escapeHtml(event.id)}" title="Go to ${escapeHtml(event.name)}"><i class="ti ti-star-filled hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(event.name)}</span>${event.include ? '<i class="ti ti-calendar-share hub-link-mark" title="Also counts in its months" aria-label="Also counts in its months"></i>' : ''}<small>${entriesIn(event.id)}</small></button>`).join('')}`).join('');
       const tagLinks = tags.map(entry => `<button type="button" class="hub-link tag-c${LedgerSearch.tagColour(entry.tag)}" data-hub-tag-link="${escapeHtml(entry.tag)}" title="Go to #${escapeHtml(entry.tag)}"><i class="ti ti-hash hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(entry.tag)}</span><small>${entry.rows.length}</small></button>`).join('');
-      // Flows: each in its colour, with what is still open in its first currency.
-      const flowLinks = flows.map(flow => {
-        const [property, sum] = [...flow.sums][0] || [];
-        const state = property ? flowStatus(sum.balance, property, true) : { text: 'empty', tone: 'is-empty' };
-        return `<button type="button" class="hub-link tag-c${flow.colour}" data-hub-flow-link="${escapeHtml(flow.id)}" title="Go to the flow ${escapeHtml(flow.name)}"><i class="ti ti-arrows-exchange hub-link-icon" aria-hidden="true"></i><span>${escapeHtml(flow.name)}</span><small class="flow-link-state ${state.tone}">${escapeHtml(state.text)}</small></button>`;
-      }).join('');
       const loading = hubLoading ? '<i class="ti ti-loader-2 search-spin hub-loading" aria-label="Loading every month"></i>' : '';
-      const legend = `<aside class="hub-legend" aria-label="Special cards, flows and hashtags">
+      const legend = `<aside class="hub-legend" aria-label="Special cards and hashtags">
         ${hubFold('legend:cards', 'hub-legend-group', `${chevron}<i class="ti ti-star-filled" aria-hidden="true"></i><span>Special cards</span><small>${events.length}</small>`, `<nav class="hub-links">${cardLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
-        ${hubFold('legend:flows', 'hub-legend-group', `${chevron}<i class="ti ti-arrows-exchange" aria-hidden="true"></i><span>Flows</span><small>${flows.length}</small>`, `<nav class="hub-links">${flowLinks || '<p class="hub-empty">None yet</p>'}</nav>`)}
         ${hubFold('legend:tags', 'hub-legend-group', `${chevron}<i class="ti ti-hash" aria-hidden="true"></i><span>Hashtags</span><small>${tags.length}</small>${loading}`, `<input class="hub-filter" type="search" name="hashtag-filter" data-hub-filter placeholder="Find a hashtag" aria-label="Find a hashtag" autocomplete="off" spellcheck="false" value="${escapeHtml(hubFilter)}"><nav class="hub-links">${tagLinks || `<p class="hub-empty">${hubLoading ? 'Loading…' : 'None yet'}</p>`}</nav>`)}
       </aside>`;
       const tools = events.length ? '<div class="hub-tools"><button type="button" class="quiet-button" data-hub-all="open" title="Open every card">Expand all</button><button type="button" class="quiet-button" data-hub-all="close" title="Close every card">Collapse all</button></div>' : '';
@@ -4955,9 +4905,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }).join('');
       const tagSection = hubFold('tags', 'hub-section', `${chevron}<h2><i class="ti ti-hash" aria-hidden="true"></i>Hashtags</h2><small>${plural(tags.length, 'tag')}</small>${loading}`,
         `<div class="hub-section-body">${tagBlocks || `<p class="ledger-none">${hubLoading ? 'Loading every month…' : 'No hashtags yet. Add one like #gold to an entry’s description or comment, or to a subsection’s name.'}</p>`}</div>`);
-      const flowSection = hubFold('flows', 'hub-section', `${chevron}<h2><i class="ti ti-arrows-exchange" aria-hidden="true"></i>Flows</h2><small>${plural(flows.length, 'flow')}</small>${loading}`,
-        `<div class="hub-section-body">${flows.map(hubFlowBlock).join('') || '<p class="ledger-none">No flows yet. Right-click (or long-press) an entry or a note, then “Add to a flow…”: a loan and its repayments, an advance and its refund.</p>'}</div>`);
-      return `<div class="hub">${legend}<div class="hub-main">${cards}${flowSection}${tagSection}</div></div>`;
+      // Shared expenses: every shared entry, Active (money still open on it) and Closed (settled). Each row goes to its entry.
+      const sharedAll = sharedRows().map(item => ({ item, owed: store.sharedOwed(item) }))
+        .sort((x, y) => String(y.item.date).localeCompare(String(x.item.date)) || x.item.id.localeCompare(y.item.id));
+      const activeRows = sharedAll.filter(row => !row.owed?.settled);
+      const closedRows = sharedAll.filter(row => row.owed?.settled);
+      const sharedList = rows => rows.map(row => sharedRowLine(row.item, row.owed)).join('');
+      const settleSection = hubFold('settlements', 'hub-section', `${chevron}<h2><i class="ti ti-arrows-exchange" aria-hidden="true"></i>Shared expenses</h2><small>${activeRows.length} active · ${closedRows.length} closed</small>${loading}`,
+        `<div class="hub-section-body"><h3 class="settle-group">Active</h3>${sharedList(activeRows) || '<p class="ledger-none">Nothing is open.</p>'}<h3 class="settle-group">Closed</h3>${sharedList(closedRows) || '<p class="ledger-none">Nothing is closed yet.</p>'}</div>`);
+      return `<div class="hub">${legend}<div class="hub-main">${cards}${settleSection}${tagSection}</div></div>`;
     }
     // The legend's filter hides the tags (in the legend and on the page) that do not match what is typed.
     function applyHubFilter(host) {
@@ -4997,16 +4953,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const block = document.querySelector(`.month-block[data-month-key="${CSS.escape(key)}"]`);
       hubReveal(block, block?.querySelector('.month-ledger-head'));
     }
-    function goToFlow(id) {
-      setSpecialMode(true);
-      setHubFold('flows', true);
-      hubOpenFlows.add(id);
-      saveHubFlows();
-      renderLedger();
-      const block = document.querySelector(`.hub-flow[data-hub-flow="${CSS.escape(id)}"]`);
-      if (!block) return showToast('That flow is gone.');
-      hubReveal(block, block.querySelector(':scope > summary'));
-    }
     function goToTag(tag) {
       setSpecialMode(true);
       setHubFold('tags', true);
@@ -5026,10 +4972,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const el = event.target;
         if (!(el instanceof HTMLDetailsElement)) return;
         if (el.dataset.hubFold) return setHubFold(el.dataset.hubFold, el.open);
-        if (el.dataset.hubFlow) {
-          if (el.open) hubOpenFlows.add(el.dataset.hubFlow); else hubOpenFlows.delete(el.dataset.hubFlow);
-          return saveHubFlows();
-        }
         const tag = el.dataset.hubTag;
         if (tag === undefined) return;
         if (el.open) {
@@ -5061,23 +5003,17 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.stopPropagation();
           return goToCard(card.dataset.hubCard);
         }
-        const flowLink = event.target.closest('[data-hub-flow-link]');
-        if (flowLink) {
-          event.stopPropagation();
-          return goToFlow(flowLink.dataset.hubFlowLink);
-        }
-        const flowEdit = event.target.closest('[data-flow-edit]');
-        if (flowEdit) {
-          event.preventDefault();
-          event.stopPropagation();
-          return openFlowPicker({ mode: 'edit', flowId: flowEdit.dataset.flowEdit }, flowEdit);
-        }
         const tagLink = event.target.closest('[data-hub-tag-link]');
         if (tagLink) {
           event.stopPropagation();
           return goToTag(tagLink.dataset.hubTagLink);
         }
-        const row = event.target.closest('.hub-tag [data-search-jump], .hub-flow [data-search-jump]');
+        const sharedJumpRow = event.target.closest('[data-shared-jump]');
+        if (sharedJumpRow) {
+          event.stopPropagation();
+          return openSearchResult(JSON.parse(sharedJumpRow.dataset.sharedJump));
+        }
+        const row = event.target.closest('.hub-tag [data-search-jump]');
         if (row) {
           event.stopPropagation();
           openSearchResult(JSON.parse(row.dataset.searchJump));
@@ -5319,11 +5255,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupAllocDialog();
     setupMergeDialog();
     setupSharedDialogs();
+    setupDayDialog();
+    setupSettleItemDialog();
     setupLegacyUnpackDialog();
     setupAboutPop();
     setupHub();
     setupTagPicker();
-    setupFlowPicker();
     setupRowMenu();
     setupLedger();
     setupSearch();

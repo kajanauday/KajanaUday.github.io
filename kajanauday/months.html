@@ -18,16 +18,17 @@
     try { if (localStorage.getItem('kajanauday-theme') === 'light') { document.documentElement.dataset.theme = 'light'; document.querySelector('meta[name="theme-color"]').content = '#f6f3ec'; } } catch (error) { /* Dark by default. */ }
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="../kajanauday.css?v=20261113c">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../shared-ledger.js?v=20261114c" defer></script>
-  <script src="../data-layer.js?v=20261114c" defer></script>
+  <script src="../shared-ledger.js?v=20261110zd" defer></script>
+  <script src="../data-layer.js?v=20261110zd" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261114c" defer></script>
+  <script src="../component-blueprints.js?v=20261110zd" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261114c" defer></script>
+  <script src="../kajanauday.js?v=20261110zd" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -44,17 +45,23 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
-      <button type="button" class="quiet-button shared-open" data-shared-open title="Shared costs: what is open with people, and settling it">Shared</button>
-      <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards, flows and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
+      <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
 
-  <dialog class="modal month-dialog series-dialog" id="series-dialog" aria-labelledby="series-title">
-    <div class="modal-header"><div><p>Shared series</p><h2 id="series-title"></h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-    <p class="shared-summary" id="series-summary" aria-live="polite"></p>
-    <ul class="series-list" id="series-list"></ul>
-    <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button></div>
+  <dialog class="modal day-dialog" id="day-dialog" aria-labelledby="day-title">
+    <div class="day-pop">
+      <div class="day-top">
+        <div class="day-head"><div><p id="day-when"></p><h2 id="day-title"></h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <div class="day-summary" id="day-summary" aria-live="polite"></div>
+        <ul class="series-list" id="day-series"></ul>
+      </div>
+      <div class="day-bottom">
+        <h3>Hashtags</h3>
+        <div id="day-tags"></div>
+      </div>
+    </div>
   </dialog>
   <dialog class="modal month-dialog shared-dialog" id="shared-dialog" aria-labelledby="shared-dialog-title">
     <form id="shared-form" novalidate>
@@ -84,11 +91,29 @@
           <label><input type="radio" name="forgive" value="yes"> <span id="shared-forgive-yes"></span></label>
           <label><input type="radio" name="forgive" value="no"> Leave it out</label>
         </div>
+        <fieldset class="shared-record"><legend>Record in transactions?</legend>
+          <label><input type="radio" name="record" value="no" checked> No, just settle</label>
+          <label><input type="radio" name="record" value="expense"> Yes, as an expense</label>
+          <label><input type="radio" name="record" value="income"> Yes, as income</label>
+        </fieldset>
         <label><span>Note (optional)</span><input name="note" maxlength="80" autocomplete="off"></label>
       </div>
       <div class="shared-history"><h3>Settled so far</h3><ul id="shared-history"></ul></div>
       <p class="settings-error" id="shared-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button">Save settlement</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog settle-item-dialog" id="settle-item-dialog" aria-labelledby="settle-item-title">
+    <form id="settle-item-form" novalidate>
+      <div class="modal-header"><div><p id="settle-item-where"></p><h2 id="settle-item-title">Settle</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="shared-hint" id="settle-item-what"></p>
+      <fieldset class="settle-item-choice"><legend>How much</legend>
+        <label><input type="radio" name="mode" value="full" checked> <span id="settle-item-full"></span></label>
+        <label><input type="radio" name="mode" value="other"> Different amount</label>
+      </fieldset>
+      <label class="settle-item-amount"><span>Amount</span><input name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+      <p class="settings-error" id="settle-item-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog shared-mark-dialog" id="shared-mark-dialog" aria-labelledby="shared-mark-title">

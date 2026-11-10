@@ -24,10 +24,7 @@
 //                                    [{ category, total, count, entries[{ date, …, notes[{ date, … }] }] }] }
 //                                    With `include` on, each entry also counts in the month of its date (totals, balances, the
 //                                    year's totals); a month's metadata keeps that share as `fromEvents` so it can be taken out.
-//   years/<year>/flows/<id>          a flow: { name, colour (0–7), note, created }. A flow follows money that comes back or
 //                                    goes out again (a loan and its repayments, an advance and its refund): any entries
-//                                    and notes, in any month, year or event, that carry `flow: <id>`. Kept with the year
-//                                    it was made in, and shown with every year.
 //
 // The shell (year tabs, month rows, the year card's figures) is drawn from `years` alone. A month's entries are fetched only when it is
 // opened (ensureMonth). Amounts are minor units (paise / sen). An entry with notes counts as the sum of its notes.
@@ -40,6 +37,11 @@
   const monthIdOf = (year, monthIndex) => `${year}_${MONTH_NAMES[monthIndex]}`;
   const dateKeyOf = (year, monthIndex) => `${year}-${pad(monthIndex + 1)}`;
   const noteTotal = (amount, notes) => (notes.length ? notes.reduce((sum, note) => sum + Number(note.amount), 0) : Number(amount));
+  // The figure a row counts for: a shared expense counts my share of its full amount (worked out from its split, so the
+  // stored amount is never changed by sharing); any other row counts its amount as it is.
+  const shareOf = row => (row.sid && row.shared && global.SharedLedger
+    ? global.SharedLedger.split({ amount: Math.abs(Number(row.amount) || 0), paidBy: row.shared.by, hisPct: row.shared.his }).myShare
+    : Number(row.amount));
   const zeroTotals = () => ({ income: 0, expenses: 0, entries: 0 });
   const otherSectionName = type => (type === 'income' ? 'Other income' : type === 'net' ? 'Other balance' : 'Other expenses');
 
@@ -160,6 +162,13 @@
   }
 
   // One stored month → flat entries; notes become sub-entries of their entry. Ids are derived from position.
+  // A shared expense written by the earlier version kept my share as its amount and the full cost in its marker. It is read
+  // here with the full cost as its amount, as it is now kept; the marker's copy is dropped on the next save.
+  function sharedMigrated(row) {
+    if (!row.sid || !row.shared || row.shared.total === undefined) return row;
+    const { total, ...shared } = row.shared;
+    return { ...row, amount: Math.abs(Math.round(Number(total) || 0)), shared };
+  }
   function flattenMonth(monthId, currencies, currencyKeys) {
     const year = monthId.slice(0, 4);
     const dateKey = dateKeyOf(year, MONTH_NAMES.indexOf(monthId.slice(5)));
@@ -174,7 +183,7 @@
           // The same swap the sections get, so an entry still points at the subsection it belongs to.
           const safeCategory = safeKey(category);
           const home = entry.section === undefined ? {} : { section: safeKey(entry.section) };
-          list.push({ ...entry, ...home, id, date: `${dateKey}-${pad(day)}`, property: currency, type, category: safeCategory });
+          list.push(sharedMigrated({ ...entry, ...home, id, date: `${dateKey}-${pad(day)}`, property: currency, type, category: safeCategory }));
           notes.forEach(({ day: noteDay, ...note }, n) => list.push({ ...note, id: `${id}-note-${n + 1}`, parentId: id, date: `${dateKey}-${pad(noteDay ?? day)}`, property: currency, type, category: safeCategory }));
         }));
       });
@@ -198,8 +207,6 @@
       const when = row => (dated ? { date: row.date } : { day: Number(row.date.slice(8, 10)) });
       // Hashtags given by gesture (lower case, without #), on entries and notes alike.
       const tagsOf = row => (row.tags?.length ? { tags: [...row.tags] } : {});
-      // The flow an entry or note belongs to (see years/<year>/flows).
-      const flowOf = row => (row.flow ? { flow: row.flow } : {});
       // A row's own description (see readStatus): kept only when there is one.
       const aboutOf = row => (row.about ? { about: String(row.about) } : {});
       // What part of a settlement entry was mine (see splitShare), kept only when one was recorded and always in a
@@ -225,14 +232,16 @@
       // A shared expense's stable key and its marker (see shared-ledger.js). The key is what a settlement points at: an
       // entry's own id is only its place in the month, and it changes on every load.
       const sharedOf = row => (row.sid && row.shared ? { ...(row.series?.id && { series: { id: String(row.series.id), colour: String(row.series.colour || '') } }), sid: String(row.sid), shared: { by: row.shared.by === 'friend' ? 'friend' : 'me', his: Math.min(100, Math.max(0, Math.round(Number(row.shared.his) || 0))), with: String(row.shared.with || '').trim() || 'Friend' } } : {});
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...flowOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...flowOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item) };
+      // A ledger entry that clears a settlement carries the settlement's id and the series colour, shown as CLEARED.
+      const clearedOf = row => (row.cleared?.id ? { cleared: { id: String(row.cleared.id), colour: String(row.cleared.colour || '') } } : {});
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
       group.entries.push(entry);
       group.count += 1;
-      group.total += noteTotal(entry.amount, notes);
+      group.total += noteTotal(shareOf(item), notes);
     });
     return Object.keys(doc).length ? doc : null;
   }
@@ -255,7 +264,7 @@
       BUCKETS.forEach(([bucket, type]) => {
         (buckets[bucket] || []).forEach(({ category, entries = [] }) => entries.forEach(({ date, notes = [], ...entry }) => {
           const id = `ev:${eventId}:${currency}-${++index}`;
-          list.push({ ...entry, id, eventId, date, property: currency, type, category });
+          list.push(sharedMigrated({ ...entry, id, eventId, date, property: currency, type, category }));
           notes.forEach(({ date: noteDate, ...note }, n) => list.push({ ...note, id: `${id}-note-${n + 1}`, parentId: id, eventId, date: noteDate || date, property: currency, type, category }));
         }));
       });
@@ -1001,7 +1010,7 @@
         const key = entry.section || homeOf.get(nameKey(group.category)) || '';
         const sectionName = rules.has(key) ? key : otherSectionName('net');
         const bySub = balances.get(sectionName) || balances.set(sectionName, {}).get(sectionName);
-        (bySub[group.category] ||= []).push({ amount: noteTotal(entry.amount, entry.notes || []), split: entry.split || null, alloc: entry.alloc || null });
+        (bySub[group.category] ||= []).push({ amount: noteTotal(shareOf(entry), entry.notes || []), split: entry.split || null, alloc: entry.alloc || null });
       });
     }));
     const partsByKind = { settlement: [], savings: [] };
@@ -1437,31 +1446,6 @@
       };
     }
 
-    // ---- flows ----
-    // Every flow of every year, newest first.
-    flowList() {
-      return Object.entries(this.years).flatMap(([year, node]) => Object.entries(node.flows || {}).map(([id, flow]) => ({ id, year: Number(year), name: flow.name || 'Flow', colour: Number(flow.colour) || 0, note: flow.note || '', created: flow.created || '' })))
-        .sort((a, b) => b.created.localeCompare(a.created) || a.name.localeCompare(b.name));
-    }
-    flow(id) { return id ? this.flowList().find(flow => flow.id === id) || null : null; }
-    // Creates or changes a flow's own fields; a new one is kept with `year`.
-    saveFlow(id, fields, year) {
-      const at = this.flow(id)?.year ?? Number(year);
-      const node = this.year(at);
-      if (!node) return Promise.reject(new Error(`No year ${at} to keep the flow in.`));
-      const flows = node.flows ||= {};
-      flows[id] = { ...flows[id], ...fields };
-      return this.queue(() => this.db.patch({ [`years/${at}/flows/${id}`]: flows[id] }));
-    }
-    // Deletes a flow; its entries and notes stay as they are, without it (every year must be loaded, so none keeps it).
-    deleteFlow(id) {
-      const at = this.flow(id)?.year;
-      if (at === undefined) return Promise.resolve();
-      delete this.year(at).flows[id];
-      this.transactions.forEach(item => { if (item.flow === id) delete item.flow; });
-      return Promise.all([this.queue(() => this.db.patch({ [`years/${at}/flows/${id}`]: null })), this.saveTransactions()]);
-    }
-
     // ---- shared costs (see shared-ledger.js and years/<year>/settles) ----
     // Every settlement of every loaded year, newest first. A settlement is kept in the year it is dated in.
     settleList() {
@@ -1793,7 +1777,7 @@
       const children = this.transactions.filter(t => t.parentId === entryId);
       if (children.length) return children.reduce((sum, t) => sum + Number(t.amount), 0);
       const entry = this.transactions.find(t => t.id === entryId);
-      return entry ? Number(entry.amount) : 0;
+      return entry ? shareOf(entry) : 0;
     }
 
     // One currency's tree for an opened month: section → category → entry → sub-entries. Header totals are the stored metadata.
@@ -1879,8 +1863,11 @@
     buildEntry(item) {
       const subEntries = this.transactions.filter(t => t.parentId === item.id);
       return {
-        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: Number(item.amount), formula: item.formula || null, tags: item.tags || [], flow: item.flow || null, about: item.about || '',
+        id: item.id, date: item.date, description: item.description, place: item.place || '', amount: shareOf(item), formula: item.formula || null, tags: item.tags || [], about: item.about || '',
         split: item.split || null, alloc: item.alloc ? normalizeAlloc(item.alloc) : null,
+        // A shared expense carries its marker and series into the ledger, or its ball has nothing to draw.
+        ...(item.sid && item.shared ? { sid: item.sid, shared: item.shared, sharedTotal: Math.abs(Number(item.amount)), ...(item.series ? { series: item.series } : {}) } : {}),
+        ...(item.cleared ? { cleared: item.cleared } : {}),
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
         subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))

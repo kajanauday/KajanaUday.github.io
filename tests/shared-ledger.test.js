@@ -110,6 +110,10 @@ test('a new item joins the open series, and a finished one is not joined', () =>
   assert.equal(SL.joinSeries([bill100, pay120], [pay.settlement]), null);
 });
 
-test('a new colour avoids the colours in use', () => {
-  for (let i = 0; i < 50; i++) assert.notEqual(SL.pickColour(['#2563eb']), '#2563eb');
+test('series colours are a fixed list of twelve, used in order and wrapping after the twelfth', () => {
+  assert.equal(SL.SERIES_COLOURS.length, 12);
+  assert.equal(new Set(SL.SERIES_COLOURS).size, 12);
+  assert.equal(SL.colourAt(0), SL.SERIES_COLOURS[0]);
+  assert.equal(SL.colourAt(11), SL.SERIES_COLOURS[11]);
+  assert.equal(SL.colourAt(12), SL.SERIES_COLOURS[0]);
 });

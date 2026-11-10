@@ -120,7 +120,7 @@
 
   // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
   const EditEntryForm = ({ mKey, item, kind }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date)}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date)}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.sharedTotal ?? item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
 
   // Inside a settlement or a pot a subsection has to say what it stands for, because that is what decides whether its
   // amounts are money that moved or only a note about the split. Everywhere else the picker is left out.
@@ -186,11 +186,6 @@
     return ` data-tags="${ctx.esc(tags.map(tag => `#${tag}`).join(' '))}" style="--tag-line: linear-gradient(${stops})"`;
   };
   // #hashtags in a description or comment show as tags; a click opens that tag's summary.
-  // A row in a flow carries a small ⇄ in the flow's colour before its description; a click opens the flow.
-  const FlowMark = (id, ctx) => {
-    const flow = id && ctx.flow ? ctx.flow(id) : null;
-    return flow ? `<span class="flow-mark tag-c${flow.colour}" data-flow-mark="${ctx.esc(id)}" title="Flow: ${ctx.esc(flow.name)} · click to open it"><i class="ti ti-arrows-exchange" aria-hidden="true"></i><span class="sr-only">Flow ${ctx.esc(flow.name)}</span></span>` : '';
-  };
   // What an entry in a settlement said was mine, as a small tag on the row. Only entries that carry a split show one:
   // a row with nothing recorded stays as bare as it was, so the tag means "this was divided", not "this exists".
   const SplitMark = (split, ctx) => {
@@ -202,22 +197,23 @@
         : split.m === 'none' ? 'None of it was mine — the whole amount is owed' : 'Part of it was mine';
     return `<span class="split-mark ${tone}" data-split-mark title="${ctx.esc(`${says} · right-click the row to change it`)}">${ctx.esc(text)}</span>`;
   };
-  // A shared item's ball, placed right after its day and before its description, with no room around it. A series keeps
-  // one colour: a hollow ring while it is open, a filled dot once it is done, and a pill with the balance's sign when the
-  // series is merged (an item on the other side). The exact balance is in the hover text, not on the row.
-  const SharedBall = (entry, ctx) => {
-    if (!entry.shared) return '';
-    const status = store()?.sharedSeriesStatus ? store().sharedSeriesStatus(entry) : null;
-    const colour = entry.series?.colour || '#94a3b8';
-    const state = status?.state || 'open';
-    const balance = status?.balance || 0;
-    const name = entry.shared.with;
-    const who = entry.shared.by === 'friend' ? `${name} paid` : 'I paid';
-    const owed = balance === 0 ? 'nothing open in this series' : `${balance > 0 ? `${name} owes me` : 'I owe'} ${ctx.fmt(Math.abs(balance), entry.property)} across this series`;
-    const title = ctx.esc(`${who} · ${name}’s part ${entry.shared.his}% · ${owed}`);
-    if (state === 'merged') return `<span class="sh-merge" style="--c:${colour}" data-shared-ball data-series="${ctx.esc(entry.series?.id || '')}" title="${title}">${balance < 0 ? '−' : '+'}&lt;--&gt;</span>`;
-    return `<span class="sh-ball is-${state}" style="--c:${colour}" data-shared-ball data-series="${ctx.esc(entry.series?.id || '')}" title="${title}"></span>`;
+  // The day number as a round glossy circle, for a shared expense only. Its colour is the status of the expense: a soft
+  // fill while open, a stronger ring when merged, a dashed ring once settled. An entry that is not shared shows the bare
+  // day number, as before. Clicking the circle opens the day: its settlements (top) and its hashtags (bottom).
+  const DayOrb = (entry, text, ctx) => {
+    // A plain entry keeps its bare day number; the number still opens the day, for its hashtags.
+    if (!entry.shared) return `<span class="day-num" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="Open this day: hashtags">${text}</span>`;
+    const status = ctx.sharedSeries ? ctx.sharedSeries(entry) : null;
+    const owed = ctx.sharedOwed ? ctx.sharedOwed(entry) : null;
+    // Settled is one colour for every settled entry; an entry still open keeps its series colour.
+    const settled = Boolean(owed?.settled);
+    const colour = settled ? 'var(--st-done)' : (entry.series?.colour || '#94a3b8');
+    const state = settled ? 'is-done' : status?.state === 'merged' ? 'is-merged' : 'is-open';
+    const note = `${entry.shared.by === 'friend' ? `${entry.shared.with} paid` : 'I paid'} · ${entry.shared.with}’s part ${entry.shared.his}% · open this day`;
+    return `<span class="day-orb ${state}" style="--c:${colour}" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="${ctx.esc(note)}">${text}</span>`;
   };
+  // The CLEARED mark on an entry that settled a shared balance: the series colour as a ball, then the word.
+  const ClearedMark = entry => (entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');
   // What a repayment, or money arriving, said it was for. One payment usually covers more than one thing, so the mark
   // names the one thing when there is one and counts them when there are several; the whole list is in its title, with
   // anything not yet accounted for. A row that has said nothing carries no mark at all, exactly as before.
@@ -246,7 +242,7 @@
   // Level 6: sub-entry row ----------------------------------------------------------------------
   const SubEntryRow = (sub, { mKey, type, property }, state, ctx) => (state.editDraft?.kind === 'note' && state.editDraft.id === sub.id)
     ? EditEntryForm({ mKey, item: sub, kind: 'note' }, ctx)
-    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx, FlowMark(sub.flow, ctx), AboutTags(sub.about, { kind: 'note', id: sub.id }, ctx))}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
+    : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx, AboutTags(sub.about, { kind: 'note', id: sub.id }, ctx))}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
   const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
@@ -263,7 +259,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${dateText(mKey, entry.date, ctx)}</time>${SharedBall(entry, ctx)}${descAndComment(entry.description, entry.place, ctx, FlowMark(entry.flow, ctx), `${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry._meta.children ? null : entry.formula, amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------

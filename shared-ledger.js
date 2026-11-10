@@ -116,7 +116,10 @@
   // shared item then starts a new series with a new colour. When an item is on the other side of the running balance
   // the series is merged: its items show <--> and the balance, instead of a plain ball. Nothing is ever deleted, so
   // the balance is always what the items and settlements say.
-  const PALETTE = ['#e11d48', '#2563eb', '#059669', '#d97706', '#7c3aed', '#0d9488', '#db2777', '#65a30d', '#0891b2', '#ea580c'];
+  // The series colours: one fixed list of twelve, the same for every year. Within a month the first series that starts
+  // gets the first colour, the next gets the second, and so on; after the twelfth the list starts again. Red and green
+  // are left out, as they say which way the money moves.
+  const SERIES_COLOURS = ['#2563eb', '#7c3aed', '#0d9488', '#db2777', '#d97706', '#0891b2', '#4f46e5', '#c026d3', '#ca8a04', '#0284c7', '#92400e', '#475569'];
   const signOf = value => (value > 0 ? 1 : value < 0 ? -1 : 0);
   // +: the friend owes me this share; -: I owe him it.
   const signedShare = entry => (isPayerMe(entry) ? split(entry).friendOwes : -split(entry).iOwe);
@@ -161,15 +164,13 @@
     open.sort((a, b) => b.latest.localeCompare(a.latest));
     return open.length ? { id: open[0].id, colour: open[0].colour } : null;
   }
-  // A colour for a new series: random, but not one an open series is already using.
-  function pickColour(inUse = []) {
-    const taken = new Set(inUse);
-    const free = PALETTE.filter(colour => !taken.has(colour));
-    const pool = free.length ? free : PALETTE;
-    return pool[Math.floor(Math.random() * pool.length)];
+  // The colour for the series at position `index` in its month (0 is the first): the list in order, wrapping after twelve.
+  function colourAt(index) {
+    const n = Math.max(0, Math.floor(Number(index) || 0));
+    return SERIES_COLOURS[n % SERIES_COLOURS.length];
   }
 
-  const api = { DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, PALETTE, runSeries, joinSeries, pickColour };
+  const api = { DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
   if (typeof module === 'object' && module.exports) module.exports = api;
   global.SharedLedger = api;
 })(typeof window !== 'undefined' ? window : globalThis);

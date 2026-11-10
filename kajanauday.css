@@ -1193,10 +1193,6 @@ details.ledger-carry.is-balance.has-parts[open] > summary > i { transform: rotat
   .ledger-item { grid-template-columns: minmax(0, 1fr) 36px minmax(64px, auto); }
   .ledger-item .ledger-share-bar, .ledger-item .ledger-item-count { display: none; }
 }
-/* Flows: money that goes out and comes back (or in and back out). A row in a flow carries a small ⇄ in the flow's
-   colour; the ★ page lists each flow with what is still open, and opens into a statement with a running balance. */
-.flow-mark { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 5px; border-radius: 50%; background: color-mix(in srgb, var(--tone) 22%, transparent); color: var(--tone); cursor: pointer; font-size: 11px; vertical-align: -2px; }
-.flow-mark:hover { background: color-mix(in srgb, var(--tone) 40%, transparent); }
 /* What part of a settlement entry was mine, said on the row that was divided. Only a divided row carries one, so it
    reads as a fact about that entry rather than a label every row wears. */
 .split-mark { display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 4px; background: var(--surface-soft); color: var(--muted);
@@ -1220,84 +1216,6 @@ details.ledger-carry.is-balance.has-parts[open] > summary > i { transform: rotat
 /* Why nothing is leaving this device, at the top of the Sync panel: a refusal is not a queue, and reads differently. */
 .sync-states .is-error i { color: var(--expense); }
 .sync-states .is-error span { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
-.flow-pop { position: fixed; z-index: 60; width: min(340px, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 34px rgba(0, 0, 0, .38); }
-.flow-pop[hidden] { display: none; }
-.flow-pop-title { display: grid; gap: 1px; margin: 0 0 8px; }
-.flow-pop-title b { color: var(--ink); font: 700 13px var(--display); }
-.flow-pop-title small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
-.flow-pop-list { display: grid; gap: 2px; max-height: 210px; overflow-y: auto; margin-bottom: 8px; overscroll-behavior: contain; }
-.flow-pop-empty { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
-.flow-choice { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 14px; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; font: 500 13px var(--display); text-align: left; }
-.flow-choice:hover, .flow-choice:focus-visible { outline: 0; background: var(--hover); }
-.flow-choice[aria-pressed="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 12%, transparent); }
-.flow-choice small { color: var(--muted); font: 400 11px var(--mono); white-space: nowrap; }
-.flow-choice i { color: var(--tone); }
-.flow-choice-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flow-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tone); }
-.flow-pop-new { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
-.flow-pop-new input { box-sizing: border-box; width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); color: var(--ink); font: 400 13px var(--display); }
-.flow-pop-new input:focus { border-color: var(--brand); outline: 0; }
-.flow-pop-new input[aria-invalid="true"] { border-color: var(--expense); }
-.flow-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-.flow-swatch { width: 22px; height: 22px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: var(--tone); background-clip: content-box; cursor: pointer; }
-.flow-swatch[aria-checked="true"] { border-color: var(--tone); padding: 2px; }
-.flow-swatch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.flow-pop-hint { margin: 0; color: var(--expense); font-size: 11.5px; }
-.flow-pop-hint:empty { display: none; }
-.flow-pop-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.flow-pop-actions .quiet-button, .flow-pop-actions .primary-button { min-height: 30px; padding: 0 12px; font-size: 12.5px; }
-.flow-pop-actions .is-danger { margin-right: auto; color: var(--expense); }
-/* The ★ page: one block per flow, edged in its colour. */
-.hub-flow { border: 1px solid var(--line-soft); border-left: 3px solid var(--tone); border-radius: 8px; background: var(--surface); scroll-margin-top: 64px; }
-.hub-flow + .hub-flow { margin-top: 6px; }
-.hub-flow > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 9px 12px; border-radius: 8px; }
-.hub-flow > summary.is-search-hit { animation: search-hit 2.6s ease-out; }
-.hub-flow > summary b { color: var(--tone); font: 700 14.5px var(--display); }
-.hub-flow > summary small { color: var(--muted); font-size: 11.5px; }
-.hub-flow .flow-icon { color: var(--tone); }
-.flow-tools { display: flex; justify-content: flex-end; padding: 6px 12px 0; }
-.flow-edit { min-height: 26px; padding: 0 10px; font-size: 11.5px; }
-.flow-statuses { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-left: auto; }
-.flow-status { display: inline-flex; align-items: baseline; gap: 8px; font: 500 12.5px var(--mono); }
-.flow-status b { color: var(--muted); font: 600 10px var(--mono); }
-.flow-status .income { color: var(--income); } .flow-status .expense { color: var(--expense); }
-.flow-status em { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 99px; font: 600 11.5px var(--display); font-style: normal; }
-.flow-status.is-receive em { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand-strong); }
-.flow-status.is-pay em { background: color-mix(in srgb, var(--expense) 16%, transparent); color: var(--expense); }
-.flow-status.is-settled em { background: color-mix(in srgb, var(--income) 16%, transparent); color: var(--income); }
-.flow-status.is-empty em { padding: 0; color: var(--muted); font-weight: 400; }
-.flow-link-state { flex: none; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hub-legend { overflow-x: hidden; }
-.flow-link-state.is-settled { color: var(--income); }
-.flow-link-state.is-pay { color: var(--expense); }
-.flow-link-state.is-receive { color: var(--brand); }
-.hub-flow-body { display: grid; gap: 10px; padding: 0 0 6px; border-top: 1px solid var(--line-soft); }
-.flow-sheet { display: grid; }
-.flow-sheet-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(70px, auto) minmax(70px, auto) minmax(84px, auto); align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 5px 14px; border: 0; border-top: 1px solid var(--line-soft); background: none; color: var(--ink); font: inherit; text-align: left; }
-button.flow-sheet-row { cursor: pointer; }
-button.flow-sheet-row:hover, button.flow-sheet-row:focus-visible { outline: 0; background: var(--hover); }
-.flow-sheet-row > span:nth-child(n+3) { font: 400 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.flow-sheet-row .income { color: var(--income); } .flow-sheet-row .expense { color: var(--expense); }
-.flow-sheet-row.is-head { min-height: 28px; border-top: 0; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-.flow-sheet-row.is-head > span:nth-child(n+3) { font: 600 10px var(--mono); }
-.flow-sheet-row.is-total { border-top: 1px solid var(--line); font-weight: 600; }
-.flow-sheet-row.is-total > span:nth-child(2) { color: var(--muted); font-size: 12.5px; }
-.flow-day { color: var(--muted); font: 400 12px var(--mono); white-space: nowrap; }
-.flow-day small { color: var(--faint); font-size: 10px; }
-.flow-entry { display: grid; min-width: 0; }
-.flow-entry > span { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
-.flow-entry > small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.flow-running { color: var(--ink); font-weight: 500; }
-@media (max-width: 700px) {
-  .flow-statuses { width: 100%; margin-left: 0; }
-  .flow-sheet-row { grid-template-columns: 50px minmax(0, 1fr) minmax(64px, auto); gap: 6px 8px; padding: 6px 10px; }
-  .flow-sheet-row > span:nth-child(3), .flow-sheet-row > span:nth-child(4) { grid-row: 2; }
-  .flow-sheet-row > span:nth-child(3) { grid-column: 2; text-align: left; }
-  .flow-sheet-row > span:nth-child(4) { grid-column: 3; }
-  .flow-sheet-row > span:nth-child(5) { grid-column: 3; grid-row: 1; }
-  .flow-sheet-row.is-head > span:nth-child(3), .flow-sheet-row.is-head > span:nth-child(4) { display: none; }
-  .flow-day small { display: none; }
-}
 /* The year card: after a subsection's (or section's) name, the number of months it has entries in, small and grey. */
 .ledger-cat-title { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
 .ledger-cat-title > span { min-width: 0; }
@@ -1563,3 +1481,127 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .series-state { font-size: 11px; font-weight: 600; white-space: nowrap; }
 .series-state.is-open { color: var(--expense); }
 .series-state.is-settled { color: var(--income); }
+
+/* Merged series: the balance's sign, then two arrows stacked one above the other. */
+.sh-merge { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--c); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: middle; }
+.sh-merge .sh-arrows { width: 6px; height: 10px; display: block; }
+
+/* A plain entry's day number: no circle, but it opens the day, so it shows a pointer and a faint underline. */
+.day-num { cursor: pointer; border-radius: 3px; }
+.day-num:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.day-num:focus-visible { outline: 1px solid var(--brand); outline-offset: 2px; }
+/* The day number as a small coloured glass disc. The whole disc is one flat colour, translucent, so the page shows through
+   it like coloured glass; a single crisp line along its top edge is the only gloss. The number is thin and in the theme's
+   ink. Open shows the colour, merged adds a ring, settled fades to a dashed outline. */
+.day-orb {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
+  font-size: 9.5px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1; cursor: pointer; vertical-align: middle;
+  border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); color: var(--ink);
+  background: color-mix(in srgb, var(--c) 26%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 1px 2px rgba(0, 0, 0, .10);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  transition: transform .15s, background-color .15s;
+}
+.day-orb:hover, .day-orb:focus-visible { transform: scale(1.12); outline: none; background: color-mix(in srgb, var(--c) 36%, transparent); }
+.day-orb.is-open { background: color-mix(in srgb, var(--c) 30%, transparent); }
+.day-orb.is-merged { background: color-mix(in srgb, var(--c) 42%, transparent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 0 0 2px color-mix(in srgb, var(--c) 24%, transparent); }
+.day-orb.is-done { background: color-mix(in srgb, var(--c) 30%, transparent); border-color: color-mix(in srgb, var(--c) 60%, transparent); color: var(--ink); }
+:root[data-theme="light"] .day-orb:not(.is-merged) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 1px 2px rgba(0, 0, 0, .06); }
+
+/* The day pop-up: the same look as the month pane. Settlements in the top 80%, hashtags in the bottom 20%. */
+.day-dialog { width: min(600px, calc(100% - 26px)); padding: 16px 18px; overflow: hidden; }
+.day-dialog .day-pop { display: grid; grid-template-rows: 4fr 1fr; width: 100%; height: min(78vh, 680px); min-width: 0; }
+.day-top { overflow: auto; overflow-x: hidden; min-height: 0; }
+.day-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; min-width: 0; }
+.day-head > div { min-width: 0; }
+.day-head p { margin: 0; font: 400 12px var(--mono); color: var(--muted); }
+.day-head h2 { margin: 3px 0 0; font-size: 17px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-net { margin: 12px 0 8px; font-size: 13px; color: var(--ink); }
+.day-net b { font: 500 13px var(--mono); }
+.day-meta { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.day-line { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+.day-when { font: 400 12px var(--mono); color: var(--muted); }
+.day-what { min-width: 0; display: grid; }
+.day-what small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-total { font: 400 12.5px var(--mono); color: var(--ink); }
+.day-state { font-size: 11px; white-space: nowrap; }
+.day-state.income { color: var(--income); }
+.day-state.expense { color: var(--expense); }
+.day-state.is-settled { color: var(--st-done); }
+.day-bottom { border-top: 1px solid var(--line); padding-top: 10px; overflow: auto; overflow-x: hidden; min-height: 0; display: grid; gap: 8px; align-content: start; }
+.day-bottom h3 { margin: 0; font-size: 11px; font-weight: 400; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.day-tag-x { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 11px; }
+.day-none { font-size: 12px; color: var(--muted); }
+.day-add { display: flex; gap: 6px; min-width: 0; }
+.day-add input,  { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; box-sizing: border-box; }
+.day-add input { flex: 1; min-width: 0; }
+.day-dialog .income { color: var(--income); }
+.day-dialog .expense { color: var(--expense); }
+
+/* CLEARED: an entry that settled a shared balance, marked with the series colour. */
+.cleared-mark { display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; margin-right: 5px; border-radius: 999px; font-size: 9.5px; letter-spacing: .08em; vertical-align: middle; color: color-mix(in srgb, var(--c) 85%, var(--ink)); background: color-mix(in srgb, var(--c) 16%, transparent); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); }
+.cleared-ball { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+/* Settlements on the special page: one line per series, active or closed. */
+.settle-line { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.settle-line:hover { background: var(--surface-soft); }
+.settle-line .cleared-ball { width: 12px; height: 12px; }
+.settle-who { display: grid; min-width: 0; }
+.settle-who small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settle-bal { font: 400 12.5px var(--mono); white-space: nowrap; }
+.settle-bal.income { color: var(--income); }
+.settle-bal.expense { color: var(--expense); }
+.settle-bal.is-settled { color: var(--brand); }
+.settle-group { margin: 12px 0 4px; font-size: 11px; font-weight: 400; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-settle { margin-top: 10px; }
+.shared-record { border: 0; padding: 0; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+.shared-record legend { font-size: 12px; color: var(--muted); padding: 0; margin-bottom: 4px; width: 100%; }
+
+
+/* The day pop-up, drawn like the month card: each section has a header with its total (income and expense in their
+   colours), then its rows divided by dotted lines. Compact, with the same surface and type as the month pane. */
+.day-dialog .day-top { display: grid; align-content: start; gap: 10px; }
+.day-sec { border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-soft); overflow: hidden; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
+.day-sec-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 30px; padding: 6px 12px; background: color-mix(in srgb, var(--surface) 70%, transparent); border-bottom: 1px solid var(--line-soft); }
+.day-sec-head strong { min-width: 0; overflow: hidden; color: var(--muted); font: 500 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
+.day-sec-head span { flex: none; font: 500 13px var(--mono); font-variant-numeric: tabular-nums; }
+.day-sec-head span.income { color: var(--income); }
+.day-sec-head span.expense { color: var(--expense); }
+.day-sec-head span.is-settled { color: var(--st-done); }
+.day-sec-note { margin: 0; padding: 8px 12px; color: var(--ink); font-size: 12.5px; line-height: 1.45; }
+.day-sec-foot { display: flex; justify-content: flex-start; padding: 6px 12px 8px; }
+.day-sec-foot .day-settle, .day-sec-foot .day-share { min-height: 28px; margin: 0; padding: 0 12px; font-size: 12.5px; }
+.day-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; min-height: 36px; padding: 5px 12px; border-top: 1px dotted var(--line); font-size: 13px; color: var(--ink); }
+.day-sec-head + .day-row { border-top: 0; }
+.day-row .day-what { min-width: 0; display: grid; gap: 1px; }
+.day-row .day-what > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-row .day-what small { font-size: 11px; }
+.day-amt { font: 500 13px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.day-amt small { color: var(--muted); font: 400 10.5px var(--mono); }
+.day-row .day-state { font: 500 10.5px var(--mono); letter-spacing: .02em; text-transform: uppercase; }
+.day-when { font: 400 11.5px var(--mono); color: var(--muted); }
+.day-bottom h3 { font: 500 10.5px var(--mono); letter-spacing: .07em; }
+
+/* Shared expenses on the Special page: one row per entry, Active then Closed. A settled entry takes the settled colour;
+   an open one keeps its series colour. A row opens its entry in the ledger. */
+.shared-row { display: grid; grid-template-columns: 10px 48px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; min-height: 40px; padding: 6px 10px; border: 0; border-top: 1px dotted var(--line); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.shared-row:first-of-type { border-top: 0; }
+.shared-row:hover, .shared-row:focus-visible { outline: 0; background: var(--hover); }
+.shared-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5); }
+.shared-when { font: 400 11.5px var(--mono); color: var(--muted); }
+.shared-what { min-width: 0; display: grid; gap: 1px; }
+.shared-what b { overflow: hidden; font-weight: 400; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.shared-what small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.shared-state { font: 500 11.5px var(--mono); white-space: nowrap; }
+.shared-state.income { color: var(--income); }
+.shared-state.expense { color: var(--expense); }
+.shared-state.is-settled { color: var(--st-done); }
+.shared-row.is-settled .shared-what b { color: var(--muted); }
+.settle-item-dialog { width: min(420px, calc(100% - 26px)); }
+.settle-item-choice { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; border: 0; }
+.settle-item-choice legend { padding: 0; margin-bottom: 6px; color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.settle-item-choice label { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.settle-item-amount { display: grid; gap: 6px; margin-top: 10px; }
+.settle-item-amount span { color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.settle-item-amount input { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: 400 14px var(--mono); }
+.settle-item-amount input:disabled { opacity: .6; }
