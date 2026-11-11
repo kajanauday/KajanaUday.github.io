@@ -501,7 +501,7 @@
   // There is never more than one of each: a settlement is not a sibling of Income and Expenses any more, it is a
   // section inside Settlements, so the panel reads Expenses / Income / Settlements / Savings and nothing else.
   // Closed sections fold away into "Settled" at the bottom, where two or more of them can be merged into one.
-  const GroupBlock = (kind, sections, { mKey, property, title, blockRun = null, settledAccounts = [] }, state, ctx) => {
+  const GroupBlock = (kind, sections, { mKey, property, title, blockRun = null, settledAccounts = [], sharedHistory = null }, state, ctx) => {
     const group = GROUPS[kind];
     const heading = title || group.title;
     const l = state.ledgerDraft;
@@ -509,7 +509,9 @@
     const live = !isYearKey(mKey) && !isEventKey(mKey);
     // The block is not part of a month until it is asked for: with nothing in it and nothing being added, it is not
     // drawn at all. The first one is added from the currency header (press and hold, or its row menu).
-    if (!sections.length && !newForm) return '';
+    const yearlyShared = isYearKey(mKey) && kind === 'settlement'
+      && (sharedHistory?.settled?.length || sharedHistory?.ongoing?.length) ? sharedHistory : null;
+    if (!sections.length && !newForm && !yearlyShared) return '';
     const open = sections.filter(section => !section._meta.closed);
     const done = sections.filter(section => section._meta.closed);
     // The block's own figures are its sections added up, each only where its own calculations set one.
@@ -531,6 +533,24 @@
       const month = Number(account.date.slice(5, 7)) - 1;
       return `<details class="year-settled-account"><summary><span class="year-settled-name">${ctx.esc(account.description)}</span><small>${global.ExpenseStore.MONTH_NAMES[month]} ${account.date.slice(0, 4)}</small><strong>Settled</strong><i class="ti ti-chevron-down" aria-hidden="true"></i></summary><ol>${history}</ol></details>`;
     }).join('');
+    const sharedHistoryGroup = (label, items, status) => {
+      const capsules = items.map(series => {
+        const history = series.history.map(item => {
+          return `<li class="year-shared-event is-${item.kind}"><time datetime="${ctx.esc(item.date)}">${ctx.esc(ctx.dayLabel(item.date))}</time><div><strong>${ctx.esc(item.title)}</strong><small>${ctx.esc(item.detail)}</small></div><b>${ctx.fmt(item.amount, property)}</b></li>`;
+        }).join('');
+        const balance = Math.abs(Number(series.balance) || 0);
+        const balanceLabel = status === 'ongoing'
+          ? `${ctx.fmt(balance, property)} ${series.balance < 0 ? 'you owe' : 'owed to you'}`
+          : 'Settled';
+        const colour = /^#[\da-f]{6}$/i.test(series.colour) ? series.colour : 'var(--brand)';
+        const count = series.history.filter(item => item.kind === 'source').length;
+        return `<details class="year-shared-capsule" style="--shared-series-color:${colour}"><summary><span class="year-shared-title">${ctx.esc(series.title)}</span><small>${ctx.esc(series.with)} · ${count} expense${count === 1 ? '' : 's'}</small><strong class="is-${status}">${ctx.esc(balanceLabel)}</strong><i class="ti ti-chevron-down" aria-hidden="true"></i></summary><ol>${history}</ol></details>`;
+      }).join('');
+      return `<section class="year-shared-group is-${status}"><h4>${ctx.esc(label)}<small>${items.length}</small></h4>${capsules || `<p class="ledger-none">${status === 'ongoing' ? 'Nothing is outstanding.' : 'No shared expenses settled yet.'}</p>`}</section>`;
+    };
+    const sharedHistoryHtml = yearlyShared
+      ? `<div class="year-shared-history">${sharedHistoryGroup('So far', yearlyShared.settled || [], 'settled')}${sharedHistoryGroup('Ongoing', yearlyShared.ongoing || [], 'ongoing')}</div>`
+      : '';
     const settledCount = done.length + yearAccounts.length;
     const settledHtml = !settledCount ? '' : `<details class="ledger-settled" data-key="${settledKey}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled</span><small>${settledCount}</small></summary><div>${done.map(blockOf).join('')}${accountHtml}</div></details>`;
     // A settlement block and each settlement show one figure: what it posts to the month, in its own colour.
@@ -540,7 +560,7 @@
     const renameForm = renaming
       ? `<form class="ledger-form cat-rename-form block-rename-form" data-ledger-form="rename-block" data-month="${mKey}" data-property="${property}" data-block="${kind}" novalidate><input name="name" value="${ctx.esc(heading)}" maxlength="40" aria-label="Name for this block" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames this block for this month · leave it empty to go back to “${ctx.esc(group.title)}”</p></form>`
       : '';
-    const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${settledHtml}`;
+    const body = `${renameForm}${newForm}${open.map(blockOf).join('')}${sharedHistoryHtml}${settledHtml}`;
     const settlementNet = blockRun
       ? Number(blockRun.stats?.balance ?? ((blockRun.adds?.income || 0) - (blockRun.adds?.expenses || 0))) || 0
       : sections.reduce((sum, section) =>
@@ -646,12 +666,11 @@
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
-        + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind), settledAccounts: m.settledAccounts?.[kind] }, state, ctx)).join('')
+        + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind), settledAccounts: m.settledAccounts?.[kind], sharedHistory: m.sharedHistory }, state, ctx)).join('')
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
-          <button type="button" class="panel-expand" data-panel-expand aria-label="Expand all ${m.code} subsections" title="Expand all"><i class="ti ti-chevrons-down" aria-hidden="true"></i></button>
           <h3>${m.code}</h3>
           <div class="ledger-totals">${totals}</div>
         </header>

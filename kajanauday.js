@@ -1625,7 +1625,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // search jump) matches against what is stored, so reading the drawn text would silently miss the row it meant.
     const catName = cat => cat?.dataset.category ?? cat?.querySelector('.ledger-cat-name')?.textContent.trim() ?? '';
     // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
-    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block], [data-money-open]';
+    const ROW_BUTTONS = '[data-sort-cat], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block], [data-money-open]';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
@@ -1817,21 +1817,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (event.target.closest('[data-cancel-sub-entry]')) {
           subEntryDraftParentId = null;
           return renderLedger();
-        }
-        // The small control in a currency panel's header expands everything in that panel (its Income and Expenses
-        // blocks and all their subsections) or collapses it all back to the Income and Expenses headings.
-        const expandButton = event.target.closest('[data-panel-expand]');
-        if (expandButton) {
-          const panel = expandButton.closest('.ledger-panel');
-          const cats = [...panel.querySelectorAll('.ledger-cat')];
-          const types = [...panel.querySelectorAll('details.ledger-type-section')];
-          const open = cats.some(cat => !cat.open) || types.some(section => !section.open);
-          cats.forEach(cat => { cat.open = open; });
-          types.forEach(section => { section.open = open; });
-          const code = panel.querySelector('.ledger-panel-head h3')?.textContent.trim() || '';
-          expandButton.querySelector('i').className = `ti ti-chevrons-${open ? 'up' : 'down'}`;
-          expandButton.title = open ? 'Collapse all' : 'Expand all';
-          expandButton.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} all ${code} subsections`);
         }
       });
       ledger.addEventListener('submit', event => {

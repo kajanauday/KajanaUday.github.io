@@ -1620,7 +1620,9 @@
       const months = MONTH_NAMES.map((_, monthIndex) => monthIndex).filter(monthIndex => this.monthNode(year, monthIndex)?.metadata?.[currency] && this.isLoaded(year, monthIndex));
       const slices = months.map(monthIndex => [monthIndex, this.monthSlice(year, monthIndex, currency)]);
       const totals = this.yearTotals(year, currency);
-      const sig = `${slices.map(([monthIndex, slice]) => `${monthIndex}:${slice.sig}`).join(',')}#${JSON.stringify(totals)}`;
+      const sharedSettles = this.settleList();
+      const yearEnd = `${year}-12-31`;
+      const sig = `${slices.map(([monthIndex, slice]) => `${monthIndex}:${slice.sig}`).join(',')}#${JSON.stringify(totals)}#${JSON.stringify(sharedSettles)}`;
       const key = `${year}|${currency}`;
       const cached = this.books.get(key);
       if (cached?.sig === sig) return cached.book;
@@ -1722,7 +1724,6 @@
       });
       const settledAccounts = { savings: [], hold: [], lent: [], borrowed: [] };
       const accountRoles = { savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
-      const yearEnd = `${year}-12-31`;
       const moneyEntries = Object.values(out).flatMap(section => {
         const kind = section._meta.kind;
         return accountRoles[kind] ? Object.values(section.categories).flatMap(category =>
@@ -1751,12 +1752,61 @@
       });
       [...accounts.values()].forEach(account => settledAccounts[account.kind].push(account));
       Object.values(settledAccounts).forEach(list => list.sort((a, b) => a.date.localeCompare(b.date) || a.description.localeCompare(b.description)));
+      const sharedEntries = Object.values(out).flatMap(section => Object.values(section.categories)
+        .flatMap(category => category.entries)
+        .filter(entry => entry.sid && entry.shared)
+        .map(entry => ({ entry, seriesId: entry.series?.id || `loose-${entry.sid}` })));
+      const sharedRows = sharedEntries.map(({ entry }) => ({
+        id: entry.sid, amount: Math.abs(Number(entry.sharedTotal ?? entry.amount)),
+        paidBy: entry.shared.by, hisPct: entry.shared.his, date: entry.date,
+        series: entry.series
+      }));
+      const sharedStatus = global.SharedLedger.runSeries(sharedRows, sharedSettles);
+      const sharedBySeries = new Map();
+      sharedEntries.forEach(({ entry, seriesId }) => {
+        const group = sharedBySeries.get(seriesId) || {
+          id: seriesId, title: entry.description, with: entry.shared.with, colour: entry.series?.colour || '',
+          balance: 0, entries: [], history: []
+        };
+        const state = global.SharedLedger.outstanding({
+          id: entry.sid, amount: Math.abs(Number(entry.sharedTotal ?? entry.amount)),
+          paidBy: entry.shared.by, hisPct: entry.shared.his, shared: true
+        }, sharedSettles);
+        group.entries.push(entry);
+        group.balance += state.direction === 'friend-owes-me' ? state.owed : -state.owed;
+        group.history.push({
+          date: entry.date, title: entry.description, detail: `${entry.shared.with} · ${entry.shared.by === 'friend' ? 'paid by them' : 'paid by you'}`,
+          amount: Math.abs(Number(entry.sharedTotal ?? entry.amount)), kind: 'source', id: entry.sid
+        });
+        sharedBySeries.set(seriesId, group);
+      });
+      const sidToSeries = new Map(sharedEntries.map(({ entry, seriesId }) => [entry.sid, seriesId]));
+      sharedSettles.forEach(settle => (settle.items || []).forEach(applied => {
+        const seriesId = sidToSeries.get(applied.to);
+        const group = seriesId && sharedBySeries.get(seriesId);
+        if (!group) return;
+        group.history.push({
+          date: settle.date, title: `Settlement with ${settle.with}`, detail: `${Math.abs(Number(applied.a) || 0)} applied${settle.note ? ` · ${settle.note}` : ''}`,
+          amount: Math.abs(Number(applied.a) || 0), kind: 'settlement', id: settle.id
+        });
+      }));
+      const sharedHistory = { settled: [], ongoing: [] };
+      sharedBySeries.forEach(group => {
+        group.history.sort((a, b) => a.date.localeCompare(b.date)
+          || (a.kind === 'source' ? 0 : 1) - (b.kind === 'source' ? 0 : 1)
+          || a.id.localeCompare(b.id));
+        const state = group.entries.map(entry => sharedStatus.get(entry.sid)?.state).some(value => value && value !== 'done')
+          ? 'ongoing'
+          : 'settled';
+        sharedHistory[state].push({ ...group, entries: undefined });
+      });
+      Object.values(sharedHistory).forEach(list => list.sort((a, b) => a.history[0].date.localeCompare(b.history[0].date) || a.title.localeCompare(b.title)));
       // The balance the year opened on, as its first month brought it in.
       const first = months.length ? this.monthNode(year, months[0]).metadata[currency] : null;
       const region = this.currencies[currency];
       const book = {
         // The block headings as the year's latest month calls them, so the year card reads like the months it sums.
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency), settledAccounts },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency), settledAccounts, sharedHistory },
         sections: out
       };
       this.books.set(key, { sig, book });

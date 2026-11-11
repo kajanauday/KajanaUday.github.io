@@ -11,9 +11,9 @@ const block = (name, kind, roles) => ({ name, type: 'net', kind, block: true, su
 const net = (section, category, amount, day = 1) => ({ category, total: amount, count: 1, entries: [{ day, description: `${section} ${category}`, place: '', amount, section, notes: [] }] });
 const income = (category, amount) => ({ category, total: amount, count: 1, entries: [{ day: 1, description: category, place: '', amount, section: 'Income', notes: [] }] });
 
-async function storeWith(docs, monthSections, years = ['2026']) {
+async function storeWith(docs, monthSections, years = ['2026'], settles = {}) {
   const db = { get: async path => docs[path.replace('months/', '')] || null, patch: async () => {} };
-  const yearNodes = Object.fromEntries(years.map(year => [year, { currencies: { JPY: { from: 'January' } }, monthSections: Object.fromEntries(Object.entries(monthSections).filter(([id]) => id.startsWith(year))), monthConfig: {}, months: {}, metadata: { entries: 0 } }]));
+  const yearNodes = Object.fromEntries(years.map(year => [year, { currencies: { JPY: { from: 'January' } }, monthSections: Object.fromEntries(Object.entries(monthSections).filter(([id]) => id.startsWith(year))), monthConfig: {}, months: {}, settles: settles[year] || {}, metadata: { entries: 0 } }]));
   const store = new ExpenseStore({ db, currencies: { JPY: { code: 'JPY' } }, years: yearNodes });
   for (const year of years) await store.ensureYear(Number(year));
   years.forEach(year => store.recomputeYear(year));
@@ -103,6 +103,34 @@ test('settlements still count as before', async () => {
   const year = store.yearTotals(2026, 'JPY');
   assert.equal(year.own.expenses, 30000);
   assert.equal(year.own.income, 0);
+});
+
+test('yearbook groups shared expenses into settled and ongoing histories across months', async () => {
+  const sources = [
+    { id: 'settled-source', sid: 'shared-settled', series: { id: 'settled-series', colour: '#2563eb' }, shared: { by: 'me', his: 50, with: 'UR' }, property: 'JPY', date: '2026-08-12', type: 'expense', category: 'Housing', section: 'Expenses', description: 'UR advance', amount: 44000 },
+    { id: 'open-source', sid: 'shared-open', series: { id: 'open-series', colour: '#7c3aed' }, shared: { by: 'me', his: 50, with: 'UR' }, property: 'JPY', date: '2026-09-03', type: 'expense', category: 'Housing', section: 'Expenses', description: 'UR utilities', amount: 20000 }
+  ];
+  const docs = Object.fromEntries(sources.map(source => {
+    const month = `${source.date.slice(0, 4)}_${ExpenseStore.MONTH_NAMES[Number(source.date.slice(5, 7)) - 1]}`;
+    return [month, ExpenseStore.monthDoc([source])];
+  }));
+  const store = await storeWith(docs, {}, ['2026', '2027'], {
+    2026: {
+      partial: { id: 'partial', date: '2026-10-05', property: 'JPY', with: 'UR', cash: 3000, items: [{ to: 'shared-open', a: 3000 }] }
+    },
+    2027: {
+      first: { id: 'first', date: '2027-01-02', property: 'JPY', with: 'UR', cash: 22000, items: [{ to: 'shared-settled', a: 22000 }] }
+    }
+  });
+  const history = store.yearbook(2026, 'JPY')._meta.sharedHistory;
+  assert.equal(history.settled.length, 1);
+  assert.equal(history.settled[0].title, 'UR advance');
+  assert.deepEqual(history.settled[0].history.map(item => item.date), ['2026-08-12', '2027-01-02']);
+  assert.equal(history.settled[0].history[1].amount, 22000);
+  assert.equal(history.ongoing.length, 1);
+  assert.equal(history.ongoing[0].title, 'UR utilities');
+  assert.deepEqual(history.ongoing[0].history.map(item => item.date), ['2026-09-03', '2026-10-05']);
+  assert.equal(history.ongoing[0].balance, 7000);
 });
 
 test('a partial repayment keeps a stable link to its original money entry when saved and reloaded', () => {

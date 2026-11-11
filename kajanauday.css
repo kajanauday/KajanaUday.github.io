@@ -710,11 +710,8 @@
       .month-tag.ms-cur.is-placeholder.has-holdings { width: calc(30px + 7 * 60px + 2px); }
     }
 
-    /* Currency panels: headed by the code alone (INR, JPY), with a small expand / collapse-all control at the end of the
-       header for that panel's subsections. A currency shown alone takes the left half on wide screens. */
+    /* Currency panels are headed by the code alone (INR, JPY). A currency shown alone takes the left half on wide screens. */
     .ledger-panel-head h3 { font-size: 15px; letter-spacing: .04em; }
-    .panel-expand { width: 26px; height: 26px; flex: none; display: grid; place-items: center; margin-left: -6px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
-    .panel-expand:hover { border-color: var(--brand); color: var(--brand-strong); }
     .ledger-panel-head { justify-content: flex-start; }
     .ledger-panel-head .ledger-totals { margin-left: auto; }
     /* Figure columns sized to the widest figure showing (--ms-slot, set by the app), figures close to their INR / JPY
@@ -728,13 +725,10 @@
     .month-tag.ms-cur .ms-kv,
     .month-tag.ms-cur .ms-kv + .ms-kv { width: var(--ms-slot, 52px); min-width: var(--ms-slot, 52px); }
     .month-tag.ms-cur.is-placeholder.has-holdings { width: calc(26px + 7 * var(--ms-slot, 52px) + 2px); }
-    /* The panel's expand / collapse-all control leads its header, in line with the subsection chevrons below it, so it
-       reads as the same kind of control; the totals keep the right edge. */
+    /* Keep panel titles and totals aligned. */
     .ledger-panel-head { gap: 8px; }
-    .panel-expand { width: 24px; height: 24px; margin: 0 2px 0 -5px; font-size: 13px; }
 
-    /* Income and Expenses headings lead with the same expand / collapse-all control as the panel, in the same column as
-       the panel's control and the subsection chevrons. */
+    /* Income and Expenses headings keep their own manual expand / collapse controls. */
     .ledger-type-section > summary { justify-content: flex-start; gap: 8px; }
     .ledger-type-section > summary > span { margin-left: auto; }
     .type-expand { width: 24px; height: 24px; flex: none; display: grid; place-items: center; margin: 0 2px 0 -5px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
@@ -1311,10 +1305,35 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .year-settled-event time { color: var(--muted); font: 400 10px var(--mono); white-space: nowrap; }
 .year-settled-event > span { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
 .year-settled-event strong { color: var(--brand-strong); font: 600 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.year-shared-history { display: grid; gap: 9px; margin: 7px 0 4px; }
+.year-shared-group { padding: 8px; border: 1px solid var(--line-soft); border-radius: 11px; background: var(--surface-soft); }
+.year-shared-group > h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+.year-shared-group > h4 small { min-width: 18px; padding: 0 5px; border-radius: 99px; background: var(--surface); color: var(--ink); font: 500 10px/17px var(--mono); text-align: center; }
+.year-shared-capsule { margin: 4px 0; overflow: hidden; border: 1px solid var(--line-soft); border-left: 3px solid var(--shared-series-color, var(--brand)); border-radius: 9px; background: var(--surface); }
+.year-shared-capsule > summary { min-height: 38px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto 14px; align-items: center; gap: 9px; padding: 5px 9px; cursor: pointer; list-style: none; }
+.year-shared-capsule > summary::-webkit-details-marker { display: none; }
+.year-shared-capsule > summary:hover { background: var(--hover); }
+.year-shared-capsule .year-shared-title { overflow: hidden; color: var(--ink); font: 600 12px var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.year-shared-capsule > summary small { overflow: hidden; color: var(--muted); font: 400 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.year-shared-capsule > summary strong { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--income) 22%, transparent); border-radius: 99px; background: color-mix(in srgb, var(--income) 9%, var(--surface)); color: var(--income); font: 700 9px var(--sans); white-space: nowrap; }
+.year-shared-capsule > summary strong.is-ongoing { border-color: color-mix(in srgb, var(--brand) 24%, transparent); background: color-mix(in srgb, var(--brand) 9%, var(--surface)); color: var(--brand-strong); }
+.year-shared-capsule > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.year-shared-capsule[open] > summary > i { transform: rotate(180deg); }
+.year-shared-capsule ol { display: grid; gap: 0; margin: 0; padding: 2px 9px 5px; border-top: 1px solid var(--line-soft); list-style: none; }
+.year-shared-event { min-height: 36px; display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px dotted var(--line-soft); }
+.year-shared-event:last-child { border-bottom: 0; }
+.year-shared-event > time { color: var(--muted); font: 400 10px var(--mono); white-space: nowrap; }
+.year-shared-event > div { min-width: 0; display: grid; gap: 2px; }
+.year-shared-event > div strong { overflow: hidden; color: var(--ink); font: 500 11px var(--sans); text-overflow: ellipsis; white-space: nowrap; }
+.year-shared-event > div small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.year-shared-event > b { color: var(--brand-strong); font: 600 10px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (max-width: 520px) {
   .year-settled-account > summary { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 7px; }
   .year-settled-account > summary small { display: none; }
   .year-settled-event { grid-template-columns: 75px minmax(0, 1fr) auto; gap: 5px; font-size: 10.5px; }
+  .year-shared-capsule > summary { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 6px; }
+  .year-shared-capsule > summary small { display: none; }
+  .year-shared-event { grid-template-columns: 72px minmax(0, 1fr) auto; gap: 5px; }
 }
 
 /* What a subsection stands for is chosen here, on its form and in Set up; it is no longer written on the row itself,
