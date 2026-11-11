@@ -239,10 +239,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
     // ---- Money that sits somewhere and comes back: each source entry has its own running balance --------------------
     const CLOSE_TEXT = {
-      savings: { title: 'Record savings withdrawal', menu: 'Record withdrawal…', hint: 'for this savings entry', amount: 'Amount withdrawn', rest: 'Close it: the rest is lost (counts against income)', role: 'save', transaction: 'Withdrawal for' },
-      hold: { title: 'Record money returned', menu: 'Record refund…', hint: 'for this held amount', amount: 'Amount you got back', rest: 'Close it: they kept the rest (an expense)', role: 'hold', transaction: 'Refund for' },
-      lent: { title: 'Record loan repayment', menu: 'Record repayment…', hint: 'for this amount lent', amount: 'Amount they paid back', rest: 'Close it: write off the rest (an expense)', role: 'lend', transaction: 'Repaid for' },
-      borrowed: { title: 'Record borrowed repayment', menu: 'Record repayment…', hint: 'for this borrowed amount', amount: 'Amount you paid back', rest: '', role: 'borrow', transaction: 'Repaid for' }
+      savings: { title: 'Update savings', menu: 'Record withdrawal…', hint: 'for this savings entry', amount: 'Amount withdrawn', rest: 'Close it: the rest is lost (counts against income)', role: 'save', transaction: 'Withdrawal for', addition: 'Added to savings', extraType: 'income', extraLabel: 'Interest or gain' },
+      hold: { title: 'Update held money', menu: 'Record refund…', hint: 'for this held amount', amount: 'Amount you got back', rest: 'Close it: they kept the rest (an expense)', role: 'hold', transaction: 'Refund for', addition: 'Additional amount on hold', extraType: 'income', extraLabel: 'Extra returned' },
+      lent: { title: 'Update lending', menu: 'Record repayment…', hint: 'for this amount lent', amount: 'Amount they paid back', rest: 'Close it: write off the rest (an expense)', role: 'lend', transaction: 'Repaid for', addition: 'Additional lending', extraType: 'income', extraLabel: 'Interest earned' },
+      borrowed: { title: 'Update borrowing', menu: 'Record repayment…', hint: 'for this borrowed amount', amount: 'Amount you paid back', rest: '', role: 'borrow', transaction: 'Repaid for', addition: 'Additional borrowing', extraType: 'expense', extraLabel: 'Interest paid' }
     };
     const closeState = { moneyId: '', link: '', sourceDate: '', sourceDescription: '', sourceSection: '', sourceCategory: '', kind: '', property: '', balance: 0 };
     const moneyRoleForKind = Object.fromEntries(Object.entries(CLOSE_TEXT).map(([kind, text]) => [kind, text.role]));
@@ -271,7 +271,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const legacy = linked.filter(item => !item.moneyId && accountingRoles.has(roleOf(item))
         && (roleOf(item) !== sourceRole || Number(item.amount) < 0));
       if (!legacy.length) return true;
-      const origins = linked.filter(item => roleOf(item) === sourceRole && Number(item.amount) > 0);
+      const origins = linked.filter(item => !item.moneyRef && roleOf(item) === sourceRole && Number(item.amount) > 0);
       if (origins.length !== 1 || origins[0].id !== source.id) return false;
       legacy.forEach(item => {
         item.moneyId = moneyId;
@@ -286,7 +286,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = panelScope(mKey, property);
       const source = transactions.find(item => item.id === entryId && !item.parentId);
       const section = source && scope.own().find(item => item.type === 'net' && item.name === source.section);
-      if (!source || !section) return showToast('Could not find the original entry here.');
+      if (!source || !section || source.moneyRef) return showToast('Could not find the original entry here.');
       const sourceRole = source.moneyRole || ExpenseStore.subsectionRole(section, source.category);
       if (sourceRole !== CLOSE_TEXT[kind].role || store.entryTotal(source.id) <= 0) {
         return showToast('Only a positive original savings, hold, lending, or borrowing entry can be repaid.');
@@ -320,10 +320,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       form.elements.rest.checked = false;
       document.querySelector('#close-title').textContent = text.title;
       document.querySelector('#close-where').textContent = `${regions[property]?.code || property} · ${source.description}`;
-      document.querySelector('#close-amount-label').textContent = text.amount;
+      document.querySelector('#close-amount-label').textContent = `${text.amount} (negative adds more)`;
       document.querySelector('#close-rest-label').textContent = text.rest;
       document.querySelector('#close-rest').hidden = !text.rest;
-      document.querySelector('#close-open').textContent = `Still open on this entry: ${formatMoney(balance, property)}. Enter a partial amount or the full amount; each repayment is dated and linked to this original entry.`;
+      document.querySelector('#close-open').textContent = `Still open on this entry: ${formatMoney(balance, property)}. Enter a positive amount for a return or repayment; any amount above the balance is recorded separately as ${text.extraType}. Enter a negative amount to add more to this linked account.`;
       document.querySelector('#close-error').hidden = true;
       document.querySelector('#close-dialog').showModal();
       form.elements.amount.focus();
@@ -381,7 +381,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const locationByKey = new Map(locations.map(location => [
         `${keyOf(location.year, location.monthIndex)}|${location.section.name}`, location
       ]));
-      const sources = transactions.filter(item => !item.parentId && !item.eventId && item.property === property
+      const sources = transactions.filter(item => !item.parentId && !item.eventId && !item.moneyRef && item.property === property
         && item.type === 'net' && item.date <= cutoff && locationByKey.has(`${item.date.slice(0, 7)}|${item.section}`))
         .map(source => {
           const location = locationByKey.get(`${source.date.slice(0, 7)}|${source.section}`);
@@ -405,7 +405,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             <span class="money-pick-balance"><strong>${formatMoney(balance, property)}</strong><small>${CLOSE_TEXT[kind].menu.replace('…', '')}</small></span>
           </button>`).join('')}</div></section>`;
       }).join('');
-      list.innerHTML = groups || `<p class="ledger-none">No open savings, holds, or loans found through ${monthLabel(new Date(targetYear, targetMonthIndex, 1))}.</p>`;
+      list.innerHTML = groups || `<p class="ledger-none">No open savings, holds, lending, or borrowing found through ${monthLabel(new Date(targetYear, targetMonthIndex, 1))}.</p>`;
       document.querySelector('#money-picker-where').textContent = `${regions[property]?.code || property} · recording in ${monthLabel(new Date(targetYear, targetMonthIndex, 1))}`;
       const dialog = document.querySelector('#money-picker-dialog');
       dialog.dataset.targetMonth = mKey;
@@ -419,20 +419,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const parts = [];
       if (kind === 'savings') {
         parts.push(['Paid out', 'save', -back]);
-        if (extra) parts.push(['Interest or gain', 'return', extra]);
         if (rest && closeRest) parts.push(['Lost', 'return', -rest]);
       } else if (kind === 'hold') {
         parts.push(['Had back', 'hold', -back]);
         if (rest && closeRest) parts.push(['Kept by them', 'kept', rest]);
       } else if (kind === 'lent') {
         parts.push(['Repaid', 'lend', -back]);
-        if (extra) parts.push(['Interest earned', 'earned', extra]);
         if (rest && closeRest) parts.push(['Written off', 'writeoff', rest]);
       } else if (kind === 'borrowed') {
         parts.push(['Repaid', 'borrow', -back]);
-        if (extra) parts.push(['Interest paid', 'charged', extra]);
       }
-      return { parts: parts.filter(([, , value]) => value) };
+      return {
+        parts: parts.filter(([, , value]) => value),
+        extra: extra ? { amount: extra, type: CLOSE_TEXT[kind].extraType, label: CLOSE_TEXT[kind].extraLabel } : null
+      };
     }
     async function saveClose(form) {
       const error = document.querySelector('#close-error');
@@ -445,8 +445,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (checkedDate.getFullYear() !== dateYear || checkedDate.getMonth() !== dateMonth - 1 || checkedDate.getDate() !== dateDay) {
         return fail('Pick a valid date.');
       }
-      const amount = Math.round(Number(String(form.elements.amount.value).replace(/[,\s]/g, '')) * 100);
-      if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount above zero.');
+      const parsed = ExpenseStore.readAmount(form.elements.amount.value);
+      if (parsed.error || parsed.empty || !Number.isFinite(parsed.value) || parsed.value === 0) return fail('Enter a non-zero amount. Use a negative amount to add to this account.');
+      const amount = Math.round(parsed.value * 100);
+      if (!amount) return fail('Enter an amount of at least one minor currency unit.');
       const year = dateYear;
       const monthIndex = dateMonth - 1;
       if (!store.year(year)) return fail(`${year} is not set up yet. Set it up in Year settings first.`);
@@ -455,10 +457,33 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!source || source.date !== sourceDate || source.property !== property) return fail('The original entry could not be found. Reload and try again.');
       if (date < sourceDate) return fail('The repayment or return cannot be dated before the original entry.');
       const currentBalance = moneyBalance(moneyId, property, kind, date);
+      if (amount < 0) {
+        const sections = store.ownSections(year, monthIndex, property);
+        let section = sections.find(item => item.type === 'net' && item.link === link)
+          || sections.find(item => item.type === 'net' && item.name === sourceSection && ExpenseStore.sectionKind(item) === kind && !item.link);
+        if (!section && sections.some(item => item.name === sourceSection)) return fail(`That month already has a different section called “${sourceSection}”. Rename one of them first.`);
+        if (!section) sections.push(section = { name: sourceSection, type: 'net', kind, block: true, subsections: [], roles: {}, calc: ExpenseStore.defaultCalc(kind) });
+        section.link = link;
+        const category = ExpenseStore.safeKey('Additional');
+        if (!section.subsections.includes(category)) section.subsections.push(category);
+        (section.roles ||= {})[category] = CLOSE_TEXT[kind].role;
+        transactions.push({
+          id: newRowId(), property, date, section: section.name, category,
+          description: `${CLOSE_TEXT[kind].addition} for “${sourceDescription}”`, place: '',
+          amount: Math.abs(amount), type: 'net', moneyId, moneyRole: CLOSE_TEXT[kind].role,
+          moneyRef: { date: sourceDate, description: sourceDescription, section: sourceSection, category: sourceCategory }
+        });
+        trackSave(store.saveMonthSections(year, monthIndex, property, sections));
+        saveTransactions();
+        document.querySelector('#close-dialog').close();
+        renderLedger();
+        return showToast(`Added ${formatMoney(Math.abs(amount), property)} to “${sourceDescription}”; future balances include it.`);
+      }
       if (currentBalance <= 0) return fail('Nothing remains open on this entry.');
-      if (kind === 'hold' && amount > currentBalance) return fail(`Only ${formatMoney(currentBalance, property)} is on hold.`);
-      const { parts } = closeParts(kind, currentBalance, amount, form.elements.rest.checked);
+      const { parts, extra } = closeParts(kind, currentBalance, amount, form.elements.rest.checked);
       const sections = store.ownSections(year, monthIndex, property);
+      const extraSection = extra && sections.find(item => item.type === extra.type && !item.closed && item.subsections?.length);
+      if (extra && !extraSection) return fail(`Add an ${extra.type} section with a subsection in that month first, so the extra amount has somewhere to go.`);
       let section = sections.find(item => item.type === 'net' && item.link === link)
         || sections.find(item => item.type === 'net' && item.name === sourceSection && ExpenseStore.sectionKind(item) === kind && !item.link);
       if (!section && sections.some(item => item.name === sourceSection)) return fail(`That month already has a different section called “${sourceSection}”. Rename one of them first.`);
@@ -478,11 +503,17 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           }
         });
       });
+      if (extra) {
+        transactions.push({
+          id: newRowId(), property, date, section: extraSection.name, category: extraSection.subsections[0],
+          description: `${extra.label} for “${sourceDescription}”`, place: '', amount: extra.amount, type: extra.type
+        });
+      }
       trackSave(store.saveMonthSections(year, monthIndex, property, sections));
       saveTransactions();
       document.querySelector('#close-dialog').close();
       renderLedger();
-      showToast(`Written in ${monthLabel(new Date(year, monthIndex, 1))}, linked to “${sourceDescription}”.`);
+      showToast(`Written in ${monthLabel(new Date(year, monthIndex, 1))}, linked to “${sourceDescription}”${extra ? `; the extra is recorded separately as ${extra.type}` : ''}.`);
     }
     async function openMoneySource(date, property, moneyId) {
       const year = Number(date.slice(0, 4));
@@ -1469,6 +1500,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       if (!name) return fail('Type a name first.');
       if (!store.isYearLoaded(year)) return fail(`Still loading ${year}; try again in a moment.`);
+      const linked = [];
+      for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+        store.ownSections(year, monthIndex, property).filter(item => item.type === type
+          && ExpenseStore.nameKey(item.name) === ExpenseStore.nameKey(section) && item.link)
+          .forEach(item => linked.push({ monthIndex, section: item }));
+      }
+      const links = [...new Set(linked.map(item => item.section.link))];
+      if (links.length > 1) return fail('This year row contains multiple separately linked accounts. Rename each from its month so their histories stay distinct.');
+      if (links.length === 1) {
+        const location = linked.find(item => item.section.link === links[0]);
+        return saveSectionRename(form, { month: keyOf(year, location.monthIndex), section: location.section.name });
+      }
       const plan = store.planRename(year, property, { level: 'section', type, section: ExpenseStore.nameKey(section) }, name);
       if (!plan.months) return fail(`Nothing in ${year} is filed under "${section}".`);
       if (plan.merged && !window.confirm(`"${name}" already exists in ${year}. Merge "${section}" into it?`)) return input.focus();
@@ -1530,10 +1573,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       return finalName;
     }
-    // Renaming a settlement or a pot in place. It changes this month and currency only — the same reach as renaming a
-    // subsection here — and its entries are re-pointed at the new name so nothing is orphaned.
-    function saveSectionRename(form) {
-      const { month, property, section: was } = form.dataset;
+    // Linked asset/liability sections keep one name across their full history, so a rename updates each linked month.
+    async function saveSectionRename(form, override = {}) {
+      const { property } = form.dataset;
+      const month = override.month || form.dataset.month;
+      const was = override.section || form.dataset.section;
       const input = form.elements.name;
       const hint = form.querySelector('.ledger-form-hint');
       const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
@@ -1557,6 +1601,63 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         editDraft = null;
         renderLedger();
         return showToast('That section is no longer set up here.');
+      }
+      if (own.link) {
+        let locations = store.linkedSections(own.link, property);
+        try {
+          await Promise.all(locations.map(({ year, monthIndex }) => store.ensureMonth(year, monthIndex)));
+        } catch (error) {
+          console.error('Could not load every linked month for a section rename.', error);
+          hint.textContent = 'Could not load every linked month. Try again.';
+          input.focus();
+          return;
+        }
+        locations = store.linkedSections(own.link, property);
+        const linked = locations.map(location => ({
+          ...location,
+          section: store.ownSections(location.year, location.monthIndex, property).find(item => item.link === own.link)
+        }));
+        if (!linked.length || linked.some(location => !location.section)) {
+          hint.textContent = 'Could not find every linked section. Refresh and try again.';
+          input.focus();
+          return;
+        }
+        const collision = linked.find(location => {
+          const names = store.blockNames(location.year, location.monthIndex, property);
+          const reservedName = reserved.includes(name.toLowerCase())
+            || Object.values(names).some(blockName => blockName.toLowerCase() === name.toLowerCase());
+          return reservedName || store.ownSections(location.year, location.monthIndex, property)
+            .some(item => item.link !== own.link && item.name.toLowerCase() === name.toLowerCase());
+        });
+        if (collision) {
+          hint.textContent = `"${name}" is reserved or already used by another section in ${monthLabel(new Date(collision.year, collision.monthIndex, 1))}.`;
+          input.setAttribute('aria-invalid', 'true');
+          return input.focus();
+        }
+        const moneyIds = new Set(transactions.filter(item => item.property === property && item.moneyId
+          && linked.some(location => item.date.startsWith(keyOf(location.year, location.monthIndex))
+            && item.section === location.section.name)).map(item => item.moneyId));
+        linked.forEach(location => {
+          const monthKey = keyOf(location.year, location.monthIndex);
+          const oldName = location.section.name;
+          location.section.name = name;
+          transactions.forEach(item => {
+            if (item.property === property && item.date.startsWith(monthKey) && item.section === oldName) item.section = name;
+          });
+          trackSave(store.saveMonthSections(location.year, location.monthIndex, property,
+            store.ownSections(location.year, location.monthIndex, property)));
+        });
+        transactions.forEach(item => {
+          if (item.property !== property || !item.moneyRef) return;
+          if (moneyIds.has(item.moneyId)) {
+            item.moneyRef = { ...item.moneyRef, section: name };
+          }
+        });
+        saveTransactions();
+        editDraft = null;
+        renderLedger();
+        showToast(`Renamed "${was}" to "${name}" in ${linked.length} linked ${linked.length === 1 ? 'month' : 'months'}.`);
+        return;
       }
       own.name = name;
       transactions.forEach(item => { if (scope.match(item) && item.type === 'net' && item.section === was) item.section = name; });
@@ -4214,7 +4315,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!item) return;
       clipboard = { kind: 'entry', id, property: item.property, type: item.type, label: item.description };
       clearPicks();
-      showToast(`Copied the entry “${item.description}”. Paste it on a subsection.`);
+      showToast(`Copied the entry “${item.description}”. Paste it on a subsection, or attach it as a note to an entry.`);
     }
     // ---- Cutting rows, one at a time or several together ---------------------------------------
     // Cut on a section, a subsection or an entry puts that row on the clipboard ready to move; cutting another one in
@@ -4304,12 +4405,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // is converted on the way in (see amountAcross). The currency still has to match: money that would have to be
       // converted on the way is not a paste.
       // Onto a subsection is "put it where entries live": the subsection is folded into one entry. Onto a section is
-      // "put it where subsections live": an entry is opened out into one. Both carry rows, and rows never change
-      // currency on the way, so both want the same money.
+      // "put it where subsections live": an entry is opened out into one. Onto an entry or note, a copied entry is
+      // added as a note under its parent. All carry rows, and rows never change currency on the way, so they want the
+      // same money.
       if (clipboard.kind === 'subsection' && target.kind === 'subsection') return sameMoney ? { entries: true, fold: 'entry' } : null;
       if (clipboard.kind === 'subsection' && target.kind === 'section') return { entries: sameMoney };
       if (clipboard.kind === 'entry' && target.kind === 'section') return sameMoney ? { entries: true, fold: 'subsection' } : null;
       if (clipboard.kind === 'entry' && target.kind === 'subsection') return sameMoney ? { entries: true, only: true } : null;
+      if (clipboard.kind === 'entry' && ['entry', 'note'].includes(target.kind)) return sameMoney ? { entries: true, only: true, asNote: true } : null;
       // A pick list lands where one of its kind would, and a cut never leaves its currency: the entries would have to
       // change money on the way, which is not a paste but a conversion.
       if (clipboard.kind === 'picks') {
@@ -4599,8 +4702,61 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (withEntries) entriesOf(clipboard.mKey, clipboard.property, clipboard.type, clipboard.section, clipboard.name).forEach(item => { copied += cloneEntry(item, mKey, property, into.name, clipboard.name, into.type); });
       } else if (clipboard.kind === 'entry') {
         const item = transactions.find(row => row.id === clipboard.id);
+        if (!item) return showToast('Could not paste that entry here.');
+        if (target.kind === 'entry' || target.kind === 'note') {
+          const parent = target.kind === 'note'
+            ? transactions.find(row => row.id === target.parentId)
+            : transactions.find(row => row.id === target.id);
+          if (!parent || parent.parentId) return showToast('Could not find the expense entry to attach the note to.');
+          const existingNotes = transactions.filter(row => row.parentId === parent.id);
+          if (!existingNotes.length) {
+            const originalAmount = store.entryTotal(parent.id);
+            if (originalAmount) {
+              transactions.push({
+                id: newRowId(),
+                parentId: parent.id,
+                property: parent.property,
+                type: parent.type,
+                category: parent.category,
+                section: parent.section,
+                description: parent.description,
+                place: parent.place,
+                date: parent.date,
+                amount: originalAmount,
+                ...scope.fields
+              });
+            }
+          }
+          const note = carryRow({
+            ...item,
+            id: newRowId(),
+            parentId: parent.id,
+            property: parent.property,
+            date: dateIn(mKey, item.date),
+            section: parent.section,
+            category: parent.category,
+            amount: store.entryTotal(item.id),
+            ...scope.fields
+          }, parent.type);
+          delete note.formula;
+          delete note.split;
+          delete note.alloc;
+          delete note.sid;
+          delete note.shared;
+          delete note.sharedTotal;
+          delete note.series;
+          delete note.moneyId;
+          delete note.moneyRole;
+          delete note.moneyRef;
+          if (Array.isArray(item.tags)) note.tags = [...item.tags];
+          if (!scope.isEvent) delete note.eventId;
+          transactions.push(note);
+          saveTransactions();
+          renderLedger();
+          return showToast(`Pasted “${item.description}” as a note on expense “${parent.description}”.${crossedNote()}`);
+        }
         const into = sectionFor(target.type, target.section);
-        if (!item || !into) return showToast('Could not paste that entry here.');
+        if (!into) return showToast('Could not paste that entry here.');
         // Dropped on a section, so it becomes a subsection there and its notes become the entries in it.
         if (target.kind === 'section') {
           const made = openEntryIntoSubsection(item, into, mKey, property);
@@ -4644,7 +4800,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const panel = el.closest('.ledger-panel');
       const property = panel?.dataset.property;
       const note = el.closest('.ledger-sub-entry[data-note-id]');
-      if (note) return { kind: 'note', mKey, property, id: note.dataset.noteId, row: note, label: note.querySelector('.ledger-entry-desc')?.textContent.trim() || 'Note' };
+      if (note) return { kind: 'note', mKey, property, id: note.dataset.noteId, parentId: transactions.find(item => item.id === note.dataset.noteId)?.parentId, row: note, label: note.querySelector('.ledger-entry-desc')?.textContent.trim() || 'Note' };
       const cell = el.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
       const toggle = cell?.querySelector(':scope > .ledger-entry-line [data-toggle-entry]');
       if (toggle) return { kind: 'entry', mKey, property, id: toggle.dataset.entryId, row: cell, label: toggle.querySelector('.ledger-entry-desc')?.textContent.trim() || 'Entry' };
@@ -4677,6 +4833,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const fits = pasteFits(target);
       const pasteAction = fits ? [clipboard.kind === 'picks'
         ? { icon: clipboard.mode === 'cut' ? 'cut' : 'clipboard', label: `${clipboard.mode === 'cut' ? 'Move' : 'Paste'} ${clipboard.label} here`, hint: `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }
+        : fits.asNote
+          ? { icon: 'clipboard', label: `Paste “${clipboard.label}” as a note`, hint: 'attach it to this entry', paste: fits }
         : fits.fold === 'entry'
           ? { icon: 'arrow-bar-to-down', label: `Paste “${clipboard.label}” here as an entry`, hint: 'its entries and notes become this entry\u2019s notes', paste: fits }
           : fits.fold === 'subsection'
@@ -4731,7 +4889,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             { icon: 'lock', label: 'Put money on hold', hint: 'a deposit or advance you expect back', run: startBlock('hold') },
             { icon: 'arrow-up-right', label: 'Lend money', hint: 'given to someone to pay back', run: startBlock('lent') },
             { icon: 'arrow-down-left', label: 'Borrow money', hint: 'received, to pay back', run: startBlock('borrowed') },
-            { icon: 'arrow-back-up', label: 'Record a return or repayment…', hint: `from an open savings, hold, or loan entry through ${monthLabel(new Date(...yearMonthOf(mKey), 1))}`, run: () => openMoneyPicker(mKey, property) }
+            { icon: 'arrow-back-up', label: 'Touch assets or liabilities…', hint: `view open savings, holds, lending, and borrowing through ${monthLabel(new Date(...yearMonthOf(mKey), 1))}`, run: () => openMoneyPicker(mKey, property) }
           ]),
           ...pasteAction,
           { icon: 'settings', label: settingsLabel, run: settings }
@@ -4838,8 +4996,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (!section) return [];
           const role = row.moneyRole || ExpenseStore.subsectionRole(section, row.category);
           const kind = Object.keys(CLOSE_TEXT).find(candidate => role === CLOSE_TEXT[candidate].role);
-          return kind && store.entryTotal(row.id) > 0
-            ? [{ icon: 'arrow-back-up', label: CLOSE_TEXT[kind].menu, hint: CLOSE_TEXT[kind].hint, run: () => openCloseDialog(mKey, property, row.id, kind) }]
+          return kind && !row.moneyRef && store.entryTotal(row.id) > 0
+            ? [{ icon: 'arrow-back-up', label: 'Touch assets or liabilities…', hint: 'choose any open savings, hold, lending, or borrowing entry', run: () => openMoneyPicker(mKey, property) }]
             : [];
         })();
         // Money laid out for a group is divided, so the entry itself says how much of it was mine. Only such an entry
@@ -4896,6 +5054,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
           ...cutItems(),
           { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
+          ...pasteAction,
           { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
         ]);
       }
@@ -4903,6 +5062,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
         ...[aboutAction(target)].filter(Boolean),
         { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
+        ...pasteAction,
         { icon: 'trash', label: 'Delete note', danger: true, run: () => deleteRow({ deleteRow: 'note', entryId: target.id }) }
       ]);
     }

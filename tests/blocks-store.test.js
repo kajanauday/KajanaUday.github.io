@@ -45,6 +45,39 @@ test('the UR advance on hold: only the kept part is an expense, and nothing is o
   assert.equal(august.expenses, 0);
 });
 
+test('a refund above a held balance records its excess as separate income', async () => {
+  const source = {
+    id: 'ur-source', property: 'JPY', date: '2026-09-10', section: 'UR deposit', category: 'Advance',
+    type: 'net', description: 'UR money', amount: 100000, moneyId: 'ur-hold', moneyRole: 'hold'
+  };
+  const repayment = {
+    id: 'ur-return', property: 'JPY', date: '2026-10-10', section: 'UR deposit', category: 'Had back',
+    type: 'net', description: 'Refund for UR money', amount: -100000, moneyId: 'ur-hold', moneyRole: 'hold',
+    moneyRef: { date: source.date, description: source.description, section: source.section, category: source.category }
+  };
+  const extra = {
+    id: 'ur-extra', property: 'JPY', date: '2026-10-10', section: 'Income', category: 'Other income',
+    type: 'income', description: 'Extra returned for UR money', amount: 25000
+  };
+  const holdSection = subsections => ({
+    own: true,
+    sections: [{ ...block('UR deposit', 'hold', Object.fromEntries(subsections.map(name => [name, 'hold']))), link: 'ur-hold-link' }]
+  });
+  const store = await storeWith({
+    '2026_September': { JPY: ExpenseStore.monthDoc([source]).JPY },
+    '2026_October': { JPY: ExpenseStore.monthDoc([repayment, extra]).JPY }
+  }, {
+    '2026_September': { JPY: holdSection(['Advance']) },
+    '2026_October': { JPY: holdSection(['Had back']) }
+  });
+
+  assert.equal(store.monthTotals(2026, 9, 'JPY').income, 25000);
+  assert.equal(store.monthTotals(2026, 9, 'JPY').holdings.held, -100000);
+  assert.equal(store.yearTotals(2026, 'JPY').own.income, 25000);
+  assert.equal(store.yearHoldings(2026, 'JPY').open.held, 0);
+  assert.equal(extra.moneyId, undefined);
+});
+
 test('a chit as a savings pot: paid in over a year, paid out with interest the next', async () => {
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const docs = {};
@@ -103,6 +136,32 @@ test('settlements still count as before', async () => {
   const year = store.yearTotals(2026, 'JPY');
   assert.equal(year.own.expenses, 30000);
   assert.equal(year.own.income, 0);
+});
+
+test('recorded shared repayments stay visible without adding to expenses twice', async () => {
+  const sharedExpense = {
+    id: 'sairam-shared', property: 'JPY', date: '2026-07-12', section: 'Expenses', category: 'Sai Ram',
+    type: 'expense', description: 'Shared dinner', amount: 10000, sid: 'shared-dinner',
+    shared: { by: 'friend', his: 50, with: 'Sai Ram' }
+  };
+  const repayment = {
+    id: 'sairam-repayment', property: 'JPY', date: '2026-07-30', section: 'Expenses', category: 'Sai Ram',
+    type: 'expense', description: 'Settled with Sai Ram', amount: 5000,
+    cleared: { id: 'settlement-1', colour: '#2563eb' }
+  };
+  const store = await storeWith({
+    '2026_July': { JPY: ExpenseStore.monthDoc([sharedExpense, repayment]).JPY }
+  }, {});
+  const month = store.monthTotals(2026, 6, 'JPY');
+  const year = store.yearTotals(2026, 'JPY');
+  const expenses = Object.values(store.country(2026, 6, 'JPY').sections)
+    .find(section => section._meta.type === 'expense');
+
+  assert.equal(month.expenses, 5000);
+  assert.equal(year.own.expenses, 5000);
+  assert.equal(expenses.categories['Sai Ram']._meta.total, 5000);
+  assert.equal(expenses.categories['Sai Ram'].entries.length, 2);
+  assert.equal(expenses.categories['Sai Ram'].entries.find(entry => entry.cleared)._meta.total, 5000);
 });
 
 test('yearbook groups shared expenses into settled and ongoing histories across months', async () => {
@@ -169,6 +228,45 @@ test('partial repayments across months reduce only their linked entry outstandin
   assert.equal(ExpenseStore.linkedMoneyBalance('loan-a', 'borrowed', rows), 250000);
   assert.equal(ExpenseStore.linkedMoneyBalance('loan-b', 'borrowed', rows), 80000);
   assert.equal(rows[0].amount, 500000);
+});
+
+test('additional linked principal and edits to an earlier amount change later balances', async () => {
+  const source = {
+    id: 'linked-source', property: 'JPY', date: '2026-08-12', section: 'Family loan', category: 'Lent',
+    type: 'net', description: 'Family loan', amount: 5000000, moneyId: 'family-loan', moneyRole: 'lend'
+  };
+  const repayment = {
+    id: 'linked-repayment', property: 'JPY', date: '2026-09-10', section: 'Family loan', category: 'Repaid',
+    type: 'net', description: 'Repaid for Family loan', amount: -1500000, moneyId: 'family-loan', moneyRole: 'lend',
+    moneyRef: { date: source.date, description: source.description, section: source.section, category: source.category }
+  };
+  const additional = {
+    id: 'linked-additional', property: 'JPY', date: '2026-10-10', section: 'Family loan', category: 'Additional',
+    type: 'net', description: 'Additional lending for Family loan', amount: 2000000, moneyId: 'family-loan', moneyRole: 'lend',
+    moneyRef: { date: source.date, description: source.description, section: source.section, category: source.category }
+  };
+  const linkedSection = () => ({
+    own: true,
+    sections: [{ ...block('Family loan', 'lent', { Lent: 'lend', Repaid: 'lend', Additional: 'lend' }), link: 'family-loan-link' }]
+  });
+  const store = await storeWith({
+    '2026_August': { JPY: ExpenseStore.monthDoc([source]).JPY },
+    '2026_September': { JPY: ExpenseStore.monthDoc([repayment]).JPY },
+    '2026_October': { JPY: ExpenseStore.monthDoc([additional]).JPY }
+  }, {
+    '2026_August': { JPY: linkedSection() },
+    '2026_September': { JPY: linkedSection() },
+    '2026_October': { JPY: linkedSection() }
+  });
+  const balanceAt = throughDate => ExpenseStore.linkedMoneyBalance(
+    'family-loan', 'lent', store.transactions.filter(item => item.property === 'JPY'), item => store.entryTotal(item.id), throughDate
+  );
+  const storedSource = store.transactions.find(item => item.date === source.date && item.moneyId === source.moneyId);
+
+  assert.equal(balanceAt('2026-10-31'), 5500000);
+  storedSource.amount = 7000000;
+  await store.saveTransactions();
+  assert.equal(balanceAt('2026-10-31'), 7500000);
 });
 
 test('linked money balances can be read as of a selected month without counting later repayments', () => {

@@ -656,7 +656,7 @@
       });
       return [...groups.values()];
     };
-    // Every custom section belongs to one of the two blocks, so the panel holds four at most: Expenses, Income,
+    // Every custom section belongs to one of the two blocks, so the panel holds four at most: Income, Expenses,
     // Settlements, Savings. An event's own sections are drawn as before — an event is not a month.
     const settlements = blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === 'settlement');
     const savings = blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === 'savings');
@@ -664,8 +664,8 @@
     const sections = isEvent
       ? byType.expense.map((section, index) => TypeSection('expense', [section], { mKey, property }, state, ctx, true, null, { title: section._meta.id, section: section._meta.id, bare: index === 0, panel: m.name })).join('')
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
-      : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
-        + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
+      : TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
+        + TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind), settledAccounts: m.settledAccounts?.[kind], sharedHistory: m.sharedHistory }, state, ctx)).join('')
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;

@@ -265,7 +265,7 @@
       entry.notes = notes;
       group.entries.push(entry);
       group.count += 1;
-      group.total += noteTotal(shareOf(item), notes);
+      if (!item.cleared) group.total += noteTotal(shareOf(item), notes);
     });
     return Object.keys(doc).length ? doc : null;
   }
@@ -1077,7 +1077,10 @@
     BUCKETS.forEach(([bucket]) => (buckets?.[bucket] || []).forEach(group => {
       totals.entries += group.count;
       if (bucket !== 'net') {
-        totals[bucket] += group.total;
+        const total = group.entries
+          ? group.entries.reduce((sum, entry) => sum + (entry.cleared ? 0 : noteTotal(shareOf(entry), entry.notes || [])), 0)
+          : group.total;
+        totals[bucket] += total;
         return;
       }
       (group.entries || []).forEach(entry => {
@@ -1506,7 +1509,7 @@
       const totals = zeroTotals();
       const prefix = dateKeyOf(year, monthIndex);
       this.transactions.forEach(item => {
-        if (!item.eventId || item.parentId || item.property !== currency || !item.date.startsWith(prefix) || !this.events[item.eventId]?.include) return;
+        if (!item.eventId || item.parentId || item.cleared || item.property !== currency || !item.date.startsWith(prefix) || !this.events[item.eventId]?.include) return;
         totals[item.type === 'income' ? 'income' : 'expenses'] += this.entryTotal(item.id);
         totals.entries += 1;
       });
@@ -1703,6 +1706,7 @@
       sections.forEach(section => section._meta.categories.forEach(row => {
         const items = new Map();
         row.entries.forEach(entry => {
+          if (entry.cleared) return;
           (entry.subEntries.length ? entry.subEntries.map(note => [note.description, Number(note.amount)]) : [[entry.description, entry._meta.total]]).forEach(([name, amount]) => {
             const key = nameKey(name) || '—';
             const item = items.get(key) || { key, name: name || '—', total: 0, count: 0, months: new Set() };
@@ -2048,7 +2052,7 @@
       [...new Set([...subsections, ...parents.map(item => item.category)])].forEach(category => {
         const own = parents.filter(item => item.category === category);
         categories[category] = {
-          _meta: { id: category, icon: iconFor(category, type), entries: own.length, total: own.reduce((sum, item) => sum + this.entryTotal(item.id), 0) },
+          _meta: { id: category, icon: iconFor(category, type), entries: own.length, total: own.reduce((sum, item) => sum + (item.cleared ? 0 : this.entryTotal(item.id)), 0) },
           entries: own.map(item => this.buildEntry(item))
         };
       });
