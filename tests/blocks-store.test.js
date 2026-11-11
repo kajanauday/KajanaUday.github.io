@@ -33,6 +33,12 @@ test('the UR advance on hold: only the kept part is an expense, and nothing is o
   assert.equal(year.own.expenses, 60000);
   assert.equal(store.yearHoldings(2026, 'JPY').open.held, 0);
   assert.equal(store.yearHoldings(2026, 'JPY').own.kept, 60000);
+  assert.equal(store.monthTotals(2026, 7, 'JPY').holdings.held, 280000);
+  assert.equal(store.monthTotals(2026, 9, 'JPY').holdings.held, -280000);
+  assert.equal(store.monthTotals(2026, 10, 'JPY').holdings.held, 0);
+  assert.equal(store.monthTotals(2026, 7, 'JPY').closing, 20000);
+  assert.equal(store.monthTotals(2026, 9, 'JPY').closing, 240000);
+  assert.equal(year.closing, 240000);
   // August alone: the advance is on hold, and is not an expense.
   const august = store.year(2026).months['2026_August'].metadata.JPY;
   assert.equal(august.holdings.held, 280000);
@@ -56,9 +62,14 @@ test('a chit as a savings pot: paid in over a year, paid out with interest the n
   assert.equal(store.yearHoldings(2027, 'JPY').own.returns, 22000);
   assert.equal(store.yearHoldings(2027, 'JPY').open.saved, 0);
   assert.equal(store.yearTotals(2027, 'JPY').own.income, 22000);
+  assert.equal(store.monthTotals(2027, 2, 'JPY').holdings.saved, -258000);
+  assert.equal(store.monthTotals(2027, 3, 'JPY').holdings.saved, 0);
+  assert.equal(store.monthTotals(2027, 2, 'JPY').closing, 280000);
+  assert.equal(store.yearTotals(2026, 'JPY').closing, -258000);
+  assert.equal(store.yearTotals(2027, 'JPY').closing, 280000);
 });
 
-test('money lent: not an expense; interest is income; a write-off is an expense', async () => {
+test('money lent: cash balance reflects the amount out, while interest and write-offs remain income and expenses', async () => {
   const store = await storeWith(
     { '2026_May': { JPY: { net: [net('Ravi', 'Given', 100000), net('Ravi', 'Repaid', -70000), net('Ravi', 'Interest', 5000), net('Ravi', 'Written off', 30000)] } } },
     { '2026_May': { JPY: { own: true, sections: [block('Ravi', 'lent', { Given: 'lend', Repaid: 'lend', Interest: 'earned', 'Written off': 'writeoff' })] } } }
@@ -67,6 +78,8 @@ test('money lent: not an expense; interest is income; a write-off is an expense'
   assert.equal(year.own.income, 5000);
   assert.equal(year.own.expenses, 30000);
   assert.equal(store.yearHoldings(2026, 'JPY').open.lent, 0);
+  assert.equal(year.closing, -25000);
+  assert.equal(store.monthTotals(2026, 4, 'JPY').closing, -25000);
 });
 
 test('money borrowed: not income; only interest paid is an expense, and what is owed stays open', async () => {
@@ -78,6 +91,8 @@ test('money borrowed: not income; only interest paid is an expense, and what is 
   assert.equal(year.own.income, 0);
   assert.equal(year.own.expenses, 12000);
   assert.equal(store.yearHoldings(2026, 'JPY').open.borrowed, 300000);
+  assert.equal(store.monthTotals(2026, 5, 'JPY').holdings.borrowed, 300000);
+  assert.equal(year.closing, 288000);
 });
 
 test('settlements still count as before', async () => {
@@ -88,4 +103,110 @@ test('settlements still count as before', async () => {
   const year = store.yearTotals(2026, 'JPY');
   assert.equal(year.own.expenses, 30000);
   assert.equal(year.own.income, 0);
+});
+
+test('a partial repayment keeps a stable link to its original money entry when saved and reloaded', () => {
+  const source = {
+    id: 'source-entry', property: 'JPY', date: '2026-06-02', section: 'Annayya', category: 'Borrowed',
+    type: 'net', description: 'Annayya', amount: 500000, moneyId: 'ml-source', moneyRole: 'borrow'
+  };
+  const repayment = {
+    id: 'repayment-entry', property: 'JPY', date: '2026-07-14', section: 'Annayya', category: 'Repaid',
+    type: 'net', description: 'Repaid for “Annayya”', amount: -125000, moneyId: 'ml-source', moneyRole: 'borrow',
+    moneyRef: { date: source.date, description: source.description, section: source.section, category: source.category }
+  };
+  const sourceDoc = ExpenseStore.monthDoc([source]);
+  const repaymentDoc = ExpenseStore.monthDoc([repayment]);
+  const reloadedSource = ExpenseStore.flattenMonth('2026_June', { JPY: sourceDoc.JPY }, ['JPY'])[0];
+  const reloadedRepayment = ExpenseStore.flattenMonth('2026_July', { JPY: repaymentDoc.JPY }, ['JPY'])[0];
+
+  assert.equal(reloadedSource.amount, 500000);
+  assert.equal(reloadedSource.moneyId, 'ml-source');
+  assert.equal(reloadedSource.moneyRole, 'borrow');
+  assert.equal(reloadedRepayment.amount, -125000);
+  assert.equal(reloadedRepayment.moneyId, reloadedSource.moneyId);
+  assert.deepEqual(reloadedRepayment.moneyRef, {
+    date: source.date, description: source.description, section: source.section, category: source.category
+  });
+});
+
+test('partial repayments across months reduce only their linked entry outstanding', () => {
+  const rows = [
+    { moneyId: 'loan-a', moneyRole: 'borrow', amount: 500000 },
+    { moneyId: 'loan-a', moneyRole: 'borrow', amount: -125000 },
+    { moneyId: 'loan-a', moneyRole: 'borrow', amount: -125000 },
+    { moneyId: 'loan-a', moneyRole: 'charged', amount: 5000 },
+    { moneyId: 'loan-b', moneyRole: 'borrow', amount: 80000 }
+  ];
+  assert.equal(ExpenseStore.linkedMoneyBalance('loan-a', 'borrowed', rows), 250000);
+  assert.equal(ExpenseStore.linkedMoneyBalance('loan-b', 'borrowed', rows), 80000);
+  assert.equal(rows[0].amount, 500000);
+});
+
+test('linked money balances can be read as of a selected month without counting later repayments', () => {
+  const rows = [
+    { moneyId: 'loan', moneyRole: 'borrow', amount: 100000, date: '2026-08-12' },
+    { moneyId: 'loan', moneyRole: 'borrow', amount: -25000, date: '2026-10-04' },
+    { moneyId: 'loan', moneyRole: 'borrow', amount: -30000, date: '2026-11-02' }
+  ];
+  assert.equal(ExpenseStore.linkedMoneyBalance('loan', 'borrowed', rows, undefined, '2026-10-31'), 75000);
+  assert.equal(ExpenseStore.linkedMoneyBalance('loan', 'borrowed', rows), 45000);
+});
+
+test('yearbook lists a settled linked savings account with its dated history', async () => {
+  const source = {
+    id: 'savings-source', property: 'JPY', date: '2026-08-12', section: 'Festival pot', category: 'Put in',
+    type: 'net', description: 'Festival savings', amount: 10000, moneyId: 'money-savings', moneyRole: 'save'
+  };
+  const withdrawal = {
+    id: 'savings-return', property: 'JPY', date: '2026-10-04', section: 'Festival pot', category: 'Paid out',
+    type: 'net', description: 'Withdrawal for “Festival savings”', amount: -10000, moneyId: 'money-savings', moneyRole: 'save',
+    moneyRef: { date: source.date, description: source.description, section: source.section, category: source.category }
+  };
+  const monthDoc = items => ExpenseStore.monthDoc(items).JPY;
+  const sections = link => ({
+    own: true,
+    sections: [block('Festival pot', 'savings', { 'Put in': 'save', 'Paid out': 'save' })].map(item => ({ ...item, link }))
+  });
+  const store = await storeWith({
+    '2026_August': { JPY: monthDoc([source]) },
+    '2026_October': { JPY: monthDoc([withdrawal]) }
+  }, {
+    '2026_August': { JPY: sections('savings-link') },
+    '2026_October': { JPY: sections('savings-link') }
+  });
+  const accounts = store.yearbook(2026, 'JPY')._meta.settledAccounts.savings;
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].description, source.description);
+  assert.deepEqual(accounts[0].history.map(item => [item.date, item.description, item.amount]), [
+    ['2026-08-12', source.description, 10000],
+    ['2026-10-04', withdrawal.description, -10000]
+  ]);
+});
+
+test('all money blocks account for partial returns, write-offs and interest without changing principal entries', () => {
+  const rows = [
+    { moneyId: 'savings', moneyRole: 'save', amount: 100000 },
+    { moneyId: 'savings', moneyRole: 'save', amount: -30000 },
+    { moneyId: 'savings', moneyRole: 'return', amount: 1000 },
+    { moneyId: 'savings', moneyRole: 'return', amount: -5000 },
+    { moneyId: 'hold', moneyRole: 'hold', amount: 80000 },
+    { moneyId: 'hold', moneyRole: 'hold', amount: -20000 },
+    { moneyId: 'hold', moneyRole: 'kept', amount: 10000 },
+    { moneyId: 'lent', moneyRole: 'lend', amount: 50000 },
+    { moneyId: 'lent', moneyRole: 'lend', amount: -20000 },
+    { moneyId: 'lent', moneyRole: 'writeoff', amount: 5000 },
+    { moneyId: 'lent', moneyRole: 'earned', amount: 1000 },
+    { moneyId: 'borrowed', moneyRole: 'borrow', amount: 90000 },
+    { moneyId: 'borrowed', moneyRole: 'borrow', amount: -25000 },
+    { moneyId: 'borrowed', moneyRole: 'charged', amount: 2000 }
+  ];
+  assert.equal(ExpenseStore.linkedMoneyBalance('savings', 'savings', rows), 65000);
+  assert.equal(ExpenseStore.linkedMoneyBalance('hold', 'hold', rows), 50000);
+  assert.equal(ExpenseStore.linkedMoneyBalance('lent', 'lent', rows), 25000);
+  assert.equal(ExpenseStore.linkedMoneyBalance('borrowed', 'borrowed', rows), 65000);
+  assert.equal(rows[0].amount, 100000);
+  assert.equal(rows[4].amount, 80000);
+  assert.equal(rows[7].amount, 50000);
+  assert.equal(rows[11].amount, 90000);
 });

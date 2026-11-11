@@ -237,59 +237,179 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (event.key === 'ArrowDown') { event.preventDefault(); stepDatePickYear(-1); }
       });
     }
-    // ---- Money that sits somewhere and comes back: closing a savings pot, a hold, a loan given or a loan taken ----
-    // An item lives in the month it was put in. When money comes back (or is paid back), it is written in the month it
-    // happened, in a section of the same name, linked to the first: both months show the link, and the year card counts
-    // them as one. What is open is worked out from every linked month's entries, so it is always what the ledger says.
+    // ---- Money that sits somewhere and comes back: each source entry has its own running balance --------------------
     const CLOSE_TEXT = {
-      savings: { title: 'Paid out', menu: 'Paid out…', hint: 'what came back, with any interest', amount: 'Amount you got back', rest: 'Close it: the rest is lost (counts against income)' },
-      hold: { title: 'Money came back', menu: 'Money came back…', hint: 'the rest can be kept by them', amount: 'Amount you got back', rest: 'Close it: they kept the rest (an expense)' },
-      lent: { title: 'Repaid to you', menu: 'Repaid…', hint: 'what they paid back; more is interest', amount: 'Amount they paid back', rest: 'Close it: write off the rest (an expense)' },
-      borrowed: { title: 'You repaid', menu: 'Repay…', hint: 'what you paid back; more is interest', amount: 'Amount you paid back', rest: '' }
+      savings: { title: 'Record savings withdrawal', menu: 'Record withdrawal…', hint: 'for this savings entry', amount: 'Amount withdrawn', rest: 'Close it: the rest is lost (counts against income)', role: 'save', transaction: 'Withdrawal for' },
+      hold: { title: 'Record money returned', menu: 'Record refund…', hint: 'for this held amount', amount: 'Amount you got back', rest: 'Close it: they kept the rest (an expense)', role: 'hold', transaction: 'Refund for' },
+      lent: { title: 'Record loan repayment', menu: 'Record repayment…', hint: 'for this amount lent', amount: 'Amount they paid back', rest: 'Close it: write off the rest (an expense)', role: 'lend', transaction: 'Repaid for' },
+      borrowed: { title: 'Record borrowed repayment', menu: 'Record repayment…', hint: 'for this borrowed amount', amount: 'Amount you paid back', rest: '', role: 'borrow', transaction: 'Repaid for' }
     };
-    const closeState = { link: '', name: '', kind: '', property: '', balance: 0 };
-    const linkedKeyOf = ({ year, monthIndex }) => keyOf(year, monthIndex);
-    // What is still open across every month linked to this item: savings in the pot, money on hold, lent or owed.
-    function blockBalance(link, property) {
-      return store.linkedSections(link, property).reduce((sum, { year, monthIndex, section }) => {
-        const prefix = keyOf(year, monthIndex);
-        transactions.filter(item => !item.parentId && item.type === 'net' && item.property === property && item.section === section.name && item.date.startsWith(prefix)).forEach(item => {
-          const role = ExpenseStore.subsectionRole(section, item.category);
-          const amount = store.entryTotal(item.id);
-          if (['save', 'hold', 'lend', 'borrow'].includes(role)) sum += amount;
-          if (role === 'kept' || role === 'writeoff') sum -= amount;
-        });
-        return sum;
-      }, 0);
+    const closeState = { moneyId: '', link: '', sourceDate: '', sourceDescription: '', sourceSection: '', sourceCategory: '', kind: '', property: '', balance: 0 };
+    const moneyRoleForKind = Object.fromEntries(Object.entries(CLOSE_TEXT).map(([kind, text]) => [kind, text.role]));
+    const sourceOfMoneyId = moneyId => transactions.find(item => !item.parentId && item.moneyId === moneyId && !item.moneyRef) || null;
+    function moneyBalance(moneyId, property, kind, throughDate = '9999-12-31') {
+      return ExpenseStore.linkedMoneyBalance(
+        moneyId, kind, transactions.filter(item => item.property === property), item => store.entryTotal(item.id), throughDate
+      );
     }
-    async function openCloseDialog(mKey, property, sectionName, kind) {
+    function linkLegacyMoneyItems(moneyId, source, kind, link, property) {
+      const locations = store.linkedSections(link, property);
+      const locationKeys = new Set(locations.map(({ year, monthIndex, section }) => `${keyOf(year, monthIndex)}|${section.name}`));
+      const linked = transactions.filter(item => !item.parentId && item.property === property
+        && locationKeys.has(`${item.date.slice(0, 7)}|${item.section}`));
+      const sections = new Map(locations.map(({ year, monthIndex, section }) => [`${keyOf(year, monthIndex)}|${section.name}`, section]));
+      const roleOf = item => item.moneyRole || ExpenseStore.subsectionRole(
+        sections.get(`${item.date.slice(0, 7)}|${item.section}`), item.category
+      );
+      const sourceRole = CLOSE_TEXT[kind].role;
+      const accountingRoles = {
+        savings: new Set(['save', 'return']),
+        hold: new Set(['hold', 'kept']),
+        lent: new Set(['lend', 'earned', 'writeoff']),
+        borrowed: new Set(['borrow', 'charged'])
+      }[kind];
+      const legacy = linked.filter(item => !item.moneyId && accountingRoles.has(roleOf(item))
+        && (roleOf(item) !== sourceRole || Number(item.amount) < 0));
+      if (!legacy.length) return true;
+      const origins = linked.filter(item => roleOf(item) === sourceRole && Number(item.amount) > 0);
+      if (origins.length !== 1 || origins[0].id !== source.id) return false;
+      legacy.forEach(item => {
+        item.moneyId = moneyId;
+        item.moneyRole = roleOf(item);
+        item.moneyRef = { date: source.date, description: source.description, section: source.section, category: source.category };
+      });
+      return true;
+    }
+    async function openCloseDialog(mKey, property, entryId, kind, targetMonth = mKey) {
       if (isViewer) return viewOnly();
       if (!CLOSE_TEXT[kind]) return;
       const scope = panelScope(mKey, property);
-      const section = scope.own().find(item => item.type === 'net' && item.name === sectionName);
-      if (!section) return showToast('Could not find that section here.');
-      // The first close gives the item its link, kept on the section in the month it was put in.
-      if (!section.link) { section.link = newSharedKey('lk'); scope.save(); }
+      const source = transactions.find(item => item.id === entryId && !item.parentId);
+      const section = source && scope.own().find(item => item.type === 'net' && item.name === source.section);
+      if (!source || !section) return showToast('Could not find the original entry here.');
+      const sourceRole = source.moneyRole || ExpenseStore.subsectionRole(section, source.category);
+      if (sourceRole !== CLOSE_TEXT[kind].role || store.entryTotal(source.id) <= 0) {
+        return showToast('Only a positive original savings, hold, lending, or borrowing entry can be repaid.');
+      }
+      source.moneyRole = CLOSE_TEXT[kind].role;
+      if (!section.link) section.link = newSharedKey('lk');
+      scope.save();
       try {
         await Promise.all(store.linkedSections(section.link, property).map(({ year, monthIndex }) => store.ensureMonth(year, monthIndex)));
       } catch (error) { return showToast('Could not load every month this is in. Try again.'); }
-      const balance = blockBalance(section.link, property);
-      Object.assign(closeState, { link: section.link, name: section.name, kind, property, balance });
+      const moneyId = source.moneyId || newSharedKey('ml');
+      if (!linkLegacyMoneyItems(moneyId, source, kind, section.link, property)) {
+        return showToast('This section has older repayments shared by multiple original entries. They were left unchanged; start repayments on an unambiguous entry or separate the entries first.');
+      }
+      source.moneyId = moneyId;
+      saveTransactions();
+      const targetCutoff = `${targetMonth}-31`;
+      const balance = moneyBalance(source.moneyId, property, kind, targetCutoff);
+      if (balance <= 0) return showToast(`Nothing remains open for “${source.description}”.`);
+      Object.assign(closeState, {
+        moneyId: source.moneyId, link: section.link, sourceDate: source.date, sourceDescription: source.description,
+        sourceSection: source.section, sourceCategory: source.category, kind, property, balance
+      });
       const text = CLOSE_TEXT[kind];
       const form = document.querySelector('#close-form');
       const today = new Date();
-      form.elements.date.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      form.elements.amount.value = (Math.abs(balance) / 100).toFixed(2);
-      form.elements.rest.checked = kind === 'hold';
+      const [targetYear, targetMonthIndex] = yearMonthOf(targetMonth);
+      const day = Math.min(today.getDate(), new Date(targetYear, targetMonthIndex + 1, 0).getDate());
+      form.elements.date.value = `${targetMonth}-${String(day).padStart(2, '0')}`;
+      form.elements.amount.value = '';
+      form.elements.rest.checked = false;
       document.querySelector('#close-title').textContent = text.title;
-      document.querySelector('#close-where').textContent = `${regions[property]?.code || property} · ${section.name}`;
+      document.querySelector('#close-where').textContent = `${regions[property]?.code || property} · ${source.description}`;
       document.querySelector('#close-amount-label').textContent = text.amount;
       document.querySelector('#close-rest-label').textContent = text.rest;
       document.querySelector('#close-rest').hidden = !text.rest;
-      document.querySelector('#close-open').textContent = `Still open: ${formatMoney(Math.abs(balance), property)}. It is written in the month of the date below, linked to this one.`;
+      document.querySelector('#close-open').textContent = `Still open on this entry: ${formatMoney(balance, property)}. Enter a partial amount or the full amount; each repayment is dated and linked to this original entry.`;
       document.querySelector('#close-error').hidden = true;
       document.querySelector('#close-dialog').showModal();
       form.elements.amount.focus();
+    }
+    const MONEY_SOURCE_ROLES = {
+      savings: { source: 'save', other: new Set(['return']) },
+      hold: { source: 'hold', other: new Set(['kept']) },
+      lent: { source: 'lend', other: new Set(['earned', 'writeoff']) },
+      borrowed: { source: 'borrow', other: new Set(['charged']) }
+    };
+    function unlinkedMoneyBalance(source, kind, section, throughDate) {
+      const amount = Math.max(0, store.entryTotal(source.id));
+      if (!section?.link) return amount;
+      const locations = store.linkedSections(section.link, source.property)
+        .filter(location => `${keyOf(location.year, location.monthIndex)}-31` <= throughDate);
+      const locationKeys = new Set(locations.map(location => `${keyOf(location.year, location.monthIndex)}|${location.section.name}`));
+      const linked = transactions.filter(item => !item.parentId && !item.moneyId && !item.moneyRef
+        && item.property === source.property && item.date <= throughDate
+        && locationKeys.has(`${item.date.slice(0, 7)}|${item.section}`));
+      const accounting = MONEY_SOURCE_ROLES[kind];
+      const roleOf = item => {
+        const owner = locations.find(location => keyOf(location.year, location.monthIndex) === item.date.slice(0, 7)
+          && location.section.name === item.section)?.section;
+        return item.moneyRole || ExpenseStore.subsectionRole(owner, item.category);
+      };
+      const origins = linked.filter(item => roleOf(item) === accounting.source && store.entryTotal(item.id) > 0);
+      if (origins.length !== 1 || origins[0].id !== source.id) return amount;
+      const legacyRows = linked.filter(item => roleOf(item) === accounting.source || accounting.other.has(roleOf(item)))
+        .map(item => ({ ...item, moneyId: 'legacy-preview', moneyRole: roleOf(item) }));
+      return ExpenseStore.linkedMoneyBalance('legacy-preview', kind, legacyRows, item => store.entryTotal(item.id));
+    }
+    async function openMoneyPicker(mKey, property) {
+      if (isViewer) return viewOnly();
+      const [targetYear, targetMonthIndex] = yearMonthOf(mKey);
+      const cutoff = `${mKey}-31`;
+      const locations = [];
+      store.yearIds().forEach(year => {
+        if (Number(year) > targetYear) return;
+        const lastMonth = Number(year) === targetYear ? targetMonthIndex : 11;
+        for (let monthIndex = 0; monthIndex <= lastMonth; monthIndex++) {
+          store.sections(year, monthIndex, property).forEach(section => {
+            const kind = ExpenseStore.sectionKind(section);
+            if (section.type === 'net' && MONEY_SOURCE_ROLES[kind]) locations.push({ year: Number(year), monthIndex, section, kind });
+          });
+        }
+      });
+      try {
+        await Promise.all([...new Map(locations.map(location => [
+          keyOf(location.year, location.monthIndex), [location.year, location.monthIndex]
+        ])).values()].map(([year, monthIndex]) => store.ensureMonth(year, monthIndex)));
+      } catch (error) {
+        console.error('Could not load open savings, holds, or loans.', error);
+        return showToast('Could not load all outstanding amounts. Try again.');
+      }
+      const locationByKey = new Map(locations.map(location => [
+        `${keyOf(location.year, location.monthIndex)}|${location.section.name}`, location
+      ]));
+      const sources = transactions.filter(item => !item.parentId && !item.eventId && item.property === property
+        && item.type === 'net' && item.date <= cutoff && locationByKey.has(`${item.date.slice(0, 7)}|${item.section}`))
+        .map(source => {
+          const location = locationByKey.get(`${source.date.slice(0, 7)}|${source.section}`);
+          const kind = location.kind;
+          const role = source.moneyRole || ExpenseStore.subsectionRole(location.section, source.category);
+          if (role !== MONEY_SOURCE_ROLES[kind].source || store.entryTotal(source.id) <= 0) return null;
+          const balance = source.moneyId
+            ? moneyBalance(source.moneyId, property, kind, cutoff)
+            : unlinkedMoneyBalance(source, kind, location.section, cutoff);
+          return balance > 0 ? { source, kind, balance } : null;
+        }).filter(Boolean).sort((a, b) => a.source.date.localeCompare(b.source.date)
+          || a.source.description.localeCompare(b.source.description));
+      const list = document.querySelector('#money-picker-list');
+      const groups = Object.keys(MONEY_SOURCE_ROLES).map(kind => {
+        const entries = sources.filter(item => item.kind === kind);
+        if (!entries.length) return '';
+        const title = window.LedgerBlueprints.GROUPS[kind].title;
+        return `<section class="money-pick-group"><h3>${escapeHtml(title)}</h3><div>${entries.map(({ source, balance }) =>
+          `<button type="button" class="money-pick-source" data-money-pick-source="${escapeHtml(source.id)}" data-money-pick-kind="${kind}">
+            <span><strong>${escapeHtml(source.description)}</strong><small>${monthLabel(new Date(Number(source.date.slice(0, 4)), Number(source.date.slice(5, 7)) - 1, 1))} · ${escapeHtml(source.section)}</small></span>
+            <span class="money-pick-balance"><strong>${formatMoney(balance, property)}</strong><small>${CLOSE_TEXT[kind].menu.replace('…', '')}</small></span>
+          </button>`).join('')}</div></section>`;
+      }).join('');
+      list.innerHTML = groups || `<p class="ledger-none">No open savings, holds, or loans found through ${monthLabel(new Date(targetYear, targetMonthIndex, 1))}.</p>`;
+      document.querySelector('#money-picker-where').textContent = `${regions[property]?.code || property} · recording in ${monthLabel(new Date(targetYear, targetMonthIndex, 1))}`;
+      const dialog = document.querySelector('#money-picker-dialog');
+      dialog.dataset.targetMonth = mKey;
+      dialog.showModal();
     }
     // The entries a close writes: what came back against the balance, and what is left over or kept, by kind.
     function closeParts(kind, balance, amount, closeRest) {
@@ -312,54 +432,84 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         parts.push(['Repaid', 'borrow', -back]);
         if (extra) parts.push(['Interest paid', 'charged', extra]);
       }
-      return { parts: parts.filter(([, , value]) => value), closed: closeRest ? true : amount >= balance };
+      return { parts: parts.filter(([, , value]) => value) };
     }
     async function saveClose(form) {
       const error = document.querySelector('#close-error');
       const fail = message => { error.textContent = message; error.hidden = false; };
-      const { link, name, kind, property, balance } = closeState;
+      const { moneyId, link, sourceDate, sourceDescription, sourceSection, sourceCategory, kind, property } = closeState;
       const date = form.elements.date.value;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Pick the date it happened.');
+      const [dateYear, dateMonth, dateDay] = date.split('-').map(Number);
+      const checkedDate = new Date(dateYear, dateMonth - 1, dateDay);
+      if (checkedDate.getFullYear() !== dateYear || checkedDate.getMonth() !== dateMonth - 1 || checkedDate.getDate() !== dateDay) {
+        return fail('Pick a valid date.');
+      }
       const amount = Math.round(Number(String(form.elements.amount.value).replace(/[,\s]/g, '')) * 100);
       if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount above zero.');
-      if (kind === 'hold' && amount > balance) return fail(`Only ${formatMoney(balance, property)} is on hold.`);
-      const year = Number(date.slice(0, 4));
-      const monthIndex = Number(date.slice(5, 7)) - 1;
+      const year = dateYear;
+      const monthIndex = dateMonth - 1;
       if (!store.year(year)) return fail(`${year} is not set up yet. Set it up in Year settings first.`);
       try { await store.ensureMonth(year, monthIndex); } catch (problem) { return fail('Could not load that month. Try again.'); }
-      const { parts, closed } = closeParts(kind, balance, amount, form.elements.rest.checked);
+      const source = sourceOfMoneyId(moneyId);
+      if (!source || source.date !== sourceDate || source.property !== property) return fail('The original entry could not be found. Reload and try again.');
+      if (date < sourceDate) return fail('The repayment or return cannot be dated before the original entry.');
+      const currentBalance = moneyBalance(moneyId, property, kind, date);
+      if (currentBalance <= 0) return fail('Nothing remains open on this entry.');
+      if (kind === 'hold' && amount > currentBalance) return fail(`Only ${formatMoney(currentBalance, property)} is on hold.`);
+      const { parts } = closeParts(kind, currentBalance, amount, form.elements.rest.checked);
       const sections = store.ownSections(year, monthIndex, property);
       let section = sections.find(item => item.type === 'net' && item.link === link)
-        || sections.find(item => item.type === 'net' && item.name === name && ExpenseStore.sectionKind(item) === kind && !item.link);
-      if (!section && sections.some(item => item.name === name)) return fail(`That month already has a different section called “${name}”. Rename one of them first.`);
-      if (!section) sections.push(section = { name, type: 'net', kind, block: true, subsections: [], roles: {}, calc: ExpenseStore.defaultCalc(kind) });
+        || sections.find(item => item.type === 'net' && item.name === sourceSection && ExpenseStore.sectionKind(item) === kind && !item.link);
+      if (!section && sections.some(item => item.name === sourceSection)) return fail(`That month already has a different section called “${sourceSection}”. Rename one of them first.`);
+      if (!section) sections.push(section = { name: sourceSection, type: 'net', kind, block: true, subsections: [], roles: {}, calc: ExpenseStore.defaultCalc(kind) });
       section.link = link;
-      const stamp = Date.now();
       parts.forEach(([label, role, value], index) => {
         const sub = ExpenseStore.safeKey(label);
         if (!section.subsections.includes(sub)) section.subsections.push(sub);
         (section.roles ||= {})[sub] = role;
-        transactions.push({ id: `new-${stamp}-c${index}`, property, date, section: section.name, category: sub, description: `${name}: ${label.toLowerCase()}`, place: '', amount: value, type: 'net' });
-      });
-      // Once nothing is open, every linked month shows it as settled.
-      const writes = [store.saveMonthSections(year, monthIndex, property, sections)];
-      if (closed) {
-        store.linkedSections(link, property).forEach(({ year: y, monthIndex: m, section: own }) => {
-          own.closed = true;
-          own.closedOn = date;
-          if (y !== year || m !== monthIndex) writes.push(store.saveMonthSections(y, m, property, store.ownSections(y, m, property)));
+        const description = role === CLOSE_TEXT[kind].role
+          ? `${CLOSE_TEXT[kind].transaction} “${sourceDescription}”`
+          : `${label} for “${sourceDescription}”`;
+        transactions.push({
+          id: `${newRowId()}-c${index}`, property, date, section: section.name, category: sub, description, place: '',
+          amount: value, type: 'net', moneyId, moneyRole: role, moneyRef: {
+            date: sourceDate, description: sourceDescription, section: sourceSection, category: sourceCategory
+          }
         });
-      }
-      trackSave(Promise.all(writes));
+      });
+      trackSave(store.saveMonthSections(year, monthIndex, property, sections));
       saveTransactions();
       document.querySelector('#close-dialog').close();
       renderLedger();
-      showToast(`Written in ${monthLabel(new Date(year, monthIndex, 1))}, linked to “${name}”.${closed ? ' Nothing is open now.' : ''}`);
+      showToast(`Written in ${monthLabel(new Date(year, monthIndex, 1))}, linked to “${sourceDescription}”.`);
+    }
+    async function openMoneySource(date, property, moneyId) {
+      const year = Number(date.slice(0, 4));
+      const monthIndex = Number(date.slice(5, 7)) - 1;
+      try { await store.ensureMonth(year, monthIndex); } catch (error) {
+        return showToast(`Could not load the original entry from ${monthLabel(new Date(year, monthIndex, 1))}.`);
+      }
+      const source = sourceOfMoneyId(moneyId);
+      if (!source || source.property !== property || source.date !== date) return showToast('The original entry could not be found.');
+      return openSearchResult({
+        year, mKey: keyOf(year, monthIndex), property, entryId: source.id, noteId: null, category: source.category
+      });
     }
     function setupCloseDialog() {
       const form = document.querySelector('#close-form');
       if (!form) return;
       form.addEventListener('submit', event => { event.preventDefault(); saveClose(form); });
+      const picker = document.querySelector('#money-picker-dialog');
+      document.querySelector('#money-picker-list').addEventListener('click', event => {
+        const choice = event.target.closest('[data-money-pick-source]');
+        if (!choice) return;
+        const source = transactions.find(item => item.id === choice.dataset.moneyPickSource && !item.parentId);
+        const { moneyPickKind: kind } = choice.dataset;
+        if (!source || !CLOSE_TEXT[kind]) return showToast('That original entry is no longer available.');
+        picker.close();
+        return openCloseDialog(source.date.slice(0, 7), source.property, source.id, kind, picker.dataset.targetMonth);
+      });
     }
     // Opens a linked month (from the link on a section's heading).
     function openLinkedMonth(mKey, property) {
@@ -1135,6 +1285,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         amount: Math.round(amount * 100),
         formula: parsed.formula || undefined
       });
+      if (item.moneyId && !item.moneyRef) {
+        transactions.filter(linked => linked.moneyId === item.moneyId && linked.moneyRef).forEach(linked => {
+          linked.moneyRef = { ...linked.moneyRef, date: item.date, description: item.description };
+        });
+      }
       if (!isNote) {
         if (refDate) { item.refDate = refDate; item.refKey ||= newSharedKey('rf'); }
         else { delete item.refDate; delete item.refKey; }
@@ -1174,6 +1329,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         editDraft = null;
         renderLedger();
         return showToast('Nothing to delete. Refresh and try again.');
+      }
+      if (['entry', 'category'].includes(kind) && rows.some(row => row.moneyId && !row.moneyRef
+        && transactions.some(item => item.moneyId === row.moneyId && item.moneyRef))) {
+        return showToast('This original entry has linked repayments. Delete those linked entries first.');
       }
       const ids = new Set(rows.map(item => item.id));
       const doomed = new Set(transactions.filter(item => ids.has(item.id) || ids.has(item.parentId)));
@@ -1466,7 +1625,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // search jump) matches against what is stored, so reading the drawn text would silently miss the row it meant.
     const catName = cat => cat?.dataset.category ?? cat?.querySelector('.ledger-cat-name')?.textContent.trim() ?? '';
     // Controls that live inside a row but act on their own: a click on one is not a click on the row around it.
-    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block]';
+    const ROW_BUTTONS = '[data-sort-cat], [data-panel-expand], [data-section-close], [data-group-merge], [data-about], [data-posted-section], [data-posted-block], [data-money-open]';
     function setupLedger() {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
@@ -1498,6 +1657,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           event.preventDefault();
           event.stopPropagation();
           return openLinkedMonth(linkChip.dataset.linkMonth, linkChip.dataset.linkProperty);
+        }
+        const moneyLink = event.target.closest('[data-money-open]');
+        if (moneyLink) {
+          event.preventDefault();
+          event.stopPropagation();
+          return openMoneySource(moneyLink.dataset.moneyDate, moneyLink.dataset.moneyProperty, moneyLink.dataset.moneyOpen);
         }
         const dayOrb = event.target.closest('[data-day-orb]');
         if (dayOrb) {
@@ -2873,7 +3038,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       } else {
         const income = item.type === 'income';
         const body = `<div class="day-row"><span class="day-when">${escapeHtml(item.date.slice(8))}</span><span class="day-what"><span class="ledger-entry-desc">${escapeHtml(item.description)}</span>${item.place ? `<small>${escapeHtml(item.place)}</small>` : ''}</span><span class="day-amt">${money(item.amount)}</span></div>`
-          + (item.type === 'expense' && !isViewer ? `<div class="day-sec-foot"><button type="button" class="quiet-button day-share" data-day-share="${escapeHtml(item.id)}">Mark as shared…</button></div>` : '');
+          + (item.type === 'expense' && !isViewer ? `<div class="day-sec-foot"><button type="button" class="quiet-button day-share" data-day-share="${escapeHtml(item.id)}" aria-label="Mark as shared" title="Mark as shared"><i class="ti ti-check" aria-hidden="true"></i></button></div>` : '');
         summary.innerHTML = daySection(income ? 'Income' : 'Expenses', money(item.amount), income ? 'income' : 'expense', body);
       }
       renderDayTags(item);
@@ -3951,6 +4116,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = panelScope(mKey, property);
       const copy = carryRow({ ...item, id: newRowId(), property, date: dateIn(mKey, item.date), section, category, ...scope.fields }, type);
       if (!scope.isEvent) delete copy.eventId;
+      delete copy.moneyId;
+      delete copy.moneyRole;
+      delete copy.moneyRef;
       // What a repayment covered names the
       // subsections of the settlement it was written in, and a copy landing anywhere else would be naming things
       // that are not there — so it arrives saying nothing about what it covers, to be said again where it lands.
@@ -3980,6 +4148,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function foldSubsectionIntoEntry(from, into, category, mKey, property) {
       const scope = panelScope(mKey, property);
       const rows = entriesOf(from.mKey, from.property, from.type, from.section, from.name);
+      if (rows.some(row => row.moneyId)) {
+        showToast('Linked money entries cannot be folded into another entry.');
+        return null;
+      }
       const date = scope.isEvent ? (rows[0]?.date || ledgerCtx.today()) : NO_DAY(`${mKey}-01`);
       const parent = carryRow({
         id: newRowId(), property, date, section: into.name, category,
@@ -3991,6 +4163,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           section: into.name, category, amount, ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
         delete note.split;
         delete note.alloc;
+        delete note.moneyId;
+        delete note.moneyRole;
+        delete note.moneyRef;
         if (!scope.isEvent) delete note.eventId;
         notes.push(note);
       };
@@ -4018,6 +4193,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           category: name, amount: Number(row.amount), ...(Array.isArray(row.tags) ? { tags: [...row.tags] } : {}), ...scope.fields }, into.type);
         delete made.parentId;
         if (!scope.isEvent) delete made.eventId;
+        delete made.moneyId;
+        delete made.moneyRole;
+        delete made.moneyRef;
         return made;
       });
       transactions.push(...made);
@@ -4164,6 +4342,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // Moves one entry (and its notes) to another panel, section and subsection: the same rows, re-pointed, so their
     // ids, notes and tags stay with them. Used by a cut; a copy clones instead (see cloneEntry).
     function moveEntry(item, mKey, property, section, category, type = item.type) {
+      if (item.moneyId) {
+        showToast('Linked money entries cannot be moved; copy them if you need an independent entry.');
+        return 0;
+      }
       const scope = panelScope(mKey, property);
       const fromProperty = item.property;
       Object.assign(item, { property, date: dateIn(mKey, item.date), section, category, ...scope.fields });
@@ -4186,6 +4368,15 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const own = scope.own();
       const from = panelScope(clipboard.mKey, clipboard.property);
       const cut = clipboard.mode === 'cut';
+      if (cut) {
+        const selected = clipboard.items.flatMap(pick => {
+          if (pick.id) return transactions.filter(item => item.id === pick.id);
+          if (pick.category && pick.section) return entriesOf(clipboard.mKey, clipboard.property, clipboard.type, pick.section, pick.category);
+          if (pick.section) return entriesOf(clipboard.mKey, clipboard.property, pick.type || clipboard.type, pick.section);
+          return [];
+        });
+        if (selected.some(item => item.moneyId)) return showToast('Linked money entries cannot be moved; copy them if you need an independent entry.');
+      }
       // Where they land decides what they become: the block clicked, falling back to the one they came from.
       const intoType = target.type || clipboard.type;
       const sectionFor = name => own.find(item => item.type === intoType && item.name === name) || own.find(item => item.type === intoType);
@@ -4406,6 +4597,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // Dropped on a subsection, so it becomes one entry there, carrying what it held as that entry's notes.
         if (target.kind === 'subsection' && target.category) {
           const made = foldSubsectionIntoEntry({ mKey: clipboard.mKey, property: clipboard.property, type: clipboard.type, section: clipboard.section, name: clipboard.name }, into, target.category, mKey, property);
+          if (!made) return;
           saveTransactions();
           revealKey = catKey(mKey, property, into.type, target.category);
           renderLedger();
@@ -4553,7 +4745,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             { icon: 'pig-money', label: 'Add savings pot', hint: 'what you set aside, and what it earns', run: startBlock('savings') },
             { icon: 'lock', label: 'Put money on hold', hint: 'a deposit or advance you expect back', run: startBlock('hold') },
             { icon: 'arrow-up-right', label: 'Lend money', hint: 'given to someone to pay back', run: startBlock('lent') },
-            { icon: 'arrow-down-left', label: 'Borrow money', hint: 'received, to pay back', run: startBlock('borrowed') }
+            { icon: 'arrow-down-left', label: 'Borrow money', hint: 'received, to pay back', run: startBlock('borrowed') },
+            { icon: 'arrow-back-up', label: 'Record a return or repayment…', hint: `from an open savings, hold, or loan entry through ${monthLabel(new Date(...yearMonthOf(mKey), 1))}`, run: () => openMoneyPicker(mKey, property) }
           ]),
           ...pasteAction,
           { icon: 'settings', label: settingsLabel, run: settings }
@@ -4593,7 +4786,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ...(section?.mergedFrom?.length && !section.mergedSections?.length
             ? [{ icon: 'arrow-merge', label: 'Unpack older merge…', hint: 'assign subsections to the original sections', run: () => openLegacyUnpackDialog(mKey, property, target.section) }]
             : []),
-          ...(custom && !isEvent && CLOSE_TEXT[target.kindOf] && !target.closed ? [{ icon: 'arrow-back-up', label: CLOSE_TEXT[target.kindOf].menu, hint: CLOSE_TEXT[target.kindOf].hint, run: () => openCloseDialog(mKey, property, target.section, target.kindOf) }] : []),
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…',
             hint: target.kindOf === 'settlement' ? 'what it posts to Income and Expenses' : 'this section and its subsections',
             run: () => openSectionSetup(mKey, property, target.section) }] : []),
@@ -4646,6 +4838,25 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         { icon: 'pencil', label: 'Rename…', hint: 'in every month of the year', run: edit({ kind: 'year-item', month: target.mKey, property: target.property, type: target.type, section: target.section, category: target.category, item: target.item }) }
       ]);
       if (kind === 'entry') {
+        const moneyItems = (() => {
+          const row = transactions.find(item => item.id === target.id);
+          if (!row || isEvent) return [];
+          if (row.moneyRef && row.moneyId) {
+            return [{
+              icon: 'link', label: `Open original “${row.moneyRef.description}”`,
+              hint: `from ${monthLabel(new Date(Number(row.moneyRef.date.slice(0, 4)), Number(row.moneyRef.date.slice(5, 7)) - 1, 1))}`,
+              run: () => openMoneySource(row.moneyRef.date, row.property, row.moneyId)
+            }];
+          }
+          if (row.type !== 'net') return [];
+          const section = panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === row.section);
+          if (!section) return [];
+          const role = row.moneyRole || ExpenseStore.subsectionRole(section, row.category);
+          const kind = Object.keys(CLOSE_TEXT).find(candidate => role === CLOSE_TEXT[candidate].role);
+          return kind && store.entryTotal(row.id) > 0
+            ? [{ icon: 'arrow-back-up', label: CLOSE_TEXT[kind].menu, hint: CLOSE_TEXT[kind].hint, run: () => openCloseDialog(mKey, property, row.id, kind) }]
+            : [];
+        })();
         // Money laid out for a group is divided, so the entry itself says how much of it was mine. Only such an entry
         // is asked: a repayment, a savings pot or an ordinary expense has nothing to split. The choices sit together
         // on one row, each drawn as the share of a circle it stands for — the whole of it, a half, a third, a
@@ -4692,6 +4903,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return write([
           { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
           ...sharedAction(target.id),
+          ...moneyItems,
           ...splitItems,
           ...allocItems,
           { icon: 'corner-down-right', label: 'Add note', run: add },

@@ -53,14 +53,14 @@
 
   <dialog class="modal day-dialog" id="day-dialog" aria-labelledby="day-title">
     <div class="day-pop">
+      <div class="day-bottom">
+        <div class="day-tags-head"><h3>Hashtags</h3><span>Tags for this entry</span></div>
+        <div id="day-tags"></div>
+      </div>
       <div class="day-top">
         <div class="day-head"><div><p id="day-when"></p><h2 id="day-title"></h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
         <div class="day-summary" id="day-summary" aria-live="polite"></div>
         <ul class="series-list" id="day-series"></ul>
-      </div>
-      <div class="day-bottom">
-        <h3>Hashtags</h3>
-        <div id="day-tags"></div>
       </div>
     </div>
   </dialog>
@@ -116,6 +116,12 @@
       <p class="settings-error" id="close-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
     </form>
+  </dialog>
+  <dialog class="modal month-dialog money-picker-dialog" id="money-picker-dialog" aria-labelledby="money-picker-title">
+    <div class="modal-header"><div><p id="money-picker-where"></p><h2 id="money-picker-title">Choose an open amount</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <p class="shared-hint">Choose the original savings, hold, or loan entry. The return or repayment will be recorded in this month and linked back to that entry.</p>
+    <div class="money-picker-list" id="money-picker-list"></div>
+    <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button></div>
   </dialog>
   <dialog class="modal month-dialog date-pick-dialog" id="date-pick-dialog" aria-labelledby="date-pick-title">
     <form id="date-pick-form" novalidate>

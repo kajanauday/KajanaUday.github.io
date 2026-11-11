@@ -43,11 +43,11 @@
       const daysAway = isFuture ? Math.ceil((new Date(year, monthIndex, 1) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000) : 0;
       const rows = currencies.map(currency => {
         const totals = this.store.monthTotals(year, monthIndex, currency);
-        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
+        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing, entries: totals.entries, ...totals.holdings };
       });
       // An upcoming month with entries (planned income or expenses) shows its figures like any month, so the future can
       // be planned; one with nothing in it shows when it starts.
-      const planned = rows.some(row => row.income || row.expense);
+      const planned = rows.some(row => row.entries || row.income || row.expense || row.saved || row.held || row.lent || row.borrowed);
       return B().MonthSummary(rows, { isFuture: isFuture && !planned, daysAway, slots: this.store.currencyKeys(), ...options }, this.ctx);
     }
 
@@ -122,15 +122,11 @@
       const shown = this.shownCurrencies(mKey, currencies, state);
       const rows = currencies.map(currency => {
         const totals = this.store.yearTotals(year, currency);
-        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
+        const holdings = this.store.yearHoldings(year, currency).open;
+        return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing, ...holdings };
       });
-      const summary = () => B().YearSummary(shown.map(currency => {
-        const totals = this.store.yearTotals(year, currency);
-        const { own, open: still } = this.store.yearHoldings(year, currency);
-        return { property: currency, income: totals.own?.income ?? totals.income, expenses: totals.own?.expenses ?? totals.expenses, savedIn: own.savedIn, saved: still.saved, returns: own.returns, held: still.held, lent: still.lent, borrowed: still.borrowed };
-      }), this.ctx);
       const panelsHtml = !open ? '' : this.store.isYearLoaded(year)
-        ? summary() + shown.map(currency => B().CurrencyPanel(this.store.yearbook(year, currency), { mKey }, state, this.ctx)).join('')
+        ? shown.map(currency => B().CurrencyPanel(this.store.yearbook(year, currency), { mKey }, state, this.ctx)).join('')
         : `<p class="ledger-none">Loading every month of ${year}…</p>`;
       return B().MonthBlock({
         mKey,

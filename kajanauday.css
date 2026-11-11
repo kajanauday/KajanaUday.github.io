@@ -245,6 +245,15 @@
     .ms-kv { min-width: 7ch; display: inline-flex; align-items: baseline; justify-content: flex-end; font: 700 13.5px var(--display); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
     .ms-unit { margin-left: 1px; font: 400 9.5px var(--sans); letter-spacing: .02em; opacity: .5; }
     .ms-kv + .ms-kv { min-width: 9ch; }
+    .ms-kv.is-holding { min-width: 7ch; gap: 2px; }
+    .ms-kv.is-holding.savings { color: #1d4ed8; }
+    .ms-kv.is-holding.held { color: #64748b; }
+    .ms-kv.is-holding.lent { color: #7c3aed; }
+    .ms-kv.is-holding.borrowed { color: #db2777; }
+    :root:not([data-theme="light"]) .ms-kv.is-holding.savings { color: #3b82f6; }
+    :root:not([data-theme="light"]) .ms-kv.is-holding.held { color: #94a3b8; }
+    :root:not([data-theme="light"]) .ms-kv.is-holding.lent { color: #a78bfa; }
+    :root:not([data-theme="light"]) .ms-kv.is-holding.borrowed { color: #f472b6; }
     .ms-kv + .ms-kv::before { content: "·"; padding: 0 6px; color: var(--line-strong); font-weight: 700; }
     .ms-code { min-width: 4ch; margin-right: 8px; color: var(--muted); font-weight: 600; }
     .ms-kv.income { color: var(--income); }
@@ -252,7 +261,6 @@
     .ms-kv.balance { color: var(--ink); }
     .ms-kv.is-zero:not(.balance) { opacity: .45; }
     /* A month with no entries shows only what it carries: each currency's balance. */
-    .month-block.is-empty:not(.is-open) .ms-kv:not(.balance) { display: none; }
     .month-block.is-empty:not(.is-open) .ms-kv.balance { color: var(--muted); }
     .month-block.is-empty:not(.is-open) .ms-kv.balance::before { content: none; }
     @media (min-width: 701px) {
@@ -283,7 +291,7 @@
     .month-ledger-head { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
     .month-ledger-head h2 { margin: 0; font: 700 14.5px var(--display); }
     .month-ledger-toggle { min-height: 30px; margin-left: auto; font-size: 12px; }
-    .ledger-panel { container-type: inline-size; min-width: 0; display: grid; gap: 4px; padding: 10px 14px 6px; border: 1px solid var(--edge); border-top: 3px solid var(--accent); border-radius: var(--radius); background: var(--tint); box-shadow: var(--shadow); }
+    .ledger-panel { container-type: inline-size; min-width: 0; display: grid; gap: 4px; padding: 10px 10px 6px; border: 1px solid var(--edge); border-top: 3px solid var(--accent); border-radius: var(--radius); background: var(--tint); box-shadow: var(--shadow); }
     .ledger-panel-head { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
     .ledger-panel-head h3 { display: flex; align-items: center; gap: 7px; margin: 0; font: 700 14px var(--display); }
     .ledger-panel-head h3 small { color: var(--muted); font: 500 10px var(--mono); }
@@ -293,9 +301,9 @@
     .ledger-totals span.income { color: var(--income); }
     .ledger-totals span.expense { color: var(--expense); }
     .ledger-totals span.balance { color: var(--ink); }
-    .ledger-sections { display: grid; gap: 0; align-items: start; }
+    .ledger-sections { display: grid; gap: 6px; align-items: start; }
     .ledger-type-section { border: 0; background: transparent; padding: 0; margin: 0; }
-    .ledger-type-section + .ledger-type-section { border-top: 1px solid var(--line); }
+    .ledger-type-section + .ledger-type-section { border-top: 0; }
     .ledger-type-section > summary { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; cursor: pointer; list-style: none; user-select: none; gap: 16px; }
     .ledger-type-section > summary::-webkit-details-marker { display: none; }
     .ledger-type-section > summary strong { font: 500 12.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
@@ -339,6 +347,10 @@
     .ledger-entry-cell { display: grid; grid-template-columns: var(--entry-cols); align-items: center; gap: 6px; min-height: 30px; padding: 3px 0; border-top: 1px dotted var(--line); color: var(--ink); font-size: 14px; }
     .ledger-entry-cell:first-child { border-top: none; }
     .ledger-entry-line { grid-column: 1 / -1; min-width: 0; min-height: 26px; display: grid; grid-template-columns: subgrid; align-items: center; border-radius: 5px; transition: background-color .12s; }
+    .money-ref-link { grid-column: 2 / -1; justify-self: start; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font: 500 10.5px var(--sans); text-align: left; }
+    .money-ref-link:hover, .money-ref-link:focus-visible { background: var(--hover); color: var(--brand-strong); outline: none; }
+    .money-ref-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .money-ref-link i { flex: none; font-size: 11px; }
     .ledger-entry-line.has-notes { cursor: pointer; }
     .ledger-entry-line:hover { background: var(--hover); }
     .ledger-notes { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
@@ -456,7 +468,7 @@
     }
     /* Light cards: soft sapphire for India and warm parchment for Japan, with a white gloss along the top edge. */
     :root[data-theme="light"] .ledger-panel {
-      --card: #edf2fb; --halo: rgba(37, 99, 235, .12);
+      --card: color-mix(in srgb, #edf2fb 90%, #3b6fd4 10%); --halo: rgba(37, 99, 235, .12);
       --ink: #13213f; --text: #22314f; --muted: #4e5e86; --note: #3b4a6e;
       --line: rgba(19, 33, 63, .12); --line-soft: rgba(19, 33, 63, .07); --line-strong: rgba(19, 33, 63, .28);
       --surface: rgba(255, 255, 255, .7); --surface-soft: rgba(255, 255, 255, .85);
@@ -464,7 +476,7 @@
       --expense: #b3261e; --expense-soft-text: #b3261e;
     }
     :root[data-theme="light"] .ledger-panel.japan {
-      --card: #fbf1e9; --halo: rgba(194, 65, 12, .12);
+      --card: color-mix(in srgb, #fbf1e9 90%, #d9822b 10%); --halo: rgba(194, 65, 12, .12);
       --ink: #3a1c10; --text: #4a2a1c; --muted: #7a5241; --note: #5e3c2d;
       --line: rgba(58, 28, 16, .12); --line-soft: rgba(58, 28, 16, .07); --line-strong: rgba(58, 28, 16, .28); --edge: rgba(58, 28, 16, .1); --base-shadow: rgba(58, 28, 16, .08);
       --expense: #b3261e; --expense-soft-text: #b3261e;
@@ -632,13 +644,14 @@
     .month-tag.ms-cur .ms-code { min-width: 0; margin-right: 8px; font-size: 11px; letter-spacing: .04em; }
     @media (max-width: 700px) {
       /* Phone: the name above, the packs side by side below it (wrapping only if they cannot fit). */
-      .month-block:not(.is-open) .month-summary { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 6px; margin: 0 0 0 8px; }
-      .month-tag.ms-cur { flex: 0 1 auto; margin-left: 0; padding: 2px 7px; }
+      .month-block:not(.is-open) .month-summary { display: flex; flex: 1 0 100%; flex-wrap: nowrap; gap: 6px; margin: 0 0 0 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+      .month-tag.ms-cur { flex: 0 0 auto; margin-left: 0; padding: 2px 7px; }
       .month-tag.ms-cur .ms-code { margin-right: 5px; font-size: 10px; }
       .month-tag.ms-cur .ms-kv { min-width: 0; font-size: 12.5px; }
+      .month-tag.ms-cur .ms-kv.is-holding { min-width: 0; }
       .month-tag.ms-cur .ms-kv + .ms-kv::before { padding: 0 4px; }
       /* An empty month stays on one line: each currency's balance pack beside the name. */
-      .month-block.is-empty:not(.is-open) .month-summary { flex: 0 1 auto; margin-left: auto; }
+      .month-block.is-empty:not(.is-open) .month-summary { flex: 1 0 100%; margin-left: 8px; }
     }
     /* Packs, tightened: no outline, amounts only as wide as they are (a small dot between them), and a modest gap
        between the INR and JPY groups. */
@@ -666,7 +679,7 @@
     @media (max-width: 700px) {
       /* Open month on a phone: name and Expand all on the first line, the currency toggles below. */
       .month-block.is-open .month-ledger-head { flex-wrap: wrap; }
-      .month-block.is-open .month-summary { order: 3; display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 0 8px; }
+      .month-block.is-open .month-summary { order: 3; display: flex; flex: 1 0 100%; flex-wrap: nowrap; gap: 4px 16px; margin: 0 0 0 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
     }
     /* Wide screens: every month's figures in fixed columns. Each currency is a code (36px) and three right-aligned
        slots (70px: room for −13.135K), so all incomes end on one vertical line, all expenses on another and all balances
@@ -679,7 +692,7 @@
       .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: 70px; min-width: 70px; justify-content: flex-end; }
       .month-tag.ms-cur .ms-kv + .ms-kv::before { content: none; }
       .month-tag.ms-cur.is-placeholder { width: calc(36px + 3 * 70px + 2px); visibility: hidden; }
-      .month-block.is-empty:not(.is-open) .month-tag.ms-cur .ms-kv:not(.balance) { display: inline-flex; visibility: hidden; }
+      .month-tag.ms-cur.is-placeholder.has-holdings { width: calc(36px + 7 * 70px + 2px); }
       .month-block.is-event .month-ledger-head h2 { min-width: 260px; }
     }
     @media (max-width: 700px) {
@@ -694,6 +707,7 @@
       .month-tag.ms-cur .ms-code { width: 30px; }
       .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: 60px; min-width: 60px; }
       .month-tag.ms-cur.is-placeholder { width: calc(30px + 3 * 60px + 2px); }
+      .month-tag.ms-cur.is-placeholder.has-holdings { width: calc(30px + 7 * 60px + 2px); }
     }
 
     /* Currency panels: headed by the code alone (INR, JPY), with a small expand / collapse-all control at the end of the
@@ -711,6 +725,9 @@
       .month-tag.ms-cur .ms-kv, .month-tag.ms-cur .ms-kv + .ms-kv { width: var(--ms-slot, 52px); min-width: var(--ms-slot, 52px); }
       .month-tag.ms-cur.is-placeholder { width: calc(26px + 3 * var(--ms-slot, 52px) + 2px); }
     }
+    .month-tag.ms-cur .ms-kv,
+    .month-tag.ms-cur .ms-kv + .ms-kv { width: var(--ms-slot, 52px); min-width: var(--ms-slot, 52px); }
+    .month-tag.ms-cur.is-placeholder.has-holdings { width: calc(26px + 7 * var(--ms-slot, 52px) + 2px); }
     /* The panel's expand / collapse-all control leads its header, in line with the subsection chevrons below it, so it
        reads as the same kind of control; the totals keep the right edge. */
     .ledger-panel-head { gap: 8px; }
@@ -1126,7 +1143,7 @@ details.ledger-carry.is-balance.has-parts[open] > summary > i { transform: rotat
 @media (prefers-reduced-motion: reduce) { .row-menu, .row-menu.is-sheet { transition: none; } }
 /* The year card: the first card of a year's list, the year's months as one ledger. Inside a subsection, each month's
    entries follow a "from <Month>" line with what that month came to; the month name opens the month there. */
-.month-block.is-year { margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
+.month-block.is-year { margin-bottom: 10px; padding-bottom: 12px; }
 .month-block.is-year + .month-block { border-top: 0; }
 .ledger-month-from { min-height: 28px; display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 4px; border-bottom: 1px dashed var(--line); color: var(--muted); font-size: 12.5px; }
 .ledger-month-from:first-child { margin-top: 0; }
@@ -1252,8 +1269,6 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 /* The two blocks that hold every custom section. Each one is a little heavier than Income and Expenses, so the eye
    reads the panel as Expenses / Income / Settlements / Savings and the sections inside them as one level down. */
 .ledger-type-section.is-group > summary { gap: 8px; }
-.ledger-group-icon { flex: none; color: var(--brand); font-size: 14px; }
-.ledger-type-section.is-savings > summary .ledger-group-icon { color: var(--income-2); }
 .ledger-group-count { flex: none; min-width: 17px; padding: 0 5px; border-radius: 99px; background: var(--surface-soft); color: var(--muted); font: 500 10px/16px var(--mono); text-align: center; }
 .ledger-type-section.is-group > div { gap: 0; padding-bottom: 10px; }
 /* A section inside a block is set in from its heading and carries a hairline, so its rows never read as the block's own. */
@@ -1281,6 +1296,26 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .ledger-settled > summary > i { transition: transform .15s; font-size: 12px; }
 .ledger-settled[open] > summary > i { transform: rotate(90deg); }
 .ledger-settled > summary small { padding: 0 6px; border-radius: 99px; background: var(--surface-soft); font: 500 10px/16px var(--mono); letter-spacing: 0; }
+.year-settled-account { margin: 4px 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--surface-soft); }
+.year-settled-account > summary { min-height: 36px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto 14px; align-items: center; gap: 10px; padding: 5px 10px; cursor: pointer; list-style: none; }
+.year-settled-account > summary::-webkit-details-marker { display: none; }
+.year-settled-account > summary:hover { background: var(--hover); }
+.year-settled-account > summary .year-settled-name { overflow: hidden; color: var(--ink); font: 600 12px var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.year-settled-account > summary small { color: var(--muted); font: 400 10px var(--mono); white-space: nowrap; }
+.year-settled-account > summary strong { padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--income) 22%, transparent); border-radius: 99px; background: color-mix(in srgb, var(--income) 10%, var(--surface)); color: var(--income); font: 700 9px var(--sans); letter-spacing: .06em; text-transform: uppercase; }
+.year-settled-account > summary > i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.year-settled-account[open] > summary > i { transform: rotate(180deg); }
+.year-settled-account ol { display: grid; gap: 0; margin: 0; padding: 2px 10px 7px; border-top: 1px solid var(--line-soft); list-style: none; }
+.year-settled-event { min-height: 28px; display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px dotted var(--line-soft); font-size: 11.5px; }
+.year-settled-event:last-child { border-bottom: 0; }
+.year-settled-event time { color: var(--muted); font: 400 10px var(--mono); white-space: nowrap; }
+.year-settled-event > span { min-width: 0; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.year-settled-event strong { color: var(--brand-strong); font: 600 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 520px) {
+  .year-settled-account > summary { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 7px; }
+  .year-settled-account > summary small { display: none; }
+  .year-settled-event { grid-template-columns: 75px minmax(0, 1fr) auto; gap: 5px; font-size: 10.5px; }
+}
 
 /* What a subsection stands for is chosen here, on its form and in Set up; it is no longer written on the row itself,
    where its word collided with the status a description sets (a "paid" row said paid twice). */
@@ -1502,9 +1537,9 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 :root[data-theme="light"] .day-orb { background: var(--c); color: #ffffff; }
 :root[data-theme="light"] .day-orb:hover, :root[data-theme="light"] .day-orb:focus-visible { background: color-mix(in srgb, var(--c) 85%, #000000); }
 
-/* The day pop-up: the same look as the month pane. Settlements in the top 80%, hashtags in the bottom 20%. */
-.day-dialog { width: min(600px, calc(100% - 26px)); padding: 16px 18px; overflow: hidden; }
-.day-dialog .day-pop { display: grid; grid-template-rows: 4fr 1fr; width: 100%; height: min(78vh, 680px); min-width: 0; }
+/* The day pop-up uses the page's theme, with compact hashtags above the entry or shared-settlement details. */
+.day-dialog { width: min(600px, calc(100% - 26px)); max-height: min(82vh, 720px); padding: 14px 16px; overflow: hidden; }
+.day-dialog .day-pop { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; width: 100%; max-height: calc(min(82vh, 720px) - 28px); min-width: 0; }
 .day-top { overflow: auto; overflow-x: hidden; min-height: 0; }
 .day-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; min-width: 0; }
 .day-head > div { min-width: 0; }
@@ -1522,13 +1557,15 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .day-state.income { color: var(--income); }
 .day-state.expense { color: var(--expense); }
 .day-state.is-settled { color: var(--st-done); }
-.day-bottom { border-top: 1px solid var(--line); padding-top: 10px; overflow: auto; overflow-x: hidden; min-height: 0; display: grid; gap: 8px; align-content: start; }
-.day-bottom h3 { margin: 0; font-size: 11px; font-weight: 400; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.day-bottom { display: grid; gap: 6px; align-content: start; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--surface-soft); }
+.day-tags-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.day-bottom h3 { margin: 0; color: var(--muted); font: 600 10px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+.day-tags-head > span { color: var(--faint); font-size: 10px; }
 .day-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .day-tag-x { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 0 2px; font-size: 11px; }
 .day-none { font-size: 12px; color: var(--muted); }
 .day-add { display: flex; gap: 6px; min-width: 0; }
-.day-add input,  { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; box-sizing: border-box; }
+.day-add input { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; box-sizing: border-box; }
 .day-add input { flex: 1; min-width: 0; }
 .day-dialog .income { color: var(--income); }
 .day-dialog .expense { color: var(--expense); }
@@ -1564,7 +1601,10 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .day-sec-head span.is-settled { color: var(--st-done); }
 .day-sec-note { margin: 0; padding: 8px 12px; color: var(--ink); font-size: 12.5px; line-height: 1.45; }
 .day-sec-foot { display: flex; justify-content: flex-start; padding: 6px 12px 8px; }
-.day-sec-foot .day-settle, .day-sec-foot .day-share { min-height: 28px; margin: 0; padding: 0 12px; font-size: 12.5px; }
+.day-sec-foot .day-settle { min-height: 28px; margin: 0; padding: 0 12px; font-size: 12.5px; }
+.day-sec-foot:has(.day-share) { padding: 3px 12px 5px; }
+.day-sec-foot .day-share { width: 16px; height: 16px; min-height: 16px; display: grid; place-items: center; margin: 0; padding: 0; border-radius: 50%; color: var(--brand); font-size: 9px; line-height: 1; }
+.day-sec-foot .day-share i { font-size: 9px; }
 .day-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; min-height: 36px; padding: 5px 12px; border-top: 1px dotted var(--line); font-size: 13px; color: var(--ink); }
 .day-sec-head + .day-row { border-top: 0; }
 .day-row .day-what { min-width: 0; display: grid; gap: 1px; }
@@ -1619,43 +1659,43 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .year-step { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
 .year-step:hover, .year-step:focus-visible { background: var(--hover); color: var(--ink); outline: none; }
 
-/* ---- Currencies: INR in a light warm orange, JPY in a light cool blue (each card keeps the theme's own contrast) ---- */
+/* ---- Currencies: INR in a light cool blue, JPY in a light warm orange (each card keeps the theme's own contrast) ---- */
 :root[data-theme="light"] .ledger-panel {
-  --card: #fbf1e9; --halo: rgba(194, 65, 12, .12);
-  --ink: #3a1c10; --text: #4a2a1c; --muted: #7a5241; --note: #5e3c2d;
-  --line: rgba(58, 28, 16, .12); --line-soft: rgba(58, 28, 16, .07); --line-strong: rgba(58, 28, 16, .28); --edge: rgba(58, 28, 16, .1); --base-shadow: rgba(58, 28, 16, .08);
-}
-:root[data-theme="light"] .ledger-panel.japan {
-  --card: #edf2fb; --halo: rgba(37, 99, 235, .12);
+  --card: color-mix(in srgb, #edf2fb 90%, #3b6fd4 10%); --halo: rgba(37, 99, 235, .12);
   --ink: #13213f; --text: #22314f; --muted: #4e5e86; --note: #3b4a6e;
   --line: rgba(19, 33, 63, .12); --line-soft: rgba(19, 33, 63, .07); --line-strong: rgba(19, 33, 63, .28); --edge: rgba(19, 33, 63, .1); --base-shadow: rgba(19, 33, 63, .08);
 }
-:root:not([data-theme="light"]) .ledger-panel { --card: #1e1b18; --ink: #ecebe8; --text: #d9d5cf; --muted: #a8a197; --note: #c2bcb3; }
-:root:not([data-theme="light"]) .ledger-panel.japan { --card: #191d24; --ink: #e8e9ec; --text: #d3d6dc; --muted: #9ea4b0; --note: #b8bdc7; }
+:root[data-theme="light"] .ledger-panel.japan {
+  --card: color-mix(in srgb, #fbf1e9 90%, #d9822b 10%); --halo: rgba(194, 65, 12, .12);
+  --ink: #3a1c10; --text: #4a2a1c; --muted: #7a5241; --note: #5e3c2d;
+  --line: rgba(58, 28, 16, .12); --line-soft: rgba(58, 28, 16, .07); --line-strong: rgba(58, 28, 16, .28); --edge: rgba(58, 28, 16, .1); --base-shadow: rgba(58, 28, 16, .08);
+}
+:root:not([data-theme="light"]) .ledger-panel { --card: #191d24; --ink: #e8e9ec; --text: #d3d6dc; --muted: #9ea4b0; --note: #b8bdc7; }
+:root:not([data-theme="light"]) .ledger-panel.japan { --card: #1e1b18; --ink: #ecebe8; --text: #d9d5cf; --muted: #a8a197; --note: #c2bcb3; }
 :root { --india: #d9822b; --japan: #3b6fd4; }
 :root:not([data-theme="light"]) { --india: #e0a273; --japan: #7d9bd6; }
 
-/* ---- Blocks: each one a faint tint of its own colour on its heading, so they read apart without looking painted ---- */
-.ledger-type-section[data-type="income"] { --block: var(--income-2, #2f9e6e); }
-.ledger-type-section[data-type="expense"] { --block: var(--expense); }
-.ledger-type-section.is-group.is-settlement { --block: #0d9488; }
-.ledger-type-section.is-group.is-savings { --block: #3b82f6; }
-.ledger-type-section.is-group.is-hold { --block: #64748b; }
-.ledger-type-section.is-group.is-lent { --block: #8b5cf6; }
-.ledger-type-section.is-group.is-borrowed { --block: #db2777; }
+/* ---- Blocks: keep space between each region without tinting its background ---- */
+.ledger-type-section[data-type="income"],
+.ledger-type-section[data-type="expense"],
+.ledger-type-section.is-group {
+  border-radius: 6px;
+}
 .ledger-type-section[data-type="income"] > summary,
 .ledger-type-section[data-type="expense"] > summary,
 .ledger-type-section.is-group > summary {
   border-radius: 6px;
-  background: color-mix(in srgb, var(--block) 6%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--block) 55%, transparent);
-  padding-left: 8px;
+  background: transparent;
+  padding: 3px 0;
 }
-.ledger-type-section.is-group.is-hold > summary .ledger-group-icon { color: #64748b; }
-.ledger-type-section.is-group.is-lent > summary .ledger-group-icon { color: #8b5cf6; }
-.ledger-type-section.is-group.is-borrowed > summary .ledger-group-icon { color: #db2777; }
-.ledger-type-section.is-group.is-savings > summary .ledger-group-icon { color: #3b82f6; }
-
+.ledger-type-section.is-group.is-savings > summary .section-totals span { color: #2563eb; }
+.ledger-type-section.is-group.is-hold > summary .section-totals span { color: #64748b; }
+.ledger-type-section.is-group.is-lent > summary .section-totals span { color: #7c3aed; }
+.ledger-type-section.is-group.is-borrowed > summary .section-totals span { color: #db2777; }
+:root:not([data-theme="light"]) .ledger-type-section.is-group.is-savings > summary .section-totals span { color: #60a5fa; }
+:root:not([data-theme="light"]) .ledger-type-section.is-group.is-hold > summary .section-totals span { color: #94a3b8; }
+:root:not([data-theme="light"]) .ledger-type-section.is-group.is-lent > summary .section-totals span { color: #a78bfa; }
+:root:not([data-theme="light"]) .ledger-type-section.is-group.is-borrowed > summary .section-totals span { color: #f472b6; }
 /* ---- A linked item: the other months it is in, each a small button that opens that month ---- */
 .link-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
 .link-chip { display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--muted); font: 500 10.5px/18px var(--mono); cursor: pointer; }
@@ -1666,25 +1706,14 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .close-dialog { width: min(440px, calc(100% - 26px)); }
 .close-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
 .close-rest { margin-top: 10px; }
-
-/* ---- The year summary: one row of tiles per currency, each figure in its own colour on the theme's surface ---- */
-.year-summary { display: grid; gap: 10px; margin: 4px 0 14px; }
-.year-summary-row h3 { margin: 0 0 6px; color: var(--muted); font: 500 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
-.year-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-.year-tile { --tile: var(--ink); display: grid; gap: 4px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--tile) 28%, var(--line-soft)); border-radius: 10px; background: color-mix(in srgb, var(--tile) 8%, var(--surface)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
-.year-tile span { color: var(--muted); font-size: 11.5px; }
-.year-tile b { color: var(--tile); font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
-.year-tile.is-income { --tile: var(--income-2, #2f9e6e); }
-.year-tile.is-expense { --tile: var(--expense); }
-.year-tile.is-saved { --tile: #2563eb; }
-.year-tile.is-returns { --tile: #0d9488; }
-.year-tile.is-held { --tile: #475569; }
-.year-tile.is-lent { --tile: #7c3aed; }
-.year-tile.is-borrowed { --tile: #db2777; }
-:root:not([data-theme="light"]) .year-tile.is-saved { --tile: #60a5fa; }
-:root:not([data-theme="light"]) .year-tile.is-returns { --tile: #2dd4bf; }
-:root:not([data-theme="light"]) .year-tile.is-held { --tile: #94a3b8; }
-:root:not([data-theme="light"]) .year-tile.is-lent { --tile: #a78bfa; }
-:root:not([data-theme="light"]) .year-tile.is-borrowed { --tile: #f472b6; }
-/* The year summary spans the whole row above the currency panels, the currencies side by side where there is room. */
-.year-summary { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.money-picker-dialog { width: min(560px, calc(100% - 26px)); }
+.money-picker-list { display: grid; gap: 14px; max-height: min(56vh, 480px); overflow: auto; margin-top: 12px; }
+.money-pick-group h3 { margin: 0 0 6px; color: var(--muted); font: 700 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; }
+.money-pick-group > div { display: grid; gap: 5px; }
+.money-pick-source { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft); color: var(--ink); cursor: pointer; text-align: left; }
+.money-pick-source:hover { border-color: var(--line-strong); background: var(--surface-raised); }
+.money-pick-source > span { display: grid; gap: 3px; min-width: 0; }
+.money-pick-source strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; }
+.money-pick-source small { color: var(--muted); font-size: 10px; }
+.money-pick-source .money-pick-balance { flex: 0 0 auto; justify-items: end; }
+.money-pick-source .money-pick-balance strong { color: var(--brand); font-variant-numeric: tabular-nums; }

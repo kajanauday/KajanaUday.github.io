@@ -116,4 +116,7 @@ test('series colours are a fixed list of twelve, used in order and wrapping afte
   assert.equal(SL.colourAt(0), SL.SERIES_COLOURS[0]);
   assert.equal(SL.colourAt(11), SL.SERIES_COLOURS[11]);
   assert.equal(SL.colourAt(12), SL.SERIES_COLOURS[0]);
+  assert.equal(SL.colourAt(-1), SL.SERIES_COLOURS[11]);
+  assert.equal(SL.colourAt(-13), SL.SERIES_COLOURS[11]);
+  assert.equal(SL.fixedColour('#2563EB', 'S1'), '#2563eb');
 });

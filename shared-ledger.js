@@ -166,14 +166,17 @@
   }
   // The colour for the series at position `index` in its month (0 is the first): the list in order, wrapping after twelve.
   function colourAt(index) {
-    const n = Math.max(0, Math.floor(Number(index) || 0));
-    return SERIES_COLOURS[n % SERIES_COLOURS.length];
+    const n = Number.isFinite(Number(index)) ? Number(index) : 0;
+    const wrapped = Math.floor(n) % SERIES_COLOURS.length;
+    return SERIES_COLOURS[((wrapped % SERIES_COLOURS.length) + SERIES_COLOURS.length) % SERIES_COLOURS.length];
   }
 
   // The colour a series is drawn in: its stored colour when it is one of the fixed list, otherwise one from the list picked
   // by its id, so old series with other colours still show one of the same twelve.
   function fixedColour(stored, key) {
-    if (SERIES_COLOURS.includes(stored)) return stored;
+    const normalized = String(stored ?? '').trim().toLowerCase();
+    const match = SERIES_COLOURS.find(colour => colour.toLowerCase() === normalized);
+    if (match) return match;
     const hash = [...String(key || '')].reduce((n, ch) => (n * 31 + ch.codePointAt(0)) >>> 0, 7);
     return SERIES_COLOURS[hash % SERIES_COLOURS.length];
   }

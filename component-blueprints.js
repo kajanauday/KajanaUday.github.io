@@ -47,27 +47,27 @@
   // Settlements and every pot inside Savings, instead of each one standing on its own beside Income and Expenses.
   const GROUPS = {
     settlement: {
-      kind: 'settlement', title: 'Settlements', icon: '', one: 'settlement',
+      kind: 'settlement', title: 'Settlements', one: 'settlement',
       blurb: 'Money shared with someone: a split bill, a loan, someone putting money into you.',
       empty: 'No settlements this month.'
     },
     savings: {
-      kind: 'savings', title: 'Savings', icon: 'ti-pig-money', one: 'savings pot',
+      kind: 'savings', title: 'Savings', one: 'savings pot',
       blurb: 'What you set aside, take back out, and what it earns.',
       empty: 'No savings recorded this month.'
     },
     hold: {
-      kind: 'hold', title: 'On hold', icon: 'ti-lock', one: 'hold',
+      kind: 'hold', title: 'On hold', one: 'hold',
       blurb: 'Money paid that you expect back: a deposit or an advance. Not an expense while it is held.',
       empty: 'Nothing on hold this month.'
     },
     lent: {
-      kind: 'lent', title: 'Lent out', icon: 'ti-arrow-up-right', one: 'loan given',
+      kind: 'lent', title: 'Lent out', one: 'loan given',
       blurb: 'Money you gave someone to pay back. Not an expense; interest is income, a write-off an expense.',
       empty: 'Nothing lent this month.'
     },
     borrowed: {
-      kind: 'borrowed', title: 'Borrowed', icon: 'ti-arrow-down-left', one: 'loan taken',
+      kind: 'borrowed', title: 'Borrowed', one: 'loan taken',
       blurb: 'Money you received to pay back. Not income; interest paid is an expense.',
       empty: 'Nothing borrowed this month.'
     }
@@ -277,12 +277,15 @@
     const showingSubEntryForm = state.subEntryDraftParentId === entry.id;
     const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
     const subEntryForm = showingSubEntryForm ? SubEntryForm({ mKey, parentId: entry.id }, ctx) : '';
+    const moneyLink = entry.moneyRef && entry.moneyId
+      ? `<button type="button" class="money-ref-link" data-money-open="${ctx.esc(entry.moneyId)}" data-money-date="${ctx.esc(entry.moneyRef.date)}" data-money-property="${ctx.esc(property)}" title="Open original entry: ${ctx.esc(entry.moneyRef.description)}"><i class="ti ti-link" aria-hidden="true"></i><span>For “${ctx.esc(entry.moneyRef.description)}”</span></button>`
+      : '';
     // Notes are always in the DOM and only shown or hidden, so opening an entry needs no re-render.
     const notes = (hasSubItems || subEntryForm) ? `<div class="ledger-notes"${isExpanded || subEntryForm ? '' : ' hidden'}>${subEntryForm}${subEntriesHtml}</div>` : '';
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -337,7 +340,7 @@
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
     const order = inYear ? null : state.sortModes?.[key] || null;
-    const entries = inYear ? YearItems(key, name, category, { mKey, type, property, sectionName, eventId }, state, ctx) + YearEntries(key, name, category, { mKey, type, property }, state, ctx) : [...category.entries]
+    const entries = inYear ? YearEntries(key, name, category, { mKey, type, property }, state, ctx) : [...category.entries]
       .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
       .map(entry => EntryRow(entry, { mKey, type, property, order }, state, ctx))
       .join('');
@@ -498,7 +501,7 @@
   // There is never more than one of each: a settlement is not a sibling of Income and Expenses any more, it is a
   // section inside Settlements, so the panel reads Expenses / Income / Settlements / Savings and nothing else.
   // Closed sections fold away into "Settled" at the bottom, where two or more of them can be merged into one.
-  const GroupBlock = (kind, sections, { mKey, property, title, blockRun = null }, state, ctx) => {
+  const GroupBlock = (kind, sections, { mKey, property, title, blockRun = null, settledAccounts = [] }, state, ctx) => {
     const group = GROUPS[kind];
     const heading = title || group.title;
     const l = state.ledgerDraft;
@@ -520,7 +523,16 @@
       ? `<div class="ledger-block-tools"><button type="button" class="mini-btn" data-group-merge="${kind}" data-month="${mKey}" data-property="${property}" title="Bring closed ${ctx.esc(group.one)}s of the same sort together into one"><i class="ti ti-arrow-merge" aria-hidden="true"></i><span>Merge settled (${done.length})</span></button></div>`
       : '';
     const settledKey = ctx.esc([mKey, property, kind, 'settled'].join('|'));
-    const settledHtml = !done.length ? '' : `<details class="ledger-settled" data-key="${settledKey}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled</span><small>${done.length}</small></summary><div>${done.map(blockOf).join('')}</div></details>`;
+    const yearAccounts = isYearKey(mKey) ? settledAccounts : [];
+    const accountHtml = yearAccounts.map(account => {
+      const history = account.history.map(item =>
+        `<li class="year-settled-event"><time datetime="${ctx.esc(item.date)}">${ctx.esc(ctx.dayLabel(item.date))}</time><span>${ctx.esc(item.description)}</span><strong>${item.amount < 0 ? '−' : '+'}${ctx.fmt(Math.abs(item.amount), property)}</strong></li>`
+      ).join('');
+      const month = Number(account.date.slice(5, 7)) - 1;
+      return `<details class="year-settled-account"><summary><span class="year-settled-name">${ctx.esc(account.description)}</span><small>${global.ExpenseStore.MONTH_NAMES[month]} ${account.date.slice(0, 4)}</small><strong>Settled</strong><i class="ti ti-chevron-down" aria-hidden="true"></i></summary><ol>${history}</ol></details>`;
+    }).join('');
+    const settledCount = done.length + yearAccounts.length;
+    const settledHtml = !settledCount ? '' : `<details class="ledger-settled" data-key="${settledKey}"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled</span><small>${settledCount}</small></summary><div>${done.map(blockOf).join('')}${accountHtml}</div></details>`;
     // A settlement block and each settlement show one figure: what it posts to the month, in its own colour.
     // Double-clicking the heading renames the block for this month and currency.
     const e = state.editDraft;
@@ -538,26 +550,10 @@
       : Object.keys(stats).length ? SectionTotals(stats, property, ctx) : '';
     const isOpen = Boolean(newForm) || Boolean(renameForm) || body.includes('data-ledger-form=');
     const count = kind === 'settlement' ? '' : `<small class="ledger-group-count">${sections.length}</small>`;
-    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i>${group.icon ? `<i class="ti ${group.icon} ledger-group-icon" aria-hidden="true"></i>` : ''}<strong>${ctx.esc(heading)}</strong>${count}${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
+    return `<details class="ledger-type-section is-group is-${kind}" data-type="net" data-group="${kind}" data-key="${ctx.esc([mKey, property, 'group', kind].join('|'))}" ${isOpen ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${ctx.esc(heading)}</strong>${count}${tools}${totalsHtml}</summary><div>${body || `<p class="ledger-none">${group.empty}</p>`}</div></details>`;
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
-  // The year summary at the top of the opened year card: what the year really earned and spent, what was saved and what
-  // it earned, and what is still on hold, lent or borrowed at the year's end. Each figure in its own colour.
-  const YearSummary = (rows, ctx) => {
-    const tiles = row => [
-      ['is-income', 'Actual income', row.income, true],
-      ['is-expense', 'Actual expenses', row.expenses, true],
-      ['is-saved', 'Saved this year', row.savedIn, false],
-      ['is-saved', 'In savings', row.saved, false],
-      ['is-returns', 'Returns on savings', row.returns, false],
-      ['is-held', 'Still on hold', row.held, false],
-      ['is-lent', 'Lent out, not back yet', row.lent, false],
-      ['is-borrowed', 'Borrowed, not repaid', row.borrowed, false]
-    ].filter(([, , amount, always]) => always || amount)
-      .map(([cls, label, amount]) => `<div class="year-tile ${cls}"><span>${label}</span><b>${ctx.esc(ctx.fmt(amount, row.property))}</b></div>`).join('');
-    return `<section class="year-summary" aria-label="Year summary">${rows.map(row => `<div class="year-summary-row"><h3>${ctx.esc(ctx.regions?.[row.property]?.code || row.property)}</h3><div class="year-tiles">${tiles(row)}</div></div>`).join('')}</section>`;
-  };
   const CurrencyPanel = (country, { year, monthIndex, mKey: key }, state, ctx) => {
     const property = country._meta.id;
     const mKey = key || ctx.keyOf(year, monthIndex);
@@ -650,7 +646,7 @@
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
-        + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind) }, state, ctx)).join('')
+        + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind), settledAccounts: m.settledAccounts?.[kind] }, state, ctx)).join('')
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
@@ -679,12 +675,17 @@
     if (isFuture) return `<span class="month-summary"><span class="month-tag">Upcoming · in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}</span></span>`;
     // The short-form suffix (K, L, Cr, M, B) is set apart so it reads as a unit, not a digit.
     const unitTag = text => text.replace(/([A-Za-z]+)$/, '<span class="ms-unit">$1</span>');
-    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '–'}</span>`;
+    const value = (amount, property, kind, label) => `<span class="ms-kv ${kind}${amount ? '' : ' is-zero'}" title="${ctx.regions[property].code} ${label === 'Bal' ? 'closing balance' : label === 'In' ? 'income' : 'expenses'} ${ctx.fmt(amount, property)}">${amount || label === 'Bal' ? unitTag(ctx.compact(amount, property)) : '·'}</span>`;
+    const holding = (amount, property, kind, label) => `<span class="ms-kv is-holding ${kind}${amount ? '' : ' is-zero'}" aria-label="${ctx.regions[property].code} ${label}: ${ctx.fmt(amount, property)}" title="${ctx.regions[property].code} ${label} ${ctx.fmt(amount, property)}">${amount ? unitTag(ctx.compact(amount, property)) : '·'}</span>`;
     const ordered = slots ? slots.map(property => rows.find(row => row.property === property) || { property, placeholder: true }) : rows;
     while (ordered.length && ordered[ordered.length - 1].placeholder) ordered.pop(); // nothing to line up after the last
-    return `<span class="month-summary">${ordered.map(({ property, income, expense, balance, placeholder }) => {
-        if (placeholder) return '<span class="month-tag ms-cur is-placeholder" aria-hidden="true"></span>';
-        const body = `<span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}`;
+    return `<span class="month-summary">${ordered.map(({ property, income, expense, balance, saved, held, lent, borrowed, placeholder }) => {
+        if (placeholder) return `<span class="month-tag ms-cur is-placeholder has-holdings" aria-hidden="true"></span>`;
+        const holdings = holding(saved || 0, property, 'savings', 'savings')
+          + holding(held || 0, property, 'held', 'on hold')
+          + holding(lent || 0, property, 'lent', 'lent out')
+          + holding(borrowed || 0, property, 'borrowed', 'borrowed');
+        const body = `<span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}${holdings}`;
         if (!mKey) return `<span class="month-tag ms-cur ${ctx.regions[property].color}">${body}</span>`;
         const on = Boolean(shown?.includes(property));
         const tip = shown ? `${on ? 'Hide' : 'Show'} ${ctx.regions[property].code}` : `Open with ${ctx.regions[property].code} only`;
@@ -706,5 +707,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, YearSummary, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -48,6 +48,9 @@
   // so that a month's figure added to the months before it gives what is still open.
   const emptyHoldings = () => ({ saved: 0, savedIn: 0, returns: 0, held: 0, kept: 0, lent: 0, borrowed: 0 });
   const addHoldings = (a = {}, b = {}) => Object.fromEntries(Object.keys(emptyHoldings()).map(key => [key, (a[key] || 0) + (b[key] || 0)]));
+  // Cash tied up in savings, deposits or loans is unavailable; borrowed cash is available. `held` and `lent` already
+  // exclude the parts kept or written off, which are counted as expenses in the ordinary totals.
+  const cashBalanceAdjustment = holdings => -(holdings.saved || 0) - (holdings.held || 0) - (holdings.lent || 0) + (holdings.borrowed || 0);
   const otherSectionName = type => (type === 'income' ? 'Other income' : type === 'net' ? 'Other balance' : 'Other expenses');
 
   // Amount fields accept a formula such as "=(210+178)+178": + - * /, brackets and decimals only. A small parser
@@ -242,8 +245,21 @@
       // date it is for; a marker keeps the key of the entry it stands for, that entry's amount and its date.
       const refOf = row => ({ ...(row.refKey ? { refKey: String(row.refKey) } : {}), ...(row.refDate ? { refDate: String(row.refDate) } : {}), ...(row.markerOf ? { markerOf: { key: String(row.markerOf.key), amount: Math.round(Number(row.markerOf.amount)) || 0, ...(row.markerOf.from ? { from: String(row.markerOf.from) } : {}) } } : {}) });
       const clearedOf = row => (row.cleared?.id ? { cleared: { id: String(row.cleared.id), colour: String(row.cleared.colour || '') } } : {});
+      // A repayment keeps a stable key to the original money entry, plus enough context to find it after reload.
+      const moneyLinkOf = row => ({
+        ...(row.moneyId ? { moneyId: String(row.moneyId) } : {}),
+        ...(row.moneyRole ? { moneyRole: String(row.moneyRole) } : {}),
+        ...(row.moneyRef?.date && row.moneyRef?.description ? {
+          moneyRef: {
+            date: String(row.moneyRef.date),
+            description: String(row.moneyRef.description),
+            ...(row.moneyRef.section ? { section: String(row.moneyRef.section) } : {}),
+            ...(row.moneyRef.category ? { category: String(row.moneyRef.category) } : {})
+          }
+        } : {})
+      });
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...refOf(item) };
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...refOf(item), ...moneyLinkOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -323,6 +339,20 @@
   // A custom section is either a settlement (money shared with someone: a split bill, a loan, someone investing in me)
   // or a savings pot. Both live inside their own single block; a month never has more than one of each block.
   const SECTION_KINDS = ['settlement', 'savings', 'hold', 'lent', 'borrowed'];
+  const MONEY_ACCOUNT_ROLES = { savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
+  function linkedMoneyBalance(moneyId, kind, items, amountOf = item => Number(item.amount), throughDate = '9999-12-31') {
+    const role = MONEY_ACCOUNT_ROLES[kind];
+    if (!moneyId || !role) return 0;
+    const balance = items.reduce((sum, item) => {
+      if (item.parentId || item.moneyId !== moneyId || (item.date && item.date > throughDate)) return sum;
+      const amount = Number(amountOf(item)) || 0;
+      if (item.moneyRole === role) return sum + amount;
+      if ((kind === 'hold' && item.moneyRole === 'kept') || (kind === 'lent' && item.moneyRole === 'writeoff')) return sum - amount;
+      if (kind === 'savings' && item.moneyRole === 'return' && amount < 0) return sum + amount;
+      return sum;
+    }, 0);
+    return Math.max(0, balance);
+  }
   // Three more blocks, each for money that sits somewhere and comes back (see the roles below):
   //   hold      hold     paid in (positive) or had back (negative) — a deposit or an advance; neither income nor expense
   //             kept     the part of it the other side kept — an expense, and no money moves, so it is a memo
@@ -1230,7 +1260,7 @@
     monthCurrencies(year, monthIndex) { return this.ordered(this.monthNode(year, monthIndex)?.currencies || []); }
     yearCurrencies(year) { return this.ordered(this.year(year)?.metadata.currencies || []); }
     monthTotals(year, monthIndex, currency) {
-      return { income: 0, expenses: 0, balance: 0, entries: 0, closing: 0, carried: 0, previous: 0, ...this.monthNode(year, monthIndex)?.metadata[currency] };
+      return { income: 0, expenses: 0, balance: 0, entries: 0, closing: 0, carried: 0, previous: 0, holdings: emptyHoldings(), ...this.monthNode(year, monthIndex)?.metadata[currency] };
     }
     // Effective per-currency setup of a month: { <cur>: { active, carry } }, month overrides over the year's defaults.
     monthSetup(year, monthIndex) {
@@ -1391,14 +1421,19 @@
           const carried = setup[key].carry && !upcoming ? previous : 0;
           const income = raw.income + Math.max(carried, 0);
           const expenses = raw.expenses + Math.max(-carried, 0);
-          running[key] = upcoming ? (setup[key].carry ? previous : 0) + raw.income - raw.expenses : income - expenses;
-          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: upcoming ? income - expenses : running[key], carried, previous, holdings: own.holdings || emptyHoldings(), ...(upcoming && { upcoming: true }), ...(fromEvents.entries && { fromEvents }) };
+          const holdings = own.holdings || emptyHoldings();
+          const balance = income - expenses + cashBalanceAdjustment(holdings);
+          running[key] = upcoming
+            ? (setup[key].carry ? previous : 0) + raw.income - raw.expenses + cashBalanceAdjustment(holdings)
+            : balance;
+          metadata[key] = { income, expenses, balance, entries: raw.entries, closing: running[key], carried, previous, holdings, ...(upcoming && { upcoming: true }), ...(fromEvents.entries && { fromEvents }) };
           metadata.entries += raw.entries;
-          const sum = sums[key] ||= { ...zeroTotals(), opening: previous, carriedIn: first ? carried : 0 };
+          const sum = sums[key] ||= { ...zeroTotals(), opening: previous, carriedIn: first ? carried : 0, cashAdjustment: 0 };
           sum.income += raw.income;
           sum.expenses += raw.expenses;
           sum.entries += raw.entries;
           sum.holdings = addHoldings(sum.holdings, own.holdings);
+          sum.cashAdjustment += cashBalanceAdjustment(own.holdings || emptyHoldings());
         });
         months[id] = { name, month: monthIndex + 1, currencies: active, metadata };
       });
@@ -1407,7 +1442,7 @@
       Object.entries(sums).forEach(([key, sum]) => {
         const income = sum.income + Math.max(sum.carriedIn, 0);
         const expenses = sum.expenses + Math.max(-sum.carriedIn, 0);
-        metadata[key] = { income, expenses, balance: income - expenses, entries: sum.entries, opening: sum.opening, closing: running[key], holdings: sum.holdings || emptyHoldings(), own: { income: sum.income, expenses: sum.expenses } };
+        metadata[key] = { income, expenses, balance: income - expenses + sum.cashAdjustment, entries: sum.entries, opening: sum.opening, closing: running[key], holdings: sum.holdings || emptyHoldings(), own: { income: sum.income, expenses: sum.expenses } };
         metadata.entries += sum.entries;
       });
       Object.assign(node, { months, metadata });
@@ -1685,12 +1720,43 @@
         delete section._meta.categories;
         out[sectionKey] = section;
       });
+      const settledAccounts = { savings: [], hold: [], lent: [], borrowed: [] };
+      const accountRoles = { savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
+      const yearEnd = `${year}-12-31`;
+      const moneyEntries = Object.values(out).flatMap(section => {
+        const kind = section._meta.kind;
+        return accountRoles[kind] ? Object.values(section.categories).flatMap(category =>
+          category.entries.filter(entry => entry.moneyId).map(entry => ({ entry, kind }))
+        ) : [];
+      });
+      const accounts = new Map();
+      moneyEntries.forEach(({ entry, kind }) => {
+        if (entry.date.slice(0, 4) !== String(year) || entry.moneyRef || entry.moneyRole !== accountRoles[kind]) return;
+        const related = moneyEntries.filter(item => item.kind === kind && item.entry.moneyId === entry.moneyId)
+          .map(({ entry: item }) => ({
+            moneyId: item.moneyId, moneyRole: item.moneyRole, date: item.date, amount: item._meta.total
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const remaining = linkedMoneyBalance(entry.moneyId, kind, related, item => item.amount, yearEnd);
+        if (remaining > 0) return;
+        const history = moneyEntries.filter(item => item.kind === kind && item.entry.moneyId === entry.moneyId)
+          .map(({ entry: item }) => ({
+            date: item.date, description: item.description, amount: item._meta.total, id: item.id
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        accounts.set(`${kind}:${entry.moneyId}`, {
+          kind, moneyId: entry.moneyId, description: entry.description, section: entry.section,
+          category: entry.category, date: entry.date, history
+        });
+      });
+      [...accounts.values()].forEach(account => settledAccounts[account.kind].push(account));
+      Object.values(settledAccounts).forEach(list => list.sort((a, b) => a.date.localeCompare(b.date) || a.description.localeCompare(b.description)));
       // The balance the year opened on, as its first month brought it in.
       const first = months.length ? this.monthNode(year, months[0]).metadata[currency] : null;
       const region = this.currencies[currency];
       const book = {
         // The block headings as the year's latest month calls them, so the year card reads like the months it sums.
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency) },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency), settledAccounts },
         sections: out
       };
       this.books.set(key, { sig, book });
@@ -1947,6 +2013,15 @@
         ...(item.sid && item.shared ? { sid: item.sid, shared: item.shared, sharedTotal: Math.abs(Number(item.amount)), ...(item.series ? { series: item.series } : {}) } : {}),
         ...(item.cleared ? { cleared: item.cleared } : {}),
         ...(item.refKey ? { refKey: item.refKey } : {}), ...(item.refDate ? { refDate: item.refDate } : {}), ...(item.markerOf ? { markerOf: item.markerOf } : {}),
+        ...(item.moneyId ? {
+          moneyId: String(item.moneyId),
+          ...(item.moneyRole ? { moneyRole: String(item.moneyRole) } : {}),
+          ...(item.moneyRef ? { moneyRef: {
+            date: String(item.moneyRef.date), description: String(item.moneyRef.description),
+            ...(item.moneyRef.section ? { section: String(item.moneyRef.section) } : {}),
+            ...(item.moneyRef.category ? { category: String(item.moneyRef.category) } : {})
+          } } : {})
+        } : {}),
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
         subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))
@@ -1954,7 +2029,7 @@
     }
   }
 
-  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel,
+  Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, linkedMoneyBalance, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel,
     ALLOC_ROLE, normalizeAlloc, allocFor, allocTotal, SETTLE_MODES, SETTLE_MODE_LABELS, SETTLE_PRESETS, settleMode, settlePreset });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
