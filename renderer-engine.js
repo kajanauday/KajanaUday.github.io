@@ -124,8 +124,13 @@
         const totals = this.store.yearTotals(year, currency);
         return { property: currency, income: totals.income, expense: totals.expenses, balance: totals.closing };
       });
+      const summary = () => B().YearSummary(shown.map(currency => {
+        const totals = this.store.yearTotals(year, currency);
+        const { own, open: still } = this.store.yearHoldings(year, currency);
+        return { property: currency, income: totals.own?.income ?? totals.income, expenses: totals.own?.expenses ?? totals.expenses, savedIn: own.savedIn, saved: still.saved, returns: own.returns, held: still.held, lent: still.lent, borrowed: still.borrowed };
+      }), this.ctx);
       const panelsHtml = !open ? '' : this.store.isYearLoaded(year)
-        ? shown.map(currency => B().CurrencyPanel(this.store.yearbook(year, currency), { mKey }, state, this.ctx)).join('')
+        ? summary() + shown.map(currency => B().CurrencyPanel(this.store.yearbook(year, currency), { mKey }, state, this.ctx)).join('')
         : `<p class="ledger-none">Loading every month of ${year}…</p>`;
       return B().MonthBlock({
         mKey,

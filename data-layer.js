@@ -43,6 +43,11 @@
     ? global.SharedLedger.split({ amount: Math.abs(Number(row.amount) || 0), paidBy: row.shared.by, hisPct: row.shared.his }).myShare
     : Number(row.amount));
   const zeroTotals = () => ({ income: 0, expenses: 0, entries: 0 });
+  // What the blocks hold, for the year summary: savings put in (savedIn) and their balance (saved), the returns they
+  // earned, what is on hold, what the other side kept of it, what is lent out and what is borrowed. Balances are signed
+  // so that a month's figure added to the months before it gives what is still open.
+  const emptyHoldings = () => ({ saved: 0, savedIn: 0, returns: 0, held: 0, kept: 0, lent: 0, borrowed: 0 });
+  const addHoldings = (a = {}, b = {}) => Object.fromEntries(Object.keys(emptyHoldings()).map(key => [key, (a[key] || 0) + (b[key] || 0)]));
   const otherSectionName = type => (type === 'income' ? 'Other income' : type === 'net' ? 'Other balance' : 'Other expenses');
 
   // Amount fields accept a formula such as "=(210+178)+178": + - * /, brackets and decimals only. A small parser
@@ -233,9 +238,12 @@
       // entry's own id is only its place in the month, and it changes on every load.
       const sharedOf = row => (row.sid && row.shared ? { ...(row.series?.id && { series: { id: String(row.series.id), colour: String(row.series.colour || '') } }), sid: String(row.sid), shared: { by: row.shared.by === 'friend' ? 'friend' : 'me', his: Math.min(100, Math.max(0, Math.round(Number(row.shared.his) || 0))), with: String(row.shared.with || '').trim() || 'Friend' } } : {});
       // A ledger entry that clears a settlement carries the settlement's id and the series colour, shown as CLEARED.
+      // An expense added in one month for another (see here-and-there.js): the real entry keeps its reference key and the
+      // date it is for; a marker keeps the key of the entry it stands for, that entry's amount and its date.
+      const refOf = row => ({ ...(row.refKey ? { refKey: String(row.refKey) } : {}), ...(row.refDate ? { refDate: String(row.refDate) } : {}), ...(row.markerOf ? { markerOf: { key: String(row.markerOf.key), amount: Math.round(Number(row.markerOf.amount)) || 0, ...(row.markerOf.from ? { from: String(row.markerOf.from) } : {}) } } : {}) });
       const clearedOf = row => (row.cleared?.id ? { cleared: { id: String(row.cleared.id), colour: String(row.cleared.colour || '') } } : {});
       const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item) };
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...refOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -251,7 +259,7 @@
     if (!stored) return zeroTotals();
     const carried = Number(stored.carried) || 0;
     const events = stored.fromEvents || zeroTotals();
-    return { income: stored.income - Math.max(carried, 0) - (events.income || 0), expenses: stored.expenses - Math.max(-carried, 0) - (events.expenses || 0), entries: (stored.entries || 0) - (events.entries || 0) };
+    return { income: stored.income - Math.max(carried, 0) - (events.income || 0), expenses: stored.expenses - Math.max(-carried, 0) - (events.expenses || 0), entries: (stored.entries || 0) - (events.entries || 0), holdings: stored.holdings || emptyHoldings() };
   }
 
   // One event's stored entries → flat items, marked with eventId so they never land in a month's document.
@@ -310,11 +318,19 @@
   //             repayment half of CI / CO, so what was laid out for the group on its own is CI - SI and CO - SO.
   //   AL / UA   of that repayment money, how much has been said what it was for (see normalizeAlloc) and how much has
   //             not. Both are positive sums, and together they come to SI + SO.
-  const ENTRY_TOTALS = ['TI', 'TE', 'CI', 'CO', 'OWED', 'MS', 'SV', 'RT', 'SI', 'SO', 'AL', 'UA'];
+  const ENTRY_TOTALS = ['TI', 'TE', 'CI', 'CO', 'OWED', 'MS', 'SV', 'RT', 'SI', 'SO', 'AL', 'UA', 'HD', 'KP', 'LT', 'WO', 'LI', 'BR', 'BI'];
   const SUB_ID = /^E\d+$/;
   // A custom section is either a settlement (money shared with someone: a split bill, a loan, someone investing in me)
   // or a savings pot. Both live inside their own single block; a month never has more than one of each block.
-  const SECTION_KINDS = ['settlement', 'savings'];
+  const SECTION_KINDS = ['settlement', 'savings', 'hold', 'lent', 'borrowed'];
+  // Three more blocks, each for money that sits somewhere and comes back (see the roles below):
+  //   hold      hold     paid in (positive) or had back (negative) — a deposit or an advance; neither income nor expense
+  //             kept     the part of it the other side kept — an expense, and no money moves, so it is a memo
+  //   lent      lend     given (positive) or repaid (negative) — neither income nor expense
+  //             writeoff the part that will never come back — an expense, and a memo
+  //             earned   interest received on it — income
+  //   borrowed  borrow   received (positive) or repaid (negative) — neither income nor expense
+  //             charged  interest paid on it — an expense
   // What a subsection of one stands for. Only a cash role moves money; a memo role explains it.
   //   settlement  cost    what I laid out for the group (negative) or had back for it (positive) — cash
   //               share   my own portion of that cost, written as a negative — memo, never a movement of money
@@ -323,8 +339,8 @@
   //   savings     save    put into the pot (positive) or taken back out (negative) — cash, but a transfer between my
   //                       own pockets, so by itself it is neither income nor an expense
   //               return  interest, dividend or gain credited to the pot — cash, and real income
-  const ROLES = { settlement: ['cost', 'share', 'settle'], savings: ['save', 'return'] };
-  const MEMO_ROLES = new Set(['share']);
+  const ROLES = { settlement: ['cost', 'share', 'settle'], savings: ['save', 'return'], hold: ['hold', 'kept'], lent: ['lend', 'writeoff', 'earned'], borrowed: ['borrow', 'charged'] };
+  const MEMO_ROLES = new Set(['share', 'kept', 'writeoff']);
   // Only money laid out for the group is divided, so that is the role a split belongs to. A repayment under "Settled
   // up" moves money between the two sides; it is not a cost with a share of its own.
   const SPLIT_ROLE = 'cost';
@@ -392,10 +408,13 @@
     if (mode === 'equal') { const n = ways || Math.max(1, Math.round(Number(split.n) || 1)); return n === 2 ? 'Half mine' : `1/${n} mine`; }
     return 'Part mine';
   }
-  const DEFAULT_ROLE = { settlement: 'cost', savings: 'save' };
+  const DEFAULT_ROLE = { settlement: 'cost', savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
   const ROLE_LABELS = {
     cost: 'Paid for the group', share: 'My share', settle: 'Settled up',
-    save: 'Put in or taken out', return: 'Interest or gain'
+    save: 'Put in or taken out', return: 'Interest or gain',
+    hold: 'Paid in or had back', kept: 'Kept by them (an expense)',
+    lend: 'Given or repaid', writeoff: 'Written off (an expense)', earned: 'Interest earned',
+    borrow: 'Received or repaid', charged: 'Interest paid'
   };
   // ---- descriptions, their status words, and a section's lifecycle ----------------------------
   // Any section, subsection, entry or note may carry a description (`about`): a longer note kept out of the row itself,
@@ -439,18 +458,18 @@
   // `meta` is a built section's _meta (kind, settle, closed, mergedFrom, categories): the same shape a month and the
   // year card both hold, so one section reads the same wherever it is drawn.
   function sectionState(meta = {}) {
-    const kind = meta.kind === 'savings' ? 'savings' : 'settlement';
+    const kind = SECTION_KINDS.includes(meta.kind) ? meta.kind : 'settlement';
     const key = meta.closed
       ? (meta.mergedFrom?.length ? 'merged' : 'settled')
       : !meta.entries ? 'draft'
         : kind === 'settlement' && meta.settle && meta.settle.owed !== 0 ? 'open' : 'clear';
     const state = SECTION_STATES[key];
-    return { key, kind, label: kind === 'savings' ? state.savings : state.label, title: state.title };
+    return { key, kind, label: kind === 'settlement' ? state.label : state.savings, title: state.title };
   }
 
   // Each block has a name of its own, kept per month and currency beside that month's section list. A month holds
   // exactly one of each kind, so the name belongs to the kind, not to a section.
-  const BLOCK_NAMES = { settlement: 'Settlements', savings: 'Savings' };
+  const BLOCK_NAMES = { settlement: 'Settlements', savings: 'Savings', hold: 'On hold', lent: 'Lent out', borrowed: 'Borrowed' };
   const blockNameOf = (names, kind) => {
     const given = String(names?.[kind] ?? '').trim();
     return given || BLOCK_NAMES[kind] || BLOCK_NAMES.settlement;
@@ -463,9 +482,16 @@
   };
   // How a brand-new section counts. A settlement posts its signed net cash balance to exactly one side; a savings pot
   // counts only its gain as income, because moving your own money into savings neither earns nor spends anything.
-  const defaultCalc = kind => (kind === 'savings'
-    ? { v: 4, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } }
-    : settlePreset('net'));
+  const DEFAULT_CALCS = {
+    savings: { v: 4, vars: [], lines: ['GI = RT', 'GB = SV + RT'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'off', formula: '' } },
+    // On hold: only what they kept is an expense; what is still with them is the balance.
+    hold: { v: 4, vars: [], lines: ['GE = KP', 'GB = HD - KP'], income: { mode: 'off', formula: '' }, expense: { mode: 'count', formula: 'GE' } },
+    // Lent out: interest received is income, a write-off is an expense, and what is still out is the balance.
+    lent: { v: 4, vars: [], lines: ['GI = LI', 'GE = WO', 'GB = LT - WO'], income: { mode: 'count', formula: 'GI' }, expense: { mode: 'count', formula: 'GE' } },
+    // Borrowed: only interest paid is an expense; what is still owed is the balance.
+    borrowed: { v: 4, vars: [], lines: ['GE = BI', 'GB = BR'], income: { mode: 'off', formula: '' }, expense: { mode: 'count', formula: 'GE' } }
+  };
+  const defaultCalc = kind => (DEFAULT_CALCS[kind] ? JSON.parse(JSON.stringify(DEFAULT_CALCS[kind])) : settlePreset('net'));
   // ---- what a settlement reports to the month ------------------------------------------------
   // Everything else about a settlement is worked out from its entries and cannot be argued with. This one thing is a
   // choice, and only its owner can make it: the same 130,000 paid out and 90,000 had back is honestly a net 40,000
@@ -787,19 +813,28 @@
     const settled = byRole.settle?.net || 0;
     const saved = byRole.save?.net || 0;
     const returns = byRole.return?.net || 0;
+    const held = byRole.hold?.net || 0;
+    const kept = byRole.kept?.net || 0;
+    const lentOut = byRole.lend?.net || 0;
+    const writtenOff = byRole.writeoff?.net || 0;
+    const earned = byRole.earned?.net || 0;
+    const borrowedIn = byRole.borrow?.net || 0;
+    const charged = byRole.charged?.net || 0;
     // What is still open between me and the other side. Everything I laid out is owed back to me, less the part that was
     // mine to begin with, less whatever has already changed hands. Zero means the settlement is clear.
     const owed = -cost + share - settled;
     const unallocated = Math.max(0, settleIn + settleOut - allocated);
     const settle = { kind, cashIn, cashOut, owed, share: -share, saved, returns, byRole, cleared: owed === 0,
-      settleIn, settleOut, allocated, unallocated, purposes: [...purposes.values()] };
+      settleIn, settleOut, allocated, unallocated, purposes: [...purposes.values()],
+      held, kept, lent: lentOut, writtenOff, earned, borrowed: borrowedIn, charged };
     const base = {
       TI: major(income), TE: major(expenses),
       CI: major(cashIn), CO: major(cashOut),
       OWED: major(owed), MS: major(-share),
       SV: major(saved), RT: major(returns),
       SI: major(settleIn), SO: major(settleOut),
-      AL: major(allocated), UA: major(unallocated)
+      AL: major(allocated), UA: major(unallocated),
+      HD: major(held), KP: major(kept), LT: major(lentOut), WO: major(writtenOff), LI: major(earned), BR: major(borrowedIn), BI: major(charged)
     };
     const subs = vars.filter(item => names.includes(item.name)).map(item => {
       const sum = (valuesBySub[item.name] || []).reduce((total, amount) => total + amount, 0);
@@ -948,15 +983,23 @@
     const income = balances.filter(amount => amount > 0).reduce((sum, amount) => sum + amount, 0);
     const expenses = -balances.filter(amount => amount < 0).reduce((sum, amount) => sum + amount, 0);
     const unallocated = Math.max(0, settleIn + settleOut - allocated);
+    const held = add(part => part.settle?.held);
+    const kept = add(part => part.settle?.kept);
+    const lentOut = add(part => part.settle?.lent);
+    const writtenOff = add(part => part.settle?.writtenOff);
+    const earned = add(part => part.settle?.earned);
+    const borrowedIn = add(part => part.settle?.borrowed);
+    const charged = add(part => part.settle?.charged);
     const settle = { kind, cashIn, cashOut, owed, share, saved, returns, byRole: {}, cleared: owed === 0,
-      settleIn, settleOut, allocated, unallocated, purposes: [] };
+      settleIn, settleOut, allocated, unallocated, purposes: [], held, kept, lent: lentOut, writtenOff, earned, borrowed: borrowedIn, charged };
     const base = {
       TI: major(income), TE: major(expenses),
       CI: major(cashIn), CO: major(cashOut),
       OWED: major(owed), MS: major(share),
       SV: major(saved), RT: major(returns),
       SI: major(settleIn), SO: major(settleOut),
-      AL: major(allocated), UA: major(unallocated)
+      AL: major(allocated), UA: major(unallocated),
+      HD: major(held), KP: major(kept), LT: major(lentOut), WO: major(writtenOff), LI: major(earned), BR: major(borrowedIn), BI: major(charged)
     };
     const byName = new Map(parts.map(part => [part.name, part]));
     const subs = vars.filter(item => byName.has(item.name)).map(item => {
@@ -994,6 +1037,7 @@
   }
   function docTotals(buckets, rules = new Map(), blockCalcs = {}) {
     const totals = zeroTotals();
+    const treat = emptyHoldings();
     const balances = new Map();
     // An entry written before sections had names carries only its subsection; it belongs to whichever section lists
     // that subsection, so it is counted under that section's roles rather than falling back to the bare defaults.
@@ -1013,13 +1057,23 @@
         (bySub[group.category] ||= []).push({ amount: noteTotal(shareOf(entry), entry.notes || []), split: entry.split || null, alloc: entry.alloc || null });
       });
     }));
-    const partsByKind = { settlement: [], savings: [] };
+    const partsByKind = Object.fromEntries(SECTION_KINDS.map(kind => [kind, []]));
     balances.forEach((amountsBySub, name) => {
       const section = rules.get(name) || { name, subsections: Object.keys(amountsBySub) };
       const summary = netSectionSummary(section, amountsBySub);
       totals.income += summary.adds.income;
       totals.expenses += summary.adds.expenses;
-      partsByKind[summary.kind].push({ name, stats: summary.stats, settle: summary.settle, adds: summary.adds });
+      (partsByKind[summary.kind] ||= []).push({ name, stats: summary.stats, settle: summary.settle, adds: summary.adds });
+      // What the blocks hold at the end of the month, for the year's summary: savings and their returns, what is on hold,
+      // lent or borrowed.
+      const held = summary.settle || {};
+      treat.saved += held.saved || 0;
+      treat.savedIn += held.byRole?.save?.in || 0;
+      treat.returns += held.returns || 0;
+      treat.held += (held.held || 0) - (held.kept || 0);
+      treat.kept += held.kept || 0;
+      treat.lent += (held.lent || 0) - (held.writtenOff || 0);
+      treat.borrowed += held.borrowed || 0;
     });
     Object.entries(partsByKind).forEach(([kind, parts]) => {
       const calc = blockCalcs?.[kind];
@@ -1032,6 +1086,7 @@
       totals.income += run.adds.income - before.income;
       totals.expenses += run.adds.expenses - before.expenses;
     });
+    totals.holdings = treat;
     return totals;
   }
 
@@ -1200,6 +1255,26 @@
       if (config?.carryIn) return this.year(Number(year) - 1) ? Number(this.yearTotals(Number(year) - 1, currency).closing) || 0 : 0;
       return Number(config?.opening) || 0;
     }
+    // A year's block figures for one currency (own), and what is still open at its end: savings, on hold, lent and
+    // borrowed added up over every year up to it.
+    // Every month's section that carries a link, for one currency, oldest first: an item put in one month and closed in
+    // another. Read from the year settings, so it needs no month loaded.
+    linkedSections(link, currency) {
+      if (!link) return [];
+      const out = [];
+      Object.entries(this.years).forEach(([year, node]) => Object.entries(node.monthSections || {}).forEach(([id, month]) => {
+        (month?.[currency]?.sections || []).forEach(section => {
+          if (section.link === link) out.push({ year: Number(year), monthIndex: MONTH_NAMES.indexOf(id.slice(5)), section });
+        });
+      }));
+      return out.sort((a, b) => a.year - b.year || a.monthIndex - b.monthIndex);
+    }
+    yearHoldings(year, currency) {
+      const own = this.year(year)?.metadata?.[currency]?.holdings || emptyHoldings();
+      const open = this.yearIds().filter(id => Number(id) <= Number(year))
+        .reduce((sum, id) => addHoldings(sum, this.year(id)?.metadata?.[currency]?.holdings), emptyHoldings());
+      return { own, open };
+    }
     yearTotals(year, currency) {
       return { income: 0, expenses: 0, balance: 0, entries: 0, opening: 0, closing: 0, ...this.year(year)?.metadata[currency] };
     }
@@ -1317,12 +1392,13 @@
           const income = raw.income + Math.max(carried, 0);
           const expenses = raw.expenses + Math.max(-carried, 0);
           running[key] = upcoming ? (setup[key].carry ? previous : 0) + raw.income - raw.expenses : income - expenses;
-          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: upcoming ? income - expenses : running[key], carried, previous, ...(upcoming && { upcoming: true }), ...(fromEvents.entries && { fromEvents }) };
+          metadata[key] = { income, expenses, balance: income - expenses, entries: raw.entries, closing: upcoming ? income - expenses : running[key], carried, previous, holdings: own.holdings || emptyHoldings(), ...(upcoming && { upcoming: true }), ...(fromEvents.entries && { fromEvents }) };
           metadata.entries += raw.entries;
           const sum = sums[key] ||= { ...zeroTotals(), opening: previous, carriedIn: first ? carried : 0 };
           sum.income += raw.income;
           sum.expenses += raw.expenses;
           sum.entries += raw.entries;
+          sum.holdings = addHoldings(sum.holdings, own.holdings);
         });
         months[id] = { name, month: monthIndex + 1, currencies: active, metadata };
       });
@@ -1331,7 +1407,7 @@
       Object.entries(sums).forEach(([key, sum]) => {
         const income = sum.income + Math.max(sum.carriedIn, 0);
         const expenses = sum.expenses + Math.max(-sum.carriedIn, 0);
-        metadata[key] = { income, expenses, balance: income - expenses, entries: sum.entries, opening: sum.opening, closing: running[key] };
+        metadata[key] = { income, expenses, balance: income - expenses, entries: sum.entries, opening: sum.opening, closing: running[key], holdings: sum.holdings || emptyHoldings(), own: { income: sum.income, expenses: sum.expenses } };
         metadata.entries += sum.entries;
       });
       Object.assign(node, { months, metadata });
@@ -1826,6 +1902,8 @@
             built._meta.closed = Boolean(section.closed);
             built._meta.closedOn = section.closedOn || '';
             built._meta.mergedFrom = [...(section.mergedFrom || [])];
+            // The months an item in a block is linked across (see openCloseDialog): the same link on each month's section.
+            built._meta.link = section.link || '';
             built._meta.entries = Object.values(built.categories).reduce((sum, category) => sum + category._meta.entries, 0);
             // The section's own description and each subsection's, kept with the section so they travel with it.
             built._meta.about = section.about || '';
@@ -1868,6 +1946,7 @@
         // A shared expense carries its marker and series into the ledger, or its ball has nothing to draw.
         ...(item.sid && item.shared ? { sid: item.sid, shared: item.shared, sharedTotal: Math.abs(Number(item.amount)), ...(item.series ? { series: item.series } : {}) } : {}),
         ...(item.cleared ? { cleared: item.cleared } : {}),
+        ...(item.refKey ? { refKey: item.refKey } : {}), ...(item.refDate ? { refDate: item.refDate } : {}), ...(item.markerOf ? { markerOf: item.markerOf } : {}),
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
         subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))

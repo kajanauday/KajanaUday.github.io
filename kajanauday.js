@@ -58,7 +58,323 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     })();
     let toastTimer;
 
-    function saveTransactions() { trackSave(store.saveTransactions()); }
+    function saveTransactions() {
+      // A marker lives in the month it is for. Those months must be loaded before anything is written, or a write could
+      // leave a marker out; so when one is not yet, the save waits for it.
+      const missing = referenceMonthsToLoad();
+      if (missing.length) return trackSave(Promise.all(missing.map(([year, monthIndex]) => store.ensureMonth(year, monthIndex))).then(writeWithReferences));
+      writeWithReferences();
+    }
+    function writeWithReferences() {
+      const writes = syncReferences();
+      trackSave(Promise.all([...writes, store.saveTransactions()]));
+    }
+
+    // ---- Here and there: an expense added in one month for another (see here-and-there.js) ----
+    const REFERENCE_SECTION = HereAndThere.SECTION;
+    const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthShort = date => SHORT_MONTHS[date.getMonth()];
+    // The subsection a marker goes under: the month the entry was added in, as the ledger names months.
+    const referenceLabel = dateKey => ExpenseStore.safeKey(`From ${monthLabel(new Date(Number(dateKey.slice(0, 4)), Number(dateKey.slice(5, 7)) - 1, 1))}`);
+    // The months (year, monthIndex) that the references of loaded entries need and that are not loaded yet: the month an
+    // entry points at, and the month a marker's entry is in (so a marker is never judged without its entry).
+    function referenceMonthsToLoad() {
+      const out = new Map();
+      const want = ym => {
+        const [year, month] = ym.split('-').map(Number);
+        if (!store.isLoaded(year, month - 1)) out.set(`${year}-${month}`, [year, month - 1]);
+      };
+      transactions.forEach(item => {
+        if (HereAndThere.isReal(item) && item.refDate.slice(0, 7) !== item.date.slice(0, 7)) want(item.refDate.slice(0, 7));
+        if (item.markerOf?.from) want(item.markerOf.from.slice(0, 7));
+      });
+      return [...out.values()];
+    }
+    // Makes the markers match the real entries: removes stale ones, adds missing ones, and keeps each month's
+    // "Here and there" sections listing exactly the subsections in use. Returns the section saves it started.
+    function syncReferences() {
+      const plan = HereAndThere.reconcileReferences(transactions, {
+        labelFor: referenceLabel, amountText: (minor, property) => formatMoney(minor, property), newKey: () => newSharedKey('rf'),
+        isLoaded: ym => store.isLoaded(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1)
+      });
+      plan.rekey.forEach(({ item, refKey }) => { item.refKey = refKey; });
+      const gone = new Set(plan.remove);
+      const removed = transactions.filter(item => gone.has(item.id));
+      const kept = transactions.filter(item => !gone.has(item.id));
+      transactions.splice(0, transactions.length, ...kept);
+      const added = plan.add.map((row, index) => ({ ...row, id: `ref-${Date.now().toString(36)}-${index}` }));
+      transactions.push(...added);
+      const writes = [];
+      const touched = new Map();
+      [...removed, ...added].forEach(row => touched.set(`${row.date.slice(0, 7)}|${row.property}`, row.date.slice(0, 7)));
+      added.forEach(row => writes.push(useReferenceSection(row)));
+      touched.forEach((monthKey, pair) => writes.push(tidyReferenceSections(monthKey, pair.split('|')[1])));
+      return writes.filter(Boolean);
+    }
+    // Makes sure a month has a "Here and there" section of this type with the subsection a marker goes under.
+    function useReferenceSection(row) {
+      const year = Number(row.date.slice(0, 4));
+      const monthIndex = Number(row.date.slice(5, 7)) - 1;
+      const sections = store.ownSections(year, monthIndex, row.property);
+      let section = sections.find(item => item.name === REFERENCE_SECTION && item.type === row.type);
+      if (!section) sections.push(section = { name: REFERENCE_SECTION, type: row.type, subsections: [] });
+      if (!section.subsections.includes(row.category)) section.subsections.push(row.category);
+      return store.saveMonthSections(year, monthIndex, row.property, sections);
+    }
+    // Drops subsections no marker uses any more, and the section itself when nothing is left in it.
+    function tidyReferenceSections(monthKey, property) {
+      const year = Number(monthKey.slice(0, 4));
+      const monthIndex = Number(monthKey.slice(5, 7)) - 1;
+      const own = store.ownSections(year, monthIndex, property);
+      const markers = transactions.filter(item => item.markerOf && item.date.startsWith(monthKey) && item.property === property);
+      let changed = false;
+      own.filter(item => item.name === REFERENCE_SECTION).forEach(section => {
+        const used = new Set(markers.filter(item => item.type === section.type).map(item => item.category));
+        const kept = section.subsections.filter(name => used.has(name));
+        if (kept.length !== section.subsections.length) { section.subsections = kept; changed = true; }
+      });
+      const empty = own.filter(item => item.name === REFERENCE_SECTION && !item.subsections.length);
+      if (empty.length) { own.splice(0, own.length, ...own.filter(item => !empty.includes(item))); changed = true; }
+      return changed ? store.saveMonthSections(year, monthIndex, property, own) : null;
+    }
+    // Loads the months that markers of the entries shown here live in, so they are drawn and kept in step.
+    let referencesLoading = false;
+    function loadReferenceMonths() {
+      const missing = referenceMonthsToLoad();
+      if (!missing.length || referencesLoading) return;
+      referencesLoading = true;
+      Promise.all(missing.map(([year, monthIndex]) => store.ensureMonth(year, monthIndex))).then(
+        () => { referencesLoading = false; renderLedger(); },
+        () => { referencesLoading = false; showToast('Could not load a month that an entry refers to.'); }
+      );
+    }
+    // The picker: a day, a month and a year. The year is changed one at a time by swiping, or the wheel; it is never a list.
+    const datePick = { input: null, year: 0 };
+    function openDatePicker(input) {
+      if (isViewer) return viewOnly();
+      const refInput = input.form?.elements.refDate;
+      const today = new Date();
+      const picked = refInput?.value || '';
+      const at = picked
+        ? { year: Number(picked.slice(0, 4)), month: Number(picked.slice(5, 7)), day: Number(picked.slice(8, 10)) }
+        : { year: today.getFullYear(), month: today.getMonth() + 1, day: Number(input.value) || today.getDate() };
+      datePick.input = input;
+      datePick.year = at.year;
+      const dialog = document.querySelector('#date-pick-dialog');
+      const form = dialog.querySelector('#date-pick-form');
+      form.elements.pday.value = String(at.day);
+      form.elements.pmonth.value = String(at.month);
+      drawDatePickYear();
+      const own = input.closest('.date-pick')?.dataset.ownMonth || '';
+      document.querySelector('#date-pick-where').textContent = own ? `Entry in ${monthLabel(new Date(Number(own.slice(0, 4)), Number(own.slice(5, 7)) - 1, 1))}` : 'Entry';
+      document.querySelector('#date-pick-error').hidden = true;
+      dialog.showModal();
+      form.elements.pday.focus();
+    }
+    function drawDatePickYear() { document.querySelector('#date-pick-year').textContent = String(datePick.year); }
+    function stepDatePickYear(step) { datePick.year += step; drawDatePickYear(); }
+    function applyDatePick(form) {
+      const input = datePick.input;
+      const error = document.querySelector('#date-pick-error');
+      const fail = message => { error.textContent = message; error.hidden = false; };
+      const day = Math.round(Number(form.elements.pday.value));
+      const month = Number(form.elements.pmonth.value);
+      const year = datePick.year;
+      const length = new Date(year, month, 0).getDate();
+      if (!Number.isInteger(day) || day < 1 || day > length) return fail(`${monthShort(new Date(year, month - 1, 1))} ${year} has ${length} days. Type a day from 1 to ${length}.`);
+      const wrap = input.closest('.date-pick');
+      const own = wrap?.dataset.ownMonth;
+      const pickedKey = `${year}-${String(month).padStart(2, '0')}`;
+      const refInput = input.form?.elements.refDate;
+      if (pickedKey === own) {
+        input.value = String(day);
+        if (refInput) refInput.value = '';
+        wrap?.removeAttribute('data-picked');
+      } else {
+        if (!store.year(year)) return fail(`${year} is not set up yet. Set it up in Year settings first, then pick a date in it.`);
+        const ownLength = new Date(Number(own.slice(0, 4)), Number(own.slice(5, 7)), 0).getDate();
+        input.value = String(Math.min(day, ownLength));
+        if (refInput) refInput.value = `${pickedKey}-${String(day).padStart(2, '0')}`;
+        if (wrap) wrap.dataset.picked = `${day} ${monthShort(new Date(year, month - 1, 1))} ${year}`;
+      }
+      document.querySelector('#date-pick-dialog').close();
+      input.focus();
+    }
+    function setupDatePicker() {
+      const dialog = document.querySelector('#date-pick-dialog');
+      if (!dialog) return;
+      const form = dialog.querySelector('#date-pick-form');
+      form.elements.pmonth.innerHTML = Array.from({ length: 12 }, (_, n) => `<option value="${n + 1}">${SHORT_MONTHS[n]}</option>`).join('');
+      // The day box takes digits as typed. A special character (., /, - or any other symbol) opens the picker instead, and
+      // the character is not typed into the box.
+      document.addEventListener('keydown', event => {
+        const box = event.target;
+        if (!(box instanceof HTMLInputElement) || !box.hasAttribute('data-date-pick') || !box.form) return;
+        if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1 || /[0-9]/.test(event.key)) return;
+        event.preventDefault();
+        openDatePicker(box);
+      });
+      form.addEventListener('submit', event => { event.preventDefault(); applyDatePick(form); });
+      form.addEventListener('click', event => {
+        const step = event.target.closest('[data-year-step]');
+        if (step) stepDatePickYear(Number(step.dataset.yearStep));
+      });
+      // Swipe up to go forward a year, down to go back; the mouse wheel and the arrow keys do the same over the year.
+      const spin = form.querySelector('[data-year-spin]');
+      let dragFrom = null;
+      spin.addEventListener('pointerdown', event => { dragFrom = event.clientY; spin.setPointerCapture?.(event.pointerId); });
+      spin.addEventListener('pointermove', event => {
+        if (dragFrom === null) return;
+        const moved = dragFrom - event.clientY;
+        if (Math.abs(moved) < 22) return;
+        stepDatePickYear(moved > 0 ? 1 : -1);
+        dragFrom = event.clientY;
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(name => spin.addEventListener(name, () => { dragFrom = null; }));
+      spin.addEventListener('wheel', event => { event.preventDefault(); stepDatePickYear(event.deltaY < 0 ? 1 : -1); }, { passive: false });
+      spin.addEventListener('keydown', event => {
+        if (event.key === 'ArrowUp') { event.preventDefault(); stepDatePickYear(1); }
+        if (event.key === 'ArrowDown') { event.preventDefault(); stepDatePickYear(-1); }
+      });
+    }
+    // ---- Money that sits somewhere and comes back: closing a savings pot, a hold, a loan given or a loan taken ----
+    // An item lives in the month it was put in. When money comes back (or is paid back), it is written in the month it
+    // happened, in a section of the same name, linked to the first: both months show the link, and the year card counts
+    // them as one. What is open is worked out from every linked month's entries, so it is always what the ledger says.
+    const CLOSE_TEXT = {
+      savings: { title: 'Paid out', menu: 'Paid out…', hint: 'what came back, with any interest', amount: 'Amount you got back', rest: 'Close it: the rest is lost (counts against income)' },
+      hold: { title: 'Money came back', menu: 'Money came back…', hint: 'the rest can be kept by them', amount: 'Amount you got back', rest: 'Close it: they kept the rest (an expense)' },
+      lent: { title: 'Repaid to you', menu: 'Repaid…', hint: 'what they paid back; more is interest', amount: 'Amount they paid back', rest: 'Close it: write off the rest (an expense)' },
+      borrowed: { title: 'You repaid', menu: 'Repay…', hint: 'what you paid back; more is interest', amount: 'Amount you paid back', rest: '' }
+    };
+    const closeState = { link: '', name: '', kind: '', property: '', balance: 0 };
+    const linkedKeyOf = ({ year, monthIndex }) => keyOf(year, monthIndex);
+    // What is still open across every month linked to this item: savings in the pot, money on hold, lent or owed.
+    function blockBalance(link, property) {
+      return store.linkedSections(link, property).reduce((sum, { year, monthIndex, section }) => {
+        const prefix = keyOf(year, monthIndex);
+        transactions.filter(item => !item.parentId && item.type === 'net' && item.property === property && item.section === section.name && item.date.startsWith(prefix)).forEach(item => {
+          const role = ExpenseStore.subsectionRole(section, item.category);
+          const amount = store.entryTotal(item.id);
+          if (['save', 'hold', 'lend', 'borrow'].includes(role)) sum += amount;
+          if (role === 'kept' || role === 'writeoff') sum -= amount;
+        });
+        return sum;
+      }, 0);
+    }
+    async function openCloseDialog(mKey, property, sectionName, kind) {
+      if (isViewer) return viewOnly();
+      if (!CLOSE_TEXT[kind]) return;
+      const scope = panelScope(mKey, property);
+      const section = scope.own().find(item => item.type === 'net' && item.name === sectionName);
+      if (!section) return showToast('Could not find that section here.');
+      // The first close gives the item its link, kept on the section in the month it was put in.
+      if (!section.link) { section.link = newSharedKey('lk'); scope.save(); }
+      try {
+        await Promise.all(store.linkedSections(section.link, property).map(({ year, monthIndex }) => store.ensureMonth(year, monthIndex)));
+      } catch (error) { return showToast('Could not load every month this is in. Try again.'); }
+      const balance = blockBalance(section.link, property);
+      Object.assign(closeState, { link: section.link, name: section.name, kind, property, balance });
+      const text = CLOSE_TEXT[kind];
+      const form = document.querySelector('#close-form');
+      const today = new Date();
+      form.elements.date.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      form.elements.amount.value = (Math.abs(balance) / 100).toFixed(2);
+      form.elements.rest.checked = kind === 'hold';
+      document.querySelector('#close-title').textContent = text.title;
+      document.querySelector('#close-where').textContent = `${regions[property]?.code || property} · ${section.name}`;
+      document.querySelector('#close-amount-label').textContent = text.amount;
+      document.querySelector('#close-rest-label').textContent = text.rest;
+      document.querySelector('#close-rest').hidden = !text.rest;
+      document.querySelector('#close-open').textContent = `Still open: ${formatMoney(Math.abs(balance), property)}. It is written in the month of the date below, linked to this one.`;
+      document.querySelector('#close-error').hidden = true;
+      document.querySelector('#close-dialog').showModal();
+      form.elements.amount.focus();
+    }
+    // The entries a close writes: what came back against the balance, and what is left over or kept, by kind.
+    function closeParts(kind, balance, amount, closeRest) {
+      const back = Math.min(amount, Math.max(balance, 0));
+      const extra = Math.max(0, amount - Math.max(balance, 0));
+      const rest = Math.max(0, balance - amount);
+      const parts = [];
+      if (kind === 'savings') {
+        parts.push(['Paid out', 'save', -back]);
+        if (extra) parts.push(['Interest or gain', 'return', extra]);
+        if (rest && closeRest) parts.push(['Lost', 'return', -rest]);
+      } else if (kind === 'hold') {
+        parts.push(['Had back', 'hold', -back]);
+        if (rest && closeRest) parts.push(['Kept by them', 'kept', rest]);
+      } else if (kind === 'lent') {
+        parts.push(['Repaid', 'lend', -back]);
+        if (extra) parts.push(['Interest earned', 'earned', extra]);
+        if (rest && closeRest) parts.push(['Written off', 'writeoff', rest]);
+      } else if (kind === 'borrowed') {
+        parts.push(['Repaid', 'borrow', -back]);
+        if (extra) parts.push(['Interest paid', 'charged', extra]);
+      }
+      return { parts: parts.filter(([, , value]) => value), closed: closeRest ? true : amount >= balance };
+    }
+    async function saveClose(form) {
+      const error = document.querySelector('#close-error');
+      const fail = message => { error.textContent = message; error.hidden = false; };
+      const { link, name, kind, property, balance } = closeState;
+      const date = form.elements.date.value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Pick the date it happened.');
+      const amount = Math.round(Number(String(form.elements.amount.value).replace(/[,\s]/g, '')) * 100);
+      if (!Number.isFinite(amount) || amount <= 0) return fail('Enter an amount above zero.');
+      if (kind === 'hold' && amount > balance) return fail(`Only ${formatMoney(balance, property)} is on hold.`);
+      const year = Number(date.slice(0, 4));
+      const monthIndex = Number(date.slice(5, 7)) - 1;
+      if (!store.year(year)) return fail(`${year} is not set up yet. Set it up in Year settings first.`);
+      try { await store.ensureMonth(year, monthIndex); } catch (problem) { return fail('Could not load that month. Try again.'); }
+      const { parts, closed } = closeParts(kind, balance, amount, form.elements.rest.checked);
+      const sections = store.ownSections(year, monthIndex, property);
+      let section = sections.find(item => item.type === 'net' && item.link === link)
+        || sections.find(item => item.type === 'net' && item.name === name && ExpenseStore.sectionKind(item) === kind && !item.link);
+      if (!section && sections.some(item => item.name === name)) return fail(`That month already has a different section called “${name}”. Rename one of them first.`);
+      if (!section) sections.push(section = { name, type: 'net', kind, block: true, subsections: [], roles: {}, calc: ExpenseStore.defaultCalc(kind) });
+      section.link = link;
+      const stamp = Date.now();
+      parts.forEach(([label, role, value], index) => {
+        const sub = ExpenseStore.safeKey(label);
+        if (!section.subsections.includes(sub)) section.subsections.push(sub);
+        (section.roles ||= {})[sub] = role;
+        transactions.push({ id: `new-${stamp}-c${index}`, property, date, section: section.name, category: sub, description: `${name}: ${label.toLowerCase()}`, place: '', amount: value, type: 'net' });
+      });
+      // Once nothing is open, every linked month shows it as settled.
+      const writes = [store.saveMonthSections(year, monthIndex, property, sections)];
+      if (closed) {
+        store.linkedSections(link, property).forEach(({ year: y, monthIndex: m, section: own }) => {
+          own.closed = true;
+          own.closedOn = date;
+          if (y !== year || m !== monthIndex) writes.push(store.saveMonthSections(y, m, property, store.ownSections(y, m, property)));
+        });
+      }
+      trackSave(Promise.all(writes));
+      saveTransactions();
+      document.querySelector('#close-dialog').close();
+      renderLedger();
+      showToast(`Written in ${monthLabel(new Date(year, monthIndex, 1))}, linked to “${name}”.${closed ? ' Nothing is open now.' : ''}`);
+    }
+    function setupCloseDialog() {
+      const form = document.querySelector('#close-form');
+      if (!form) return;
+      form.addEventListener('submit', event => { event.preventDefault(); saveClose(form); });
+    }
+    // Opens a linked month (from the link on a section's heading).
+    function openLinkedMonth(mKey, property) {
+      const [year] = yearMonthOf(mKey);
+      openSearchResult({ year, mKey, property, entryId: null, noteId: null, category: null });
+    }
+    // The month an entry is for, from its form. '' when it is the month it is added in; false when it cannot be kept (a
+    // reference is only for income and expenses, and only into a year that is set up).
+    function referenceFromForm(fields, type, ownMonth) {
+      const refDate = fields.refDate?.value || '';
+      if (!refDate || refDate.slice(0, 7) === ownMonth) return '';
+      if (type === 'net') { showToast('A date in another month is for income and expenses only.'); return false; }
+      if (!store.year(Number(refDate.slice(0, 4)))) { showToast(`${refDate.slice(0, 4)} is not set up yet. Set it up in Year settings first.`); return false; }
+      return refDate;
+    }
     function saveYearConfig(year, config = {}) { trackSave(store.saveYear(year, config)); }
     const yearMonthOf = mKey => [Number(mKey.slice(0, 4)), Number(mKey.slice(5, 7)) - 1];
     function saveMonthSections(mKey, property) {
@@ -236,6 +552,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       fmt: formatMoney, compact: compactMoney, esc: escapeHtml, dayLabel, keyOf, catKey, monthLabel, regions,
       // The shared lookups need the store's instance, which the blueprints cannot reach (they only see the class).
       sharedSeries: entry => store.sharedSeriesStatus(entry),
+      linkedMonths: (link, property) => store.linkedSections(link, property).map(({ year, monthIndex }) => ({ key: keyOf(year, monthIndex), label: monthLabel(new Date(year, monthIndex, 1)), short: `${SHORT_MONTHS[monthIndex]} ${year}` })),
       sharedOwed: entry => store.sharedOwed(entry),
       today: () => { const now = new Date(); return `${keyOf(now.getFullYear(), now.getMonth())}-${String(now.getDate()).padStart(2, '0')}`; }
     };
@@ -246,6 +563,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function renderLedger({ loadMissing = true } = {}) {
       const ledger = document.querySelector('#ledger');
       if (!ledger) return;
+      loadReferenceMonths();
       store.refreshSeries();
       // Every year is read once in the background, so a series that runs past its own month shows its colour in every month.
       if (!allYearsRequested) {
@@ -520,10 +838,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const name = ExpenseStore.safeKey(input.value.trim().replace(/\s+/g, ' '));
       const hint = form.querySelector('.ledger-form-hint');
       const { month, property } = ledgerDraft;
-      const kind = ['settlement', 'savings'].includes(form.elements.kind?.value) ? form.elements.kind.value : 'settlement';
-      const one = kind === 'savings' ? 'savings pot' : 'settlement';
+      const kind = ExpenseStore.SECTION_ROLES.kinds.includes(form.elements.kind?.value) ? form.elements.kind.value : 'settlement';
+      const one = (window.LedgerBlueprints.GROUPS[kind] || window.LedgerBlueprints.GROUPS.settlement).one;
       const scope = panelScope(month, property);
-      const reserved = ['income', 'expenses', 'other income', 'other expenses', 'other balance', 'settlements', 'savings'];
+      const reserved = ['income', 'expenses', 'other income', 'other expenses', 'other balance', 'settlements', 'savings', 'on hold', 'lent out', 'borrowed'];
       const problem = !name ? 'Type a name first.'
         : reserved.includes(name.toLowerCase()) || scope.sections().some(item => item.name.toLowerCase() === name.toLowerCase()) ? `There is already a section called "${name}" here.` : '';
       if (problem) {
@@ -533,7 +851,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       scope.own().push({ name, type: 'net', kind, subsections: [], roles: {}, block: true, calc: ExpenseStore.defaultCalc(kind) });
       scope.save();
-      ledgerDraft = { month, property, section: name, role: kind === 'savings' ? 'save' : 'cost' };
+      ledgerDraft = { month, property, section: name, role: ExpenseStore.SECTION_ROLES.fallback[kind] };
       renderLedger();
       showToast(`Added the ${one} "${name}". Name its first subsection.`);
     }
@@ -768,6 +1086,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const date = dateFromForm(fields, month);
       const parsed = ExpenseStore.readAmount(fields.amount.value);
       const amount = parsed.value;
+      const refDate = referenceFromForm(fields, type, month);
+      if (refDate === false) return;
       const checks = [
         [fields.date || fields.day, Boolean(date)],
         [fields.description, fields.description.value.trim() !== ''],
@@ -776,12 +1096,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
       if (invalid) return invalid[0].focus();
-      transactions.push({ id: `new-${Date.now()}`, property, date, section, category, description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), ...(parsed.formula && { formula: parsed.formula }), type, ...panelScope(month, property).fields });
+      const noticeMonth = refDate && !store.monthNode(Number(refDate.slice(0, 4)), Number(refDate.slice(5, 7)) - 1);
+      transactions.push({ id: `new-${Date.now()}`, property, date, section, category, ...(refDate && { refDate, refKey: newSharedKey('rf') }), description: fields.description.value.trim(), place: fields.place.value.trim(), amount: Math.round(amount * 100), ...(parsed.formula && { formula: parsed.formula }), type, ...panelScope(month, property).fields });
       saveTransactions();
       entryDraft = null;
       revealKey = catKey(month, property, type, category);
       renderLedger();
-      showToast(`Saved to ${category}.`);
+      const refMonth = refDate ? monthLabel(new Date(Number(refDate.slice(0, 4)), Number(refDate.slice(5, 7)) - 1, 1)) : '';
+      showToast(noticeMonth ? `Created ${refMonth} for the reference, with a “Here and there” section.` : refDate ? `Saved to ${category}, and listed in ${refMonth}.` : `Saved to ${category}.`);
     }
     // Double-click edit of an entry or a note: same day/description/place/amount fields as when it was added.
     function saveEditDraft(form) {
@@ -804,6 +1126,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       checks.forEach(([input, ok]) => input.toggleAttribute('aria-invalid', !ok));
       const invalid = checks.find(([, ok]) => !ok);
       if (invalid) return invalid[0].focus();
+      const refDate = isNote ? '' : referenceFromForm(fields, item.type, item.date.slice(0, 7));
+      if (refDate === false) return;
       Object.assign(item, {
         date,
         description: fields.description.value.trim(),
@@ -811,6 +1135,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         amount: Math.round(amount * 100),
         formula: parsed.formula || undefined
       });
+      if (!isNote) {
+        if (refDate) { item.refDate = refDate; item.refKey ||= newSharedKey('rf'); }
+        else { delete item.refDate; delete item.refKey; }
+      }
       saveTransactions();
       editDraft = null;
       renderLedger();
@@ -1165,6 +1493,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         // A subsection's Day or Amount sort button: orders its entries and their notes. It sits in the row's <summary>,
         // so the default (opening or closing the row) is prevented, and it never counts toward a double-click rename.
         // Only what is already loaded is redrawn: nothing is fetched from or written to Firebase.
+        const linkChip = event.target.closest('[data-link-month]');
+        if (linkChip) {
+          event.preventDefault();
+          event.stopPropagation();
+          return openLinkedMonth(linkChip.dataset.linkMonth, linkChip.dataset.linkProperty);
+        }
         const dayOrb = event.target.closest('[data-day-orb]');
         if (dayOrb) {
           event.preventDefault();
@@ -1491,7 +1825,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (groupBlock && !mKey.startsWith('ev:')) {
           ledgerDraft = { month: mKey, property, newSection: groupBlock.dataset.group };
           renderLedger();
-          showToast(groupBlock.dataset.group === 'savings' ? 'Name the savings pot.' : 'Name the settlement.');
+          showToast(`Name the ${(window.LedgerBlueprints.GROUPS[groupBlock.dataset.group] || window.LedgerBlueprints.GROUPS.settlement).one}.`);
           return true;
         }
         const entryCell = element.closest('.ledger-entry-cell:not(.ledger-sub-entry)');
@@ -1887,7 +2221,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           const sectionKind = section.type === 'net' ? ExpenseStore.sectionKind(section) : null;
           // Which block a custom section belongs to, whether it has been closed off, and what each of its subsections
           // stands for — all of it editable here as well as from the ledger itself.
-          const kindToggle = !sectionKind ? '' : `<div class="type-toggle" role="group" aria-label="Which block this belongs to"><button type="button" data-section-kind="settlement" aria-pressed="${sectionKind === 'settlement'}">Settlement</button><button type="button" data-section-kind="savings" aria-pressed="${sectionKind === 'savings'}">Savings</button></div>`;
+          const kindToggle = !sectionKind ? '' : `<div class="type-toggle" role="group" aria-label="Which block this belongs to">${ExpenseStore.SECTION_ROLES.kinds.map(kind => `<button type="button" data-section-kind="${kind}" aria-pressed="${sectionKind === kind}">${window.LedgerBlueprints.GROUPS[kind].title}</button>`).join('')}</div>`;
           const closedToggle = !sectionKind ? '' : `<label class="check-field config-closed"><input type="checkbox" data-section-closed${section.closed ? ' checked' : ''}><span>Closed${section.closedOn ? ` <em>on ${escapeHtml(section.closedOn)}</em>` : ' <em>no more entries; its figures stay</em>'}</span></label>`;
           const roleRows = !sectionKind || !section.subsections.length ? '' : `<div class="config-roles"><span class="kv-key">What each one counts as</span>${section.subsections.map(sub => `<label class="config-role"><span>${escapeHtml(sub)}</span><select data-section-role="${escapeHtml(sub)}" aria-label="What ${escapeHtml(sub)} counts as">${window.LedgerBlueprints.ROLE_CHOICES[sectionKind].map(([value, label]) => `<option value="${value}"${value === ExpenseStore.subsectionRole(section, sub) ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select></label>`).join('')}</div>`;
           box.innerHTML = `<div class="config-section-head">
@@ -2072,6 +2406,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // yours, the money that passed between the two sides, and how much of that has been said what it was for.
       const roleChips = setupKind() === 'savings'
         ? totalChip('SV', 'Put into the pot less what was taken out') + totalChip('RT', 'Interest, dividend or gain the pot earned')
+        : setupKind() === 'hold' ? totalChip('HD', 'Paid in less what came back') + totalChip('KP', 'What they kept: an expense')
+        : setupKind() === 'lent' ? totalChip('LT', 'Given less what was repaid') + totalChip('LI', 'Interest earned') + totalChip('WO', 'Written off: an expense')
+        : setupKind() === 'borrowed' ? totalChip('BR', 'Received less what was repaid') + totalChip('BI', 'Interest paid: an expense')
         : totalChip('OWED', 'Still outstanding: above zero is owed to you, below zero is what you owe')
           + totalChip('MS', 'Your own share of what the group spent')
           + totalChip('SI', 'Money that came to you from the other side')
@@ -2405,7 +2742,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // redrawing the list under the pointer would throw away the tick that was just made.
     function renderMergeDialog() {
       const { property, picked } = mergeState;
-      const one = mergeState.kind === 'savings' ? 'pot' : 'settlement';
+      const one = (window.LedgerBlueprints.GROUPS[mergeState.kind] || window.LedgerBlueprints.GROUPS.settlement).one;
       document.querySelector('#merge-blurb').textContent = `Pick the closed ${one}s that were really the same thing. Their subsections and every entry move across; nothing is lost and no figure changes.`;
       document.querySelector('#merge-list').innerHTML = mergeCandidates().map(section => {
         const settle = sectionSettle(mergeState.month, property, section);
@@ -2950,7 +3287,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       Object.assign(mergeState, { month, property, kind, picked: new Set() });
       const list = mergeCandidates();
       if (list.length < 2) return showToast('Close at least two of them first.');
-      document.querySelector('#merge-dialog-title').textContent = kind === 'savings' ? 'Merge settled pots' : 'Merge settled settlements';
+      document.querySelector('#merge-dialog-title').textContent = `Merge settled ${(window.LedgerBlueprints.GROUPS[kind] || window.LedgerBlueprints.GROUPS.settlement).one}s`;
       document.querySelector('#merge-where').textContent = `${regions[property].code} · ${panelScope(month, property).label}`;
       document.querySelector('#merge-error').hidden = true;
       renderMergeDialog();
@@ -3586,6 +3923,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const kindKey = ExpenseStore.sectionKind(into);
       if (from === 'net') return ExpenseStore.SECTION_ROLES.fallback[kindKey];
       if (kindKey === 'savings') return from === 'income' ? 'return' : 'save';
+      if (kindKey !== 'settlement') return ExpenseStore.SECTION_ROLES.fallback[kindKey];
       return from === 'income' ? 'settle' : 'cost';
     };
     // Counted while a paste runs, and reported once when it finishes: a row whose money changed direction is still
@@ -4207,19 +4545,22 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
           ledgerDraft = { month: mKey, property, newSection: which };
           renderLedger();
-          showToast(which === 'savings' ? 'Name the savings pot.' : 'Name the settlement.');
+          showToast(`Name the ${(window.LedgerBlueprints.GROUPS[which] || window.LedgerBlueprints.GROUPS.settlement).one}.`);
         };
         return write([
           ...(isEvent ? [{ icon: 'plus', label: 'Add subsection', run: add }] : [
             { icon: 'arrows-exchange', label: 'Add settlement', hint: 'money shared with someone', run: startBlock('settlement') },
-            { icon: 'pig-money', label: 'Add savings pot', hint: 'what you set aside', run: startBlock('savings') }
+            { icon: 'pig-money', label: 'Add savings pot', hint: 'what you set aside, and what it earns', run: startBlock('savings') },
+            { icon: 'lock', label: 'Put money on hold', hint: 'a deposit or advance you expect back', run: startBlock('hold') },
+            { icon: 'arrow-up-right', label: 'Lend money', hint: 'given to someone to pay back', run: startBlock('lent') },
+            { icon: 'arrow-down-left', label: 'Borrow money', hint: 'received, to pay back', run: startBlock('borrowed') }
           ]),
           ...pasteAction,
           { icon: 'settings', label: settingsLabel, run: settings }
         ]);
       }
       if (kind === 'group') {
-        const one = target.group === 'savings' ? 'savings pot' : 'settlement';
+        const one = (window.LedgerBlueprints.GROUPS[target.group] || window.LedgerBlueprints.GROUPS.settlement).one;
         const closed = panelScope(mKey, property).sections().filter(item => item.type === 'net' && item.closed && ExpenseStore.sectionKind(item) === target.group);
         // The block has a calculation of its own, over the sections in it, so this opens the block's own setup rather
         // than one of its sections'. Each section is still set up from its own row; this is the figure the block itself
@@ -4240,7 +4581,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       if (kind === 'section') {
         const custom = target.section && target.type === 'net';
-        const one = target.kindOf === 'savings' ? 'pot' : 'settlement';
+        const one = (window.LedgerBlueprints.GROUPS[target.kindOf] || window.LedgerBlueprints.GROUPS.settlement).one;
         const section = custom && !isEvent
           ? panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === target.section)
           : null;
@@ -4252,8 +4593,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ...(section?.mergedFrom?.length && !section.mergedSections?.length
             ? [{ icon: 'arrow-merge', label: 'Unpack older merge…', hint: 'assign subsections to the original sections', run: () => openLegacyUnpackDialog(mKey, property, target.section) }]
             : []),
+          ...(custom && !isEvent && CLOSE_TEXT[target.kindOf] && !target.closed ? [{ icon: 'arrow-back-up', label: CLOSE_TEXT[target.kindOf].menu, hint: CLOSE_TEXT[target.kindOf].hint, run: () => openCloseDialog(mKey, property, target.section, target.kindOf) }] : []),
           ...(custom ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…',
-            hint: target.kindOf === 'savings' ? 'this section and its subsections' : 'what it posts to Income and Expenses',
+            hint: target.kindOf === 'settlement' ? 'what it posts to Income and Expenses' : 'this section and its subsections',
             run: () => openSectionSetup(mKey, property, target.section) }] : []),
           ...(custom && !isEvent ? [target.closed
             ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
@@ -5257,6 +5599,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     setupSharedDialogs();
     setupDayDialog();
     setupSettleItemDialog();
+    setupDatePicker();
+    setupCloseDialog();
     setupLegacyUnpackDialog();
     setupAboutPop();
     setupHub();

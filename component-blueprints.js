@@ -9,9 +9,17 @@
   const isEventKey = mKey => String(mKey).startsWith('ev:');
   // The year card uses "yr:<year>": it shows every month's entries, each still in (and edited within) its own month.
   const isYearKey = mKey => String(mKey).startsWith('yr:');
-  const dateField = (mKey, value, { required = true, label = 'Day of month' } = {}) => (isEventKey(mKey)
-    ? `<input name="date" type="date" value="${value || ''}" aria-label="Date"${required ? ' required' : ''}>`
-    : `<input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(isYearKey(mKey) ? String(value).slice(0, 7) : mKey)}" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}>`);
+  // The day of an entry, typed as a day of its own month. A special character typed into it (such as .) opens the picker
+  // (day, month, year), which can point the entry at another month: the entry stays in this one, and that month gets a
+  // marker (see here-and-there.js).
+  const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const referenceNote = refDate => `${Number(refDate.slice(8, 10))} ${SHORT_MONTHS[Number(refDate.slice(5, 7)) - 1]} ${refDate.slice(0, 4)}`;
+  const dateField = (mKey, value, { required = true, label = 'Day of month', refs = true, refDate = '' } = {}) => {
+    if (isEventKey(mKey)) return `<input name="date" type="date" value="${value || ''}" aria-label="Date"${required ? ' required' : ''}>`;
+    const own = isYearKey(mKey) ? String(value).slice(0, 7) : mKey;
+    const pointsAway = Boolean(refs && refDate && refDate.slice(0, 7) !== own);
+    return `<span class="date-pick" data-own-month="${own}"${pointsAway ? ` data-picked="${referenceNote(refDate)}"` : ''}><input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(own)}" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}${refs ? ' data-date-pick title="Type a day. Type a special character such as . to pick the month and year."' : ''}>${refs ? `<input type="hidden" name="refDate" value="${pointsAway ? refDate : ''}">` : ''}</span>`;
+  };
   // Day 0 marks a row that stands for a group rather than a day of the month (see the level-shifting paste), so it
   // shows a dash where a date would go.
   const dateText = (mKey, date, ctx) => (isEventKey(mKey) || isYearKey(mKey) ? ctx.dayLabel(date) : (date.slice(8, 10) === '00' ? '—' : date.slice(8, 10)));
@@ -47,6 +55,21 @@
       kind: 'savings', title: 'Savings', icon: 'ti-pig-money', one: 'savings pot',
       blurb: 'What you set aside, take back out, and what it earns.',
       empty: 'No savings recorded this month.'
+    },
+    hold: {
+      kind: 'hold', title: 'On hold', icon: 'ti-lock', one: 'hold',
+      blurb: 'Money paid that you expect back: a deposit or an advance. Not an expense while it is held.',
+      empty: 'Nothing on hold this month.'
+    },
+    lent: {
+      kind: 'lent', title: 'Lent out', icon: 'ti-arrow-up-right', one: 'loan given',
+      blurb: 'Money you gave someone to pay back. Not an expense; interest is income, a write-off an expense.',
+      empty: 'Nothing lent this month.'
+    },
+    borrowed: {
+      kind: 'borrowed', title: 'Borrowed', icon: 'ti-arrow-down-left', one: 'loan taken',
+      blurb: 'Money you received to pay back. Not income; interest paid is an expense.',
+      empty: 'Nothing borrowed this month.'
     }
   };
   const groupOf = section => GROUPS[section?._meta?.kind] || GROUPS.settlement;
@@ -113,20 +136,23 @@
   const DeleteButton = attrs =>
     `<button type="button" class="mini-btn is-delete" ${attrs} aria-label="Delete" title="Delete"><i class="ti ti-trash" aria-hidden="true"></i><span>Delete</span></button>`;
   const EntryForm = ({ mKey, property, type, category, sectionName }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate>${dateField(mKey, isEventKey(mKey) ? ctx.today() : '')}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount" required>${FormActions('data-cancel-entry')}</form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate>${dateField(mKey, isEventKey(mKey) ? ctx.today() : '')}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount" required>${FormActions('data-cancel-entry')}</form>`;
 
   const SubEntryForm = ({ mKey, parentId }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate>${dateField(mKey, '', { required: false })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount">${FormActions('data-cancel-sub-entry')}</form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate>${dateField(mKey, '', { required: false, refs: false })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount">${FormActions('data-cancel-sub-entry')}</form>`;
 
   // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
   const EditEntryForm = ({ mKey, item, kind }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date)}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.sharedTotal ?? item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date, { refs: kind !== 'note', refDate: item.refDate || '' })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.sharedTotal ?? item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
 
   // Inside a settlement or a pot a subsection has to say what it stands for, because that is what decides whether its
   // amounts are money that moved or only a note about the split. Everywhere else the picker is left out.
   const ROLE_CHOICES = {
     settlement: [['cost', 'Paid for the group'], ['share', 'My share'], ['settle', 'Settled up / lent / received']],
-    savings: [['save', 'Put in or taken out'], ['return', 'Interest or gain']]
+    savings: [['save', 'Put in or taken out'], ['return', 'Interest or gain']],
+    hold: [['hold', 'Paid in or had back'], ['kept', 'Kept by them (an expense)']],
+    lent: [['lend', 'Given or repaid'], ['earned', 'Interest earned'], ['writeoff', 'Written off (an expense)']],
+    borrowed: [['borrow', 'Received or repaid'], ['charged', 'Interest paid']]
   };
   const RoleField = (kind, selected, ctx) => (!ROLE_CHOICES[kind] ? '' :
     `<select class="role-select" name="role" aria-label="What this subsection stands for" title="What this subsection stands for">${ROLE_CHOICES[kind].map(([value, label]) => `<option value="${value}"${value === selected ? ' selected' : ''}>${ctx.esc(label)}</option>`).join('')}</select>`);
@@ -256,7 +282,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -433,7 +459,7 @@
     const live = type === 'net' && heading && !isYearKey(mKey);
     // In a month, a settlement or a pot is renamed in place: its entries follow it, here and nowhere else.
     const ownRename = live && meta && e?.kind === 'section' && e.month === mKey && e.property === property && e.section === heading?.section
-      ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${meta.kind === 'savings' ? 'savings pot' : 'settlement'}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
+      ? `<form class="ledger-form cat-rename-form section-rename-form" data-ledger-form="rename-section" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(heading.section)}" novalidate><input name="name" value="${ctx.esc(heading.section)}" maxlength="40" aria-label="Name for this ${(GROUPS[meta.kind] || GROUPS.settlement).one}" autocomplete="off"><p class="ledger-form-hint" aria-live="polite">Renames it in this month; its entries follow it</p></form>`
       : '';
     const open = Boolean(subForm) || Boolean(renameForm) || Boolean(ownRename) || categoriesHtml.includes('data-ledger-form=');
     // A settlement and a pot are both set up from their row menus (see openSectionSetup).
@@ -462,7 +488,10 @@
     const settleHtml = type === 'net' && meta?.kind === 'settlement' && meta.settle
       ? SettleTotals(meta.stats?.balance ?? (meta.settle.cashIn - meta.settle.cashOut), property, ctx)
       : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    const linkChips = type === 'net' && meta?.link && ctx.linkedMonths
+      ? ctx.linkedMonths(meta.link, property).filter(month => month.key !== mKey).map(month => `<button type="button" class="link-chip" data-link-month="${month.key}" data-link-property="${property}" title="Linked: open ${ctx.esc(month.label)}"><i class="ti ti-link" aria-hidden="true"></i>${ctx.esc(month.short)}</button>`).join('')
+      : '';
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -513,6 +542,22 @@
   };
 
   // Level 2: one currency's panel for a month. Same blueprint for every country; `country._meta.color` drives the tint.
+  // The year summary at the top of the opened year card: what the year really earned and spent, what was saved and what
+  // it earned, and what is still on hold, lent or borrowed at the year's end. Each figure in its own colour.
+  const YearSummary = (rows, ctx) => {
+    const tiles = row => [
+      ['is-income', 'Actual income', row.income, true],
+      ['is-expense', 'Actual expenses', row.expenses, true],
+      ['is-saved', 'Saved this year', row.savedIn, false],
+      ['is-saved', 'In savings', row.saved, false],
+      ['is-returns', 'Returns on savings', row.returns, false],
+      ['is-held', 'Still on hold', row.held, false],
+      ['is-lent', 'Lent out, not back yet', row.lent, false],
+      ['is-borrowed', 'Borrowed, not repaid', row.borrowed, false]
+    ].filter(([, , amount, always]) => always || amount)
+      .map(([cls, label, amount]) => `<div class="year-tile ${cls}"><span>${label}</span><b>${ctx.esc(ctx.fmt(amount, row.property))}</b></div>`).join('');
+    return `<section class="year-summary" aria-label="Year summary">${rows.map(row => `<div class="year-summary-row"><h3>${ctx.esc(ctx.regions?.[row.property]?.code || row.property)}</h3><div class="year-tiles">${tiles(row)}</div></div>`).join('')}</section>`;
+  };
   const CurrencyPanel = (country, { year, monthIndex, mKey: key }, state, ctx) => {
     const property = country._meta.id;
     const mKey = key || ctx.keyOf(year, monthIndex);
@@ -534,7 +579,7 @@
     // detail in the subsidiary ledger; here the subsidiary ledger is the Settlements block in this same panel, so
     // Income and Expenses carry one line per block, and the settlements themselves are read below, where each already
     // states its own cash and what is outstanding. What each section posts is set in its own setup (how it counts).
-    const GROUPS_KINDS = ['settlement', 'savings'];
+    const GROUPS_KINDS = Object.keys(GROUPS);
     // A block only counts for itself once someone has set it up; until then its sections post themselves exactly as
     // they always have, so nothing here changes for a ledger that has never opened a block's setup. Worked out once
     // per block and kept, because the panel asks for it per side.
@@ -562,16 +607,14 @@
         .filter(part => part.amount);
       return rows.length ? rows : null;
     };
-    const blockTitleOf = kind => (kind === 'savings'
-      ? (m.blockNames?.savings || GROUPS.savings.title)
-      : (m.blockNames?.settlement || GROUPS.settlement.title));
+    const blockTitleOf = kind => m.blockNames?.[kind] || (GROUPS[kind] || GROUPS.settlement).title;
     const balancesFor = type => {
       const own = lines.filter(line => line.type === type && line.amount);
       // One figure per block. Counted and shown-only never go in the same total: one is money the month claims, the
       // other is only being reported, and adding them would say the month holds more than it does.
       const groups = new Map();
       own.forEach(line => {
-        const kind = line.kind === 'savings' ? 'savings' : 'settlement';
+        const kind = GROUPS[line.kind] ? line.kind : 'settlement';
         if (blockRun(kind)) return; // a block that counts for itself says its own figure below
         const key = `${kind}|${line.counted ? 'counted' : 'shown'}`;
         const group = groups.get(key) || groups.set(key, { label: blockTitleOf(kind), kind, section: null, counted: line.counted, amount: 0, from: [], parts: [] }).get(key);
@@ -607,8 +650,7 @@
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, true)
       : TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + TypeSection('income', byType.income, { mKey, property }, state, ctx, false, carryFor('income'), null, balancesFor('income'))
-        + GroupBlock('settlement', settlements, { mKey, property, title: m.blockNames?.settlement, blockRun: blockRun('settlement') }, state, ctx)
-        + GroupBlock('savings', savings, { mKey, property, title: m.blockNames?.savings, blockRun: blockRun('savings') }, state, ctx)
+        + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind) }, state, ctx)).join('')
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
     const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
@@ -664,5 +706,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, YearSummary, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

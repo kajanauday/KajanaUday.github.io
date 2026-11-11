@@ -1603,3 +1603,88 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 /* A settled shared expense: the bottom 20% of its circle is filled dark red, the rest keeps its series colour. Not one of the year colours. */
 :root .day-orb.is-settled, :root[data-theme="light"] .day-orb.is-settled { background-color: var(--c); background-image: linear-gradient(to top, #991b1b 20%, transparent 20%); background-repeat: no-repeat; color: #ffffff; }
 :root .day-orb.is-settled:hover, :root .day-orb.is-settled:focus-visible { background-image: linear-gradient(to top, #7f1d1d 20%, transparent 20%); }
+
+/* The day field of an entry. A date in another month shows under the day. */
+.date-pick { position: relative; display: block; min-width: 0; }
+.date-pick[data-picked]::after { content: attr(data-picked); position: absolute; left: 0; top: 100%; margin-top: 1px; color: var(--brand); font: 500 10px/1.2 var(--mono); white-space: nowrap; pointer-events: none; }
+/* The day, month and year picker: three equal fields in a row, on a laptop and on a phone alike. */
+.date-pick-dialog { width: min(420px, calc(100% - 26px)); }
+.date-pick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.date-pick-field { display: grid; gap: 6px; min-width: 0; }
+.date-pick-field > span { color: var(--muted); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; }
+.date-pick-field input, .date-pick-field select { width: 100%; height: 38px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: 500 15px var(--mono); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .08); }
+.date-pick-field input:focus-visible, .date-pick-field select:focus-visible, .year-spin:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.year-spin { display: flex; align-items: center; justify-content: space-between; height: 38px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 1px 2px rgba(0, 0, 0, .08); cursor: ns-resize; touch-action: none; user-select: none; }
+.year-spin output { color: var(--ink); font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+.year-step { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.year-step:hover, .year-step:focus-visible { background: var(--hover); color: var(--ink); outline: none; }
+
+/* ---- Currencies: INR in a light warm orange, JPY in a light cool blue (each card keeps the theme's own contrast) ---- */
+:root[data-theme="light"] .ledger-panel {
+  --card: #fbf1e9; --halo: rgba(194, 65, 12, .12);
+  --ink: #3a1c10; --text: #4a2a1c; --muted: #7a5241; --note: #5e3c2d;
+  --line: rgba(58, 28, 16, .12); --line-soft: rgba(58, 28, 16, .07); --line-strong: rgba(58, 28, 16, .28); --edge: rgba(58, 28, 16, .1); --base-shadow: rgba(58, 28, 16, .08);
+}
+:root[data-theme="light"] .ledger-panel.japan {
+  --card: #edf2fb; --halo: rgba(37, 99, 235, .12);
+  --ink: #13213f; --text: #22314f; --muted: #4e5e86; --note: #3b4a6e;
+  --line: rgba(19, 33, 63, .12); --line-soft: rgba(19, 33, 63, .07); --line-strong: rgba(19, 33, 63, .28); --edge: rgba(19, 33, 63, .1); --base-shadow: rgba(19, 33, 63, .08);
+}
+:root:not([data-theme="light"]) .ledger-panel { --card: #1e1b18; --ink: #ecebe8; --text: #d9d5cf; --muted: #a8a197; --note: #c2bcb3; }
+:root:not([data-theme="light"]) .ledger-panel.japan { --card: #191d24; --ink: #e8e9ec; --text: #d3d6dc; --muted: #9ea4b0; --note: #b8bdc7; }
+:root { --india: #d9822b; --japan: #3b6fd4; }
+:root:not([data-theme="light"]) { --india: #e0a273; --japan: #7d9bd6; }
+
+/* ---- Blocks: each one a faint tint of its own colour on its heading, so they read apart without looking painted ---- */
+.ledger-type-section[data-type="income"] { --block: var(--income-2, #2f9e6e); }
+.ledger-type-section[data-type="expense"] { --block: var(--expense); }
+.ledger-type-section.is-group.is-settlement { --block: #0d9488; }
+.ledger-type-section.is-group.is-savings { --block: #3b82f6; }
+.ledger-type-section.is-group.is-hold { --block: #64748b; }
+.ledger-type-section.is-group.is-lent { --block: #8b5cf6; }
+.ledger-type-section.is-group.is-borrowed { --block: #db2777; }
+.ledger-type-section[data-type="income"] > summary,
+.ledger-type-section[data-type="expense"] > summary,
+.ledger-type-section.is-group > summary {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--block) 6%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--block) 55%, transparent);
+  padding-left: 8px;
+}
+.ledger-type-section.is-group.is-hold > summary .ledger-group-icon { color: #64748b; }
+.ledger-type-section.is-group.is-lent > summary .ledger-group-icon { color: #8b5cf6; }
+.ledger-type-section.is-group.is-borrowed > summary .ledger-group-icon { color: #db2777; }
+.ledger-type-section.is-group.is-savings > summary .ledger-group-icon { color: #3b82f6; }
+
+/* ---- A linked item: the other months it is in, each a small button that opens that month ---- */
+.link-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
+.link-chip { display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--muted); font: 500 10.5px/18px var(--mono); cursor: pointer; }
+.link-chip:hover, .link-chip:focus-visible { color: var(--ink); border-color: var(--line-strong); outline: none; }
+.link-chip i { font-size: 11px; }
+
+/* ---- Closing an item: date and amount side by side ---- */
+.close-dialog { width: min(440px, calc(100% - 26px)); }
+.close-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.close-rest { margin-top: 10px; }
+
+/* ---- The year summary: one row of tiles per currency, each figure in its own colour on the theme's surface ---- */
+.year-summary { display: grid; gap: 10px; margin: 4px 0 14px; }
+.year-summary-row h3 { margin: 0 0 6px; color: var(--muted); font: 500 10.5px var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+.year-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.year-tile { --tile: var(--ink); display: grid; gap: 4px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--tile) 28%, var(--line-soft)); border-radius: 10px; background: color-mix(in srgb, var(--tile) 8%, var(--surface)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05); }
+.year-tile span { color: var(--muted); font-size: 11.5px; }
+.year-tile b { color: var(--tile); font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
+.year-tile.is-income { --tile: var(--income-2, #2f9e6e); }
+.year-tile.is-expense { --tile: var(--expense); }
+.year-tile.is-saved { --tile: #2563eb; }
+.year-tile.is-returns { --tile: #0d9488; }
+.year-tile.is-held { --tile: #475569; }
+.year-tile.is-lent { --tile: #7c3aed; }
+.year-tile.is-borrowed { --tile: #db2777; }
+:root:not([data-theme="light"]) .year-tile.is-saved { --tile: #60a5fa; }
+:root:not([data-theme="light"]) .year-tile.is-returns { --tile: #2dd4bf; }
+:root:not([data-theme="light"]) .year-tile.is-held { --tile: #94a3b8; }
+:root:not([data-theme="light"]) .year-tile.is-lent { --tile: #a78bfa; }
+:root:not([data-theme="light"]) .year-tile.is-borrowed { --tile: #f472b6; }
+/* The year summary spans the whole row above the currency panels, the currencies side by side where there is room. */
+.year-summary { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }

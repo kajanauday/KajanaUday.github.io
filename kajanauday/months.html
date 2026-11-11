@@ -19,16 +19,17 @@
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="../kajanauday.css?v=20261113c">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261111g">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../shared-ledger.js?v=20261110zm" defer></script>
-  <script src="../data-layer.js?v=20261110zm" defer></script>
+  <script src="../shared-ledger.js?v=20261111g" defer></script>
+  <script src="../here-and-there.js?v=20261111g" defer></script>
+  <script src="../data-layer.js?v=20261111g" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261110zm" defer></script>
+  <script src="../component-blueprints.js?v=20261111g" defer></script>
   <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261110zm" defer></script>
+  <script src="../kajanauday.js?v=20261111g" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -101,6 +102,32 @@
       <div class="shared-history"><h3>Settled so far</h3><ul id="shared-history"></ul></div>
       <p class="settings-error" id="shared-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button">Save settlement</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog close-dialog" id="close-dialog" aria-labelledby="close-title">
+    <form id="close-form" novalidate>
+      <div class="modal-header"><div><p id="close-where"></p><h2 id="close-title">Money came back</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <p class="shared-hint" id="close-open"></p>
+      <div class="close-fields">
+        <label class="date-pick-field"><span>Date it happened</span><input type="date" name="date" required></label>
+        <label class="date-pick-field"><span id="close-amount-label">Amount</span><input name="amount" type="text" inputmode="text" autocomplete="off" placeholder="0.00"></label>
+      </div>
+      <label class="check-field close-rest" id="close-rest"><input type="checkbox" name="rest"><span id="close-rest-label"></span></label>
+      <p class="settings-error" id="close-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
+    </form>
+  </dialog>
+  <dialog class="modal month-dialog date-pick-dialog" id="date-pick-dialog" aria-labelledby="date-pick-title">
+    <form id="date-pick-form" novalidate>
+      <div class="modal-header"><div><p id="date-pick-where"></p><h2 id="date-pick-title">Pick a date</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="date-pick-grid">
+        <label class="date-pick-field"><span>Day</span><input name="pday" type="number" inputmode="numeric" step="1" min="1" max="31" autocomplete="off" required></label>
+        <label class="date-pick-field"><span>Month</span><select name="pmonth" aria-label="Month"></select></label>
+        <div class="date-pick-field"><span>Year</span><div class="year-spin" data-year-spin tabindex="0" role="spinbutton" aria-label="Year. Swipe up for the next year, down for the one before."><button type="button" class="year-step" data-year-step="1" aria-label="Next year"><i class="ti ti-chevron-up" aria-hidden="true"></i></button><output id="date-pick-year" aria-live="polite"></output><button type="button" class="year-step" data-year-step="-1" aria-label="Previous year"><i class="ti ti-chevron-down" aria-hidden="true"></i></button></div></div>
+      </div>
+      <p class="shared-hint">Another month: the entry stays in this one, and that month lists it under “Here and there”.</p>
+      <p class="settings-error" id="date-pick-error" role="alert" hidden></p>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Set date</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog settle-item-dialog" id="settle-item-dialog" aria-labelledby="settle-item-title">
