@@ -121,6 +121,11 @@
     return `<span class="settle-status ${cls}" data-settle-status data-entry-id="${ctx.esc(entry.id)}" data-sid="${ctx.esc(entry.sid)}" style="--c:${colour}" title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}" role="button" tabindex="0"><span class="settle-icon" aria-hidden="true">${glyph}</span></span>`;
   };
 
+  // A small link on an entry the user linked to a special card; the title names the card.
+  const CardMark = (entry, ctx) => {
+    const name = entry.card && ctx.cardName ? ctx.cardName(entry.card) : '';
+    return name ? `<span class="card-mark" title="Linked to the special card “${ctx.esc(name)}”" aria-label="Linked to the special card ${ctx.esc(name)}"><i class="ti ti-link" aria-hidden="true"></i></span>` : '';
+  };
   // After the description: → I paid (they owe me their part), ← they paid (I owe my part).
   const SettleDirMark = (entry, ctx) => {
     if (!entry.shared || !entry.sid) return '';
@@ -289,7 +294,16 @@
     return `<span class="day-orb${settled ? ' is-settled' : ''}" style="--c:${colour}" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="${ctx.esc(note)}">${text}</span>`;
   };
   // The CLEARED mark on an entry that settled a shared balance: the series colour as a ball, then the word.
-  const ClearedMark = entry => (entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');
+  // What a repayment subsection holds: its entries are kept out of the totals, so their sum is shown on its own line.
+  const repaidIn = entries => (entries || []).filter(entry => isRepay(entry)).reduce((sum, entry) => sum + Math.abs(entry._meta?.total || 0), 0);
+  const RepayChip = (entries, property, ctx, always = false, own = 0) => {
+    const total = repaidIn(entries);
+    // In a subsection whose own total is nothing but repayments, the total itself shows the repaid sum instead.
+    if (!always && !own) return '';
+    return total ? `<small class="repay-chip" title="Repaid here: not counted as an expense or income">repaid ${ctx.fmt(total, property)}</small>` : '';
+  };
+  const isRepay = entry => String(entry.cleared?.id || '').startsWith('rp:');
+  const ClearedMark = entry => (isRepay(entry) ? `<span class="cleared-mark repay-mark" title="A repayment: not an expense or income; it settles shared items"><span class="cleared-ball" aria-hidden="true"></span>REPAYMENT</span>` : entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');
   // What a repayment, or money arriving, said it was for. One payment usually covers more than one thing, so the mark
   // names the one thing when there is one and counts them when there are several; the whole list is in its title, with
   // anything not yet accounted for. A row that has said nothing carries no mark at all, exactly as before.
@@ -338,7 +352,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}>${PaidBanner(entry, property, ctx)}<div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${SettleStatusMark(entry, ctx)}${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, SettleDirMark(entry, ctx))}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
+    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}>${PaidBanner(entry, property, ctx)}<div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${SettleStatusMark(entry, ctx)}${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${SettleDirMark(entry, ctx)}${CardMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -411,7 +425,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${PaidNote(category.entries, property, ctx)}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${RepayChip(category.entries, property, ctx, false, category._meta.total)}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}${!category._meta.total && repaidIn(category.entries) ? `<strong class="repay-amt" title="Repaid here: not counted as an expense or income">${ctx.fmt(repaidIn(category.entries), property)}</strong>` : `<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong>`}</summary><div class="ledger-entries">${PaidNote(category.entries, property, ctx)}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -547,7 +561,7 @@
     const linkChips = type === 'net' && meta?.link && ctx.linkedMonths
       ? ctx.linkedMonths(meta.link, property).filter(month => month.key !== mKey).map(month => `<button type="button" class="link-chip" data-link-month="${month.key}" data-link-property="${property}" title="Linked: open ${ctx.esc(month.label)}"><i class="ti ti-link" aria-hidden="true"></i>${ctx.esc(month.short)}</button>`).join('')
       : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${PaidNote(categories.flatMap(({ category }) => category.entries), property, ctx)}${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${RepayChip(categories.flatMap(({ category }) => category.entries), property, ctx, true)}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${PaidNote(categories.flatMap(({ category }) => category.entries), property, ctx)}${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -733,10 +747,12 @@
 
   // The selected year's tab also opens its settings, so it carries a small settings mark.
   // While the special cards and hashtags page is showing (its button sits beside the tabs), no year tab is chosen.
+  // The years, then the special cards and #hashtags as one more tab in the same group.
   const YearTabs = (years, activeYear, special = false) =>
     years.map(value => value === activeYear && !special
       ? `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="true" title="${value} settings">${value}<i class="ti ti-adjustments-horizontal" aria-hidden="true"></i></button>`
-      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('');
+      : `<button type="button" class="year-tab" data-ledger-year="${value}" aria-pressed="false" title="Show ${value}">${value}</button>`).join('')
+    + `<button type="button" class="year-tab year-tab-special" data-ledger-special aria-pressed="${special ? 'true' : 'false'}" title="${special ? 'Back to the year' : 'Special cards and #hashtags'}" aria-label="Special cards and hashtags"><i class="ti ti-star-filled" aria-hidden="true"></i><i class="ti ti-hash" aria-hidden="true"></i></button>`;
 
   // Pills next to a closed month's name: In / Out / Bal per currency, or a countdown for upcoming months.
   // With `mKey`, each currency's summary is a button: on a closed month it opens the month with just that currency; on an

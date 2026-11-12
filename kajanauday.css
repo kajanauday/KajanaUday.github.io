@@ -2013,3 +2013,145 @@ details:not([open]) > summary > .paid-note { display: none; }
 .paid-line b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 .paid-line em { font-style: normal; color: var(--ink); }
 .ledger-entries > .paid-banner { margin-left: -2px; }
+
+/* Special cards: entries linked to a card (a loan's EMIs, a chit's contributions, an RD's instalments), listed under it. */
+.card-mark { margin-left: 5px; color: var(--muted); font-size: 11px; vertical-align: middle; }
+.card-links { margin: 2px 0 8px 10px; border-left: 2px solid var(--line-soft); border-radius: 0 8px 8px 0; background: var(--surface-soft); }
+.card-links > summary { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; cursor: pointer; list-style: none; font: 600 12px var(--sans); color: var(--ink); }
+.card-links > summary::-webkit-details-marker { display: none; }
+.card-links[open] > summary .hub-caret { transform: rotate(90deg); }
+.card-links > summary small { margin-left: auto; color: var(--muted); font: 500 10.5px var(--mono); }
+.card-links-body { padding: 0 8px 6px; max-height: 360px; overflow: auto; }
+.card-link-month h4 { margin: 6px 0 2px; color: var(--muted); font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.card-link-row { display: flex; align-items: center; gap: 2px; border-top: 1px dotted var(--line-soft); }
+.card-link-open { flex: 1; min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 30px; padding: 2px 4px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.card-link-open:hover { background: var(--hover); }
+.card-link-day { font: 400 11.5px var(--mono); color: var(--muted); }
+.card-link-what { min-width: 0; display: grid; }
+.card-link-what b { overflow: hidden; font-weight: 400; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.card-link-what small { color: var(--muted); font-size: 10.5px; }
+.card-link-amt { font: 500 12.5px var(--mono); font-variant-numeric: tabular-nums; }
+.card-link-amt.income { color: var(--income); }
+.card-link-amt.expense { color: var(--expense); }
+.card-link-unlink { border: 0; background: transparent; color: var(--faint, var(--muted)); cursor: pointer; padding: 4px; border-radius: 4px; opacity: .6; }
+.card-link-unlink:hover { opacity: 1; background: var(--hover); }
+.card-link-dialog { width: min(420px, calc(100% - 26px)); }
+.card-link-list { display: grid; gap: 2px; max-height: 50vh; overflow: auto; margin: 8px 0; }
+.card-link-list label { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-radius: 6px; cursor: pointer; font-size: 13.5px; }
+.card-link-list label:hover { background: var(--hover); }
+.card-link-list small { margin-left: auto; color: var(--muted); font: 400 11px var(--mono); }
+
+/* The special cards tab sits with the years: same tab, icons only, a gold star and hash. */
+.year-tab-special { min-width: 44px; gap: 1px; }
+.year-tab-special .ti-star-filled { color: var(--brand); font-size: 13px; }
+.year-tab-special .ti-hash { color: var(--brand-strong); font-size: 11px; margin-left: -1px; }
+.year-tab-special[aria-pressed="true"] i { color: var(--brand); }
+
+/* ---- Year ribbon, centred ---- */
+.year-bar { justify-content: center; }
+
+/* ---- Special page: a softer, friendlier look. Rounded cards, sentence case, DM Sans throughout, tighter spacing. ---- */
+.hub { gap: 16px; grid-template-columns: 220px minmax(0, 1fr); font-family: var(--sans); }
+.hub * { letter-spacing: normal; }
+.hub-legend { padding: 8px; border-radius: 14px; border-color: var(--line-soft); background: var(--surface-soft); box-shadow: var(--shadow-sm); gap: 4px; }
+.hub-legend-group > summary { padding: 6px 8px; border-radius: 8px; font: 600 13px var(--sans); }
+.hub-legend-group > summary:hover { background: var(--hover); }
+.hub-legend-group > summary small, .hub-section > summary small, .hub-year > summary small { font: 500 11px var(--sans); background: var(--hover); padding: 1px 8px; border-radius: 99px; }
+.hub-legend-year { font: 600 11px var(--sans); text-transform: none; letter-spacing: 0; }
+.hub-link { min-height: 26px; padding: 2px 8px; border-radius: 8px; font: 500 12.5px var(--sans); }
+.hub-link small { font: 400 11px var(--sans); }
+.hub-filter { border-radius: 99px; padding: 0 12px; font: 400 12.5px var(--sans); }
+
+.hub-main { gap: 12px; }
+.hub-section { border: 1px solid var(--line-soft); border-radius: 14px; background: var(--surface-soft); box-shadow: var(--shadow-sm); overflow: hidden; }
+.hub-section > summary { padding: 9px 14px; border-bottom: 0; gap: 8px; }
+.hub-section[open] > summary { border-bottom: 1px solid var(--line-soft); background: color-mix(in srgb, var(--brand) 6%, transparent); }
+.hub-section > summary h2 { font: 700 15px var(--sans); color: var(--ink); }
+.hub-section > summary h2 i { color: var(--brand); }
+.hub-section-body { padding: 10px 12px 12px; gap: 8px; }
+.hub-year > summary { margin: 6px 0 4px; font: 600 12px var(--sans); letter-spacing: 0; color: var(--muted); }
+.hub-year > summary::after { border-top-style: dotted; }
+.hub-tools .quiet-button { border-radius: 99px; }
+
+/* The cards (events) and the tags read as soft tiles. */
+.hub .month-block { border-radius: 12px; }
+.hub-tag { border-radius: 99px; border-left-width: 1px; background: var(--surface); }
+.hub-tag[open] { border-radius: 12px; border-left-width: 3px; }
+.hub-tag > summary { padding: 4px 12px; border-radius: 99px; align-items: center; }
+.hub-tag[open] > summary { padding: 8px 12px; border-radius: 12px 12px 0 0; }
+.hub-tag > summary b { font: 600 13px var(--sans); }
+
+/* Shared people, same language. */
+.shared-person-block { border-radius: 99px; border-color: var(--line-soft); background: var(--surface); }
+.shared-person-block[open] { border-radius: 12px; background: var(--surface); }
+.shared-person-block > summary { padding: 4px 12px 4px 10px; }
+.shared-person-block[open] > summary { padding: 8px 12px; }
+.shared-person { font: 600 13px var(--sans); }
+.shared-net { font: 600 12px var(--sans); }
+.shared-person-block > summary small, .shared-closed > summary small { font: 500 11px var(--sans); }
+.shared-closed > summary { font: 600 11.5px var(--sans); letter-spacing: 0; text-transform: none; }
+.pill-count { font: 600 11px/17px var(--sans); }
+.shared-when, .shared-when small, .shared-state { font-family: var(--sans); }
+.shared-state { font-weight: 600; font-size: 12px; }
+
+/* Linked transactions under a card. */
+.card-links { border-left: 0; border-radius: 10px; margin: 4px 0 8px; background: var(--surface); border: 1px solid var(--line-soft); }
+.card-links > summary { font: 600 12.5px var(--sans); }
+.card-links > summary small { font: 500 11px var(--sans); }
+.card-link-month h4 { font: 600 11.5px var(--sans); letter-spacing: 0; text-transform: none; }
+.card-link-day, .card-link-amt { font-family: var(--sans); }
+.hub .ledger-none { padding: 10px 4px; color: var(--muted); font-size: 12.5px; }
+
+/* Year ribbon stays at the left. */
+.year-bar { justify-content: flex-start; }
+
+/* Shared expenses: an Ongoing group and a Settled group, each holding one capsule per person. */
+.shared-group-block { margin-bottom: 6px; }
+.shared-group-block > summary { display: flex; align-items: center; gap: 8px; padding: 4px 2px 6px; cursor: pointer; list-style: none; font: 600 13px var(--sans); color: var(--ink); }
+.shared-group-block > summary::-webkit-details-marker { display: none; }
+.shared-group-block[open] > summary .hub-caret { transform: rotate(90deg); }
+.shared-group-block > summary .ti:not(.hub-caret) { color: var(--brand); }
+.shared-group-block > summary small { padding: 1px 8px; border-radius: 99px; background: var(--hover); color: var(--muted); font: 500 11px var(--sans); }
+.shared-group-block:last-child > summary .ti-circle-check { color: var(--st-done); }
+
+/* Repayment sections: entries that repay a person. Not expenses or income, drawn in their own colour. */
+:root { --repay: #0d9488; }
+.repay-mark { --c: var(--repay); }
+.ledger-entry-cell[data-repay] .ledger-entry strong, .ledger-entry-cell[data-repay] .ledger-entry-desc { color: var(--repay); }
+.ledger-entry-cell[data-repay] .ledger-entry strong { font-weight: 600; }
+.shared-repay { border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 6px; }
+.shared-repay > summary { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; list-style: none; font-size: 12px; color: var(--muted); }
+.shared-repay > summary::-webkit-details-marker { display: none; }
+.shared-repay > summary i { font-size: 12px; transition: transform .15s; }
+.shared-repay[open] > summary i { transform: rotate(90deg); }
+.shared-repay > summary small { margin-left: auto; color: var(--repay); font-weight: 600; }
+.shared-repay-body { padding: 0 8px 8px; display: grid; gap: 6px; }
+.shared-repay-row { display: flex; gap: 6px; }
+.shared-repay-row select, .shared-repay-row input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; }
+.shared-repay-clear { justify-self: start; border: 0; background: none; color: var(--muted); font-size: 11.5px; text-decoration: underline; cursor: pointer; }
+.repay-chip { color: var(--repay); font: 600 11.5px var(--sans); white-space: nowrap; }
+.shared-repay-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.shared-repay-list li { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border-radius: 99px; background: color-mix(in srgb, var(--repay) 12%, transparent); color: var(--repay); font-size: 12px; font-weight: 600; }
+.shared-repay-list li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shared-repay-list li button { border: 0; background: none; color: inherit; cursor: pointer; padding: 2px 4px; opacity: .7; }
+.shared-repay-list li button:hover { opacity: 1; }
+.shared-repay-path { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.shared-repay-path select { min-width: 0; height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; }
+.shared-repay-path select:disabled { opacity: .5; }
+#shared-repay-add { justify-self: start; }
+
+/* Rows of the series popup that open their transaction. */
+.series-pop-row.is-jump { cursor: pointer; border-radius: 6px; transition: background-color .12s; }
+.series-pop-row.is-jump:hover, .series-pop-row.is-jump:focus-visible { background: var(--hover); outline: 0; }
+.series-pop-row.is-jump .series-pop-what strong { text-decoration: underline dotted transparent; text-underline-offset: 3px; }
+.series-pop-row.is-jump:hover .series-pop-what strong { text-decoration-color: currentColor; color: var(--brand-strong); }
+.shared-repay-path #shared-repay-entry { grid-column: 1 / -1; height: auto; padding: 2px 4px; }
+
+.shared-repaid { margin: 0 0 6px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--repay) 10%, transparent); color: var(--ink); font-size: 12px; line-height: 1.4; }
+.shared-repaid b { color: var(--repay); }
+details.shared-settle > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+details.shared-settle > summary::-webkit-details-marker { display: none; }
+details.shared-settle > summary i { font-size: 12px; transition: transform .15s; }
+details.shared-settle[open] > summary i { transform: rotate(90deg); }
+.ledger-cat > summary strong.repay-amt { color: var(--repay); font-weight: 600; }
+.ledger-type-section > summary > .repay-chip { margin-left: auto; margin-right: 10px; }

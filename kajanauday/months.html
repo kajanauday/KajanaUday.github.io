@@ -46,7 +46,6 @@
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
       <div class="year-tabs" id="year-tabs" role="group" aria-label="Year"></div>
-      <button type="button" class="special-button" data-ledger-special aria-pressed="false" title="Special cards and #hashtags"><span class="special-mark" aria-hidden="true"><i class="ti ti-star-filled"></i><i class="ti ti-hash"></i></span><span class="special-label">Special</span></button>
     </div>
     <div class="month-ledger" id="month-ledger"></div>
   </main>
@@ -82,12 +81,28 @@
         <label class="shared-who"><select id="shared-who" name="who" aria-label="Person and currency"></select></label>
         <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
       </div>
+      <p class="shared-repaid" id="shared-repaid" hidden></p>
+      <details class="shared-repay" id="shared-repay">
+        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Repayments recorded in…</span><small id="shared-repay-state"></small></summary>
+        <div class="shared-repay-body">
+          <p class="shared-hint">Pick where repayments are recorded: a whole section, one subsection, or a single entry. They are not expenses, and they settle the oldest open items on their own.</p>
+          <ul class="shared-repay-list" id="shared-repay-list"></ul>
+          <div class="shared-repay-path">
+            <select id="shared-repay-year" aria-label="Year"></select>
+            <select id="shared-repay-section" aria-label="Section"></select>
+            <select id="shared-repay-category" aria-label="Subsection"></select>
+            <select id="shared-repay-entry" aria-label="Entries" multiple size="4"></select>
+          </div>
+          <div class="shared-repay-row" id="shared-repay-newrow" hidden><input id="shared-repay-new" type="text" placeholder="New section name" maxlength="60" autocomplete="off"></div>
+          <button type="button" class="quiet-button" id="shared-repay-add">Add</button>
+        </div>
+      </details>
       <div class="shared-lists">
         <details class="shared-group is-in"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>They owe me</span><b id="shared-owed-total"></b></summary><div id="shared-owed-list"></div></details>
         <details class="shared-group is-out"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>I owe them</span><b id="shared-owe-total"></b></summary><div id="shared-owe-list"></div></details>
       </div>
-      <div class="shared-settle" id="shared-settle">
-        <h3>Settle now</h3>
+      <details class="shared-settle" id="shared-settle" open>
+        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span id="shared-settle-title">Settle now</span></summary>
         <div class="shared-cash-row">
           <label><span>Date</span><input type="date" name="date" required></label>
           <label><span>Amount that moved</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
@@ -108,10 +123,10 @@
           <label><input type="radio" name="record" value="income"> As income</label>
         </fieldset>
         <label class="shared-note"><span>Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="optional"></label>
-      </div>
+      </details>
       <details class="shared-history"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled so far</span></summary><ul id="shared-history"></ul></details>
       <p class="settings-error" id="shared-error" role="alert" hidden></p>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button">Save settlement</button></div>
+      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button" id="shared-save">Save settlement</button></div>
     </form>
   </dialog>
   <dialog class="modal month-dialog close-dialog" id="close-dialog" aria-labelledby="close-title">
