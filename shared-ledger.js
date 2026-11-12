@@ -52,23 +52,68 @@
     return { id: entry.id, direction: isPayerMe(entry) ? 'friend-owes-me' : 'i-owe-friend', owed, settled: owed === 0 };
   }
 
-  // Every open item, grouped by side, with the net between us. `net` is positive when the friend owes me overall.
+  // ---- what is really open, after edits: the buffer follows the entries ----
+  // Entries and settlements are matched per person and currency (`property` and `with` on both; rows without them are one
+  // group). From the history alone this works out, so it stays right when an entry is edited later:
+  //   - money applied to an entry beyond what it now owes (its amount or share was reduced) goes back into the buffer;
+  //   - the buffer (stored credits + that excess) then clears open items on its own side, oldest first, whole items that
+  //     fit, so an entry raised after it was settled is covered at once when the buffer can pay for it.
+  // Returns { owed: Map id → { owed, covered, direction, settled }, buffers: Map key → buffer left }. A buffer is signed
+  // from my side: positive means the friend has paid me ahead, negative means I have paid him ahead.
+  const keyOf = item => `${item.property ?? ''}|${item.with ?? ''}`;
+  function resolve(entries, settlements) {
+    const applied = appliedTo(settlements);
+    const groups = new Map();
+    (entries || []).forEach(entry => { const key = keyOf(entry); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(entry); });
+    const credits = new Map();
+    (settlements || []).forEach(settlement => { const key = keyOf(settlement); credits.set(key, (credits.get(key) || 0) + whole(settlement.credit)); });
+    const owed = new Map();
+    const buffers = new Map();
+    new Set([...groups.keys(), ...credits.keys()]).forEach(key => {
+      let held = credits.get(key) || 0;
+      const rows = (groups.get(key) || []).map(entry => {
+        const parts = split(entry);
+        const mine = isPayerMe(entry);
+        const due = mine ? parts.friendOwes : parts.iOwe;
+        const paid = applied.get(entry.id) || 0;
+        const sign = mine ? 1 : -1;
+        if (paid > due) held += sign * (paid - due);
+        return { entry, sign, open: Math.max(0, due - paid), covered: 0 };
+      });
+      if (held !== 0) {
+        const sign = Math.sign(held);
+        rows.filter(row => row.sign === sign && row.open > 0)
+          .sort((x, y) => String(x.entry.date || '').localeCompare(String(y.entry.date || '')) || String(x.entry.id).localeCompare(String(y.entry.id)))
+          .forEach(row => { if (row.open <= Math.abs(held)) { held -= sign * row.open; row.covered = row.open; row.open = 0; } });
+      }
+      rows.forEach(row => owed.set(row.entry.id, { id: row.entry.id, direction: row.sign > 0 ? 'friend-owes-me' : 'i-owe-friend', owed: row.open, covered: row.covered, settled: row.open === 0 }));
+      buffers.set(key, held);
+    });
+    return { owed, buffers };
+  }
+
+  // Every open item, grouped by side, with the net between us. `net` is positive when the friend owes me overall, before
+  // the buffer; `buffer` is what is held (see resolve), and `overall` is the net with it taken off.
   function pending(entries, settlements) {
-    const rows = (entries || []).filter(entry => entry.shared).map(entry => ({ entry, ...outstanding(entry, settlements) }));
+    const resolved = resolve((entries || []).filter(entry => entry.shared), settlements);
+    const rows = (entries || []).filter(entry => entry.shared).map(entry => ({ entry, ...resolved.owed.get(entry.id) }));
     const open = rows.filter(row => !row.settled);
     const receivable = open.filter(row => row.direction === 'friend-owes-me');
     const payable = open.filter(row => row.direction === 'i-owe-friend');
     const sum = list => list.reduce((total, row) => total + row.owed, 0);
-    return { receivable, payable, receivableTotal: sum(receivable), payableTotal: sum(payable), net: sum(receivable) - sum(payable) };
+    const buffer = [...resolved.buffers.values()].reduce((total, value) => total + value, 0);
+    const net = sum(receivable) - sum(payable);
+    return { receivable, payable, receivableTotal: sum(receivable), payableTotal: sum(payable), net, buffer, overall: net - buffer };
   }
 
   // Checks a settlement before it is kept, and works out what it does. `items` are { to, a } pairs: the shared entries
   // it clears and how much of each. `cash` is the money that actually moved, signed from my side: positive means the
   // friend paid me, negative means I paid him. Returns { ok:false, error } or { ok:true, settlement, forgiven, question }.
-  function settle({ entries, settlements, items, cash, treatment }) {
+  function settle({ entries, settlements, items, cash, treatment, credit }) {
     const byId = new Map((entries || []).filter(entry => entry.shared).map(entry => [entry.id, entry]));
     const cleared = (items || []).map(item => ({ to: item.to, a: Math.abs(whole(item.a)) })).filter(item => item.a > 0);
-    if (!cleared.length) return { ok: false, error: 'Pick the items this payment clears.' };
+    const held = whole(credit);
+    if (!cleared.length && !held) return { ok: false, error: 'Pick the items this payment clears.' };
     let receivedFromFriend = 0;
     let paidToFriend = 0;
     for (const item of cleared) {
@@ -84,12 +129,44 @@
     if (!Number.isFinite(moved)) return { ok: false, error: 'Enter the amount that moved.' };
     // The difference is forgiveness: money the other side agreed not to take back. Positive means the friend let go of
     // what he owed me (a loss to me); negative means I let go of what I owed him (a gain to me).
-    const forgiven = net - moved;
+    const forgiven = net + held - moved;
     if (forgiven !== 0 && !['income', 'expense', 'none'].includes(treatment)) {
       return { ok: true, forgiven, question: forgiven > 0 ? 'Count the forgiven amount as an expense, or leave it out?' : 'Count the forgiven amount as income, or leave it out?', settlement: null };
     }
     const settlement = { items: cleared, cash: moved, forgiven, treatment: forgiven === 0 ? 'none' : treatment };
+    if (held) settlement.credit = held;
     return { ok: true, forgiven, question: null, settlement };
+  }
+
+  // ---- the buffer: cash that moved but did not clear a whole item ----
+  // Each settlement may carry `credit`: cash it took in (+) or paid out (-) beyond the items it cleared, or minus what it
+  // took from the buffer. Cash = what the items net to + credit. The buffer is the sum of every credit: positive means the
+  // friend has paid me ahead, negative means I have paid him ahead. It waits for the next payment.
+  function buffer(settlements) {
+    return (settlements || []).reduce((sum, settlement) => sum + whole(settlement.credit), 0);
+  }
+  // Works out what a payment clears by itself. `cash` is signed from my side (+ the friend paid me, - I paid him).
+  // The funds are the cash plus the buffer already held. They clear the open items on the side they pay for, oldest
+  // first, a whole item at a time: an item too big for what is left is skipped and a later, smaller one may still fit.
+  // What cannot clear anything stays in the buffer. Returns { items, credit, buffer, funds, direction }.
+  function allocate({ entries, settlements, cash }) {
+    const open = pending(entries, settlements);
+    const held = open.buffer;
+    const moved = whole(cash);
+    const funds = moved + held;
+    const direction = funds > 0 ? 'friend-owes-me' : funds < 0 ? 'i-owe-friend' : null;
+    let left = Math.abs(funds);
+    const items = [];
+    if (direction) {
+      const list = (direction === 'friend-owes-me' ? open.receivable : open.payable)
+        .slice().sort((a, b) => String(a.entry.date || '').localeCompare(String(b.entry.date || '')) || String(a.id).localeCompare(String(b.id)));
+      list.forEach(row => {
+        if (row.owed <= left) { items.push({ to: row.id, a: row.owed }); left -= row.owed; }
+      });
+    }
+    const sign = funds < 0 ? -1 : 1;
+    const newBuffer = sign * left;
+    return { items, credit: newBuffer - held, buffer: newBuffer, funds, direction };
   }
 
   // What the two of us do to my own income and expenses from the shared side. My share of each entry is an expense
@@ -133,9 +210,10 @@
       groups.get(seriesId).push(item);
     });
     const out = new Map();
+    const resolved = resolve(items, settlements);
     groups.forEach((list, seriesId) => {
       const ordered = list.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-      const balance = ordered.reduce((sum, item) => sum + signOf(signedShare(item)) * outstanding(item, settlements).owed, 0);
+      const balance = ordered.reduce((sum, item) => sum + signOf(signedShare(item)) * (resolved.owed.get(item.id)?.owed ?? 0), 0);
       let running = 0;
       let merged = false;
       ordered.forEach(item => {
@@ -181,7 +259,7 @@
     return SERIES_COLOURS[hash % SERIES_COLOURS.length];
   }
 
-  const api = { fixedColour, DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
+  const api = { resolve, buffer, allocate, fixedColour, DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
   if (typeof module === 'object' && module.exports) module.exports = api;
   global.SharedLedger = api;
 })(typeof window !== 'undefined' ? window : globalThis);

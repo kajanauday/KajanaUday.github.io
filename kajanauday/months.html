@@ -64,20 +64,30 @@
       </div>
     </div>
   </dialog>
+  <dialog class="modal series-history-dialog" id="series-history-dialog" aria-labelledby="series-pop-title">
+    <div class="series-pop">
+      <div class="series-pop-head">
+        <div><p id="series-pop-when"></p><h2 id="series-pop-title"></h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div id="series-pop-net" aria-live="polite"></div>
+      <div class="series-pop-list" id="series-pop-list"></div>
+      <p class="series-pop-footer" id="series-pop-footer"></p>
+    </div>
+  </dialog>
   <dialog class="modal month-dialog shared-dialog" id="shared-dialog" aria-labelledby="shared-dialog-title">
     <form id="shared-form" novalidate>
       <div class="modal-header"><div><p>Shared costs</p><h2 id="shared-dialog-title">Settle with someone</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <label class="shared-who"><span>Person and currency</span><select id="shared-who" name="who" aria-label="Person and currency"></select></label>
-      <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
+      <div class="shared-top">
+        <label class="shared-who"><select id="shared-who" name="who" aria-label="Person and currency"></select></label>
+        <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
+      </div>
       <div class="shared-lists">
-        <h3>They owe me</h3>
-        <div id="shared-owed-list"></div>
-        <h3>I owe them</h3>
-        <div id="shared-owe-list"></div>
+        <details class="shared-group is-in"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>They owe me</span><b id="shared-owed-total"></b></summary><div id="shared-owed-list"></div></details>
+        <details class="shared-group is-out"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>I owe them</span><b id="shared-owe-total"></b></summary><div id="shared-owe-list"></div></details>
       </div>
       <div class="shared-settle" id="shared-settle">
         <h3>Settle now</h3>
-        <p class="shared-hint">Tick what this payment clears. Each amount starts at what is open; change it for a part payment.</p>
         <div class="shared-cash-row">
           <label><span>Date</span><input type="date" name="date" required></label>
           <label><span>Amount that moved</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
@@ -92,14 +102,14 @@
           <label><input type="radio" name="forgive" value="yes"> <span id="shared-forgive-yes"></span></label>
           <label><input type="radio" name="forgive" value="no"> Leave it out</label>
         </div>
-        <fieldset class="shared-record"><legend>Record in transactions?</legend>
-          <label><input type="radio" name="record" value="no" checked> No, just settle</label>
-          <label><input type="radio" name="record" value="expense"> Yes, as an expense</label>
-          <label><input type="radio" name="record" value="income"> Yes, as income</label>
+        <fieldset class="shared-record"><legend>Record</legend>
+          <label><input type="radio" name="record" value="no" checked> Just settle</label>
+          <label><input type="radio" name="record" value="expense"> As expense</label>
+          <label><input type="radio" name="record" value="income"> As income</label>
         </fieldset>
-        <label><span>Note (optional)</span><input name="note" maxlength="80" autocomplete="off"></label>
+        <label class="shared-note"><span>Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="optional"></label>
       </div>
-      <div class="shared-history"><h3>Settled so far</h3><ul id="shared-history"></ul></div>
+      <details class="shared-history"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled so far</span></summary><ul id="shared-history"></ul></details>
       <p class="settings-error" id="shared-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button">Save settlement</button></div>
     </form>

@@ -1572,20 +1572,45 @@
       if (!node) return Promise.reject(new Error(`No year ${at} to keep the settlement in.`));
       const settles = node.settles ||= {};
       settles[settle.id] = settle;
+      this.resolvedIndex = null; this.seriesIndex = null; this.paidIndex = null;
       return this.queue(() => this.db.patch({ [`years/${at}/settles/${settle.id}`]: settle }));
     }
     // What is still open on one shared entry, from every settlement made so far. Null for anything not shared.
     sharedOwed(item) {
       if (!item?.sid || !item.shared) return null;
-      return global.SharedLedger.outstanding({ id: item.sid, amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his, shared: true }, this.settleList());
+      return this.sharedResolved().owed.get(item.sid) || global.SharedLedger.outstanding({ id: item.sid, amount: Math.abs(Number(item.amount)), paidBy: item.shared.by, hisPct: item.shared.his, shared: true }, this.settleList());
+    }
+    // What each settlement paid on each shared entry: sid → [{ id, date, amount, name }]. `name` is the transaction the
+    // payment was recorded as ("Settled with …"), or a plain "Settlement with …" when it was not recorded.
+    sharedPaid(sid) {
+      if (!this.paidIndex) {
+        const names = new Map(this.transactions.filter(row => row.cleared?.id).map(row => [row.cleared.id, row.description]));
+        const index = new Map();
+        this.settleList().slice().reverse().forEach(settle => (settle.items || []).forEach(item => {
+          const list = index.get(item.to) || [];
+          list.push({ id: settle.id, date: settle.date, amount: Math.abs(Number(item.a) || 0), name: names.get(settle.id) || `Settlement with ${settle.with}` });
+          index.set(item.to, list);
+        }));
+        this.paidIndex = index;
+      }
+      return this.paidIndex.get(sid) || [];
+    }
+    // Every shared entry's open amount, with edits and the buffer taken into account (see SharedLedger.resolve).
+    sharedResolved() {
+      if (!this.resolvedIndex) {
+        const rows = this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId)
+          .map(row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, property: row.property, with: row.shared.with }));
+        this.resolvedIndex = global.SharedLedger.resolve(rows, this.settleList());
+      }
+      return this.resolvedIndex;
     }
     // Each shared item's series status, read across every loaded month and year. Built once per redraw (refreshSeries).
-    refreshSeries() { this.seriesIndex = null; }
+    refreshSeries() { this.seriesIndex = null; this.resolvedIndex = null; this.paidIndex = null; }
     sharedSeriesStatus(item) {
       if (!item?.sid || !item.shared) return null;
       if (!this.seriesIndex) {
         const rows = this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId)
-          .map(row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series }));
+          .map(row => ({ id: row.sid, amount: Math.abs(Number(row.amount)), paidBy: row.shared.by, hisPct: row.shared.his, date: row.date, series: row.series, property: row.property, with: row.shared.with }));
         this.seriesIndex = global.SharedLedger.runSeries(rows, this.settleList());
       }
       return this.seriesIndex.get(item.sid) || null;

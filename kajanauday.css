@@ -1540,6 +1540,148 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .sh-merge { display: inline-flex; align-items: center; gap: 2px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--c); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: middle; }
 .sh-merge .sh-arrows { width: 6px; height: 10px; display: block; }
 
+/* Settlement status indicator for shared expenses: a small tick (settled) or dot (pending) 
+   like Teams status, positioned near the day orb. Clicking opens the shared series history. */
+.settle-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid var(--c);
+  color: var(--c);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: transform .15s, background-color .15s, border-color .15s;
+  flex: none;
+}
+.settle-status:hover, .settle-status:focus-visible {
+  transform: scale(1.15);
+  outline: none;
+}
+.settle-status .settle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 8px;
+  line-height: 1;
+}
+.settle-status.is-settled {
+  background: var(--st-done);
+  border-color: var(--st-done);
+  color: #fff;
+}
+.settle-status.is-settled .settle-icon::before {
+  content: "\f024"; /* ti ti-check */
+}
+.settle-status.is-ongoing {
+  background: transparent;
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.settle-status.is-ongoing .settle-icon::before {
+  content: "\f240"; /* ti ti-circle */
+  font-size: 6px;
+}
+.settle-status.is-open {
+  background: transparent;
+  border-color: var(--expense);
+  color: var(--expense);
+}
+.settle-status.is-open .settle-icon::before {
+  content: "\f240"; /* ti ti-circle */
+  font-size: 6px;
+}
+:root[data-theme="light"] .settle-status.is-settled {
+  background: var(--st-done);
+  border-color: var(--st-done);
+}
+:root[data-theme="light"] .settle-status.is-ongoing {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+:root[data-theme="light"] .settle-status.is-open {
+  border-color: var(--expense);
+  color: var(--expense);
+}
+
+/* Shared series history popup */
+.series-history-dialog {
+  width: min(520px, calc(100% - 26px));
+  max-height: min(82vh, 680px);
+  padding: 14px 16px;
+  overflow: hidden;
+}
+.series-history-dialog .series-pop {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  max-height: calc(min(82vh, 680px) - 28px);
+  min-width: 0;
+}
+.series-pop-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.series-pop-head > div { min-width: 0; }
+.series-pop-head p { margin: 0; font: 400 12px var(--mono); color: var(--muted); }
+.series-pop-head h2 { margin: 3px 0 0; font-size: 17px; font-weight: 400; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series-pop-net { margin: 8px 0 4px; font-size: 13px; color: var(--ink); }
+.series-pop-net b { font: 500 13px var(--mono); }
+.series-pop-list {
+  overflow: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  max-height: 100%;
+}
+.series-pop-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.series-pop-what small { display: block; color: var(--muted); font-size: 11px; }
+.series-pop-amount { font-variant-numeric: tabular-nums; }
+.series-pop-state { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.series-pop-state.is-open { color: var(--expense); }
+.series-pop-state.is-ongoing { color: var(--brand); }
+.series-pop-state.is-settled { color: var(--income); }
+.series-pop-settlement {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line-soft);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.series-pop-settlement .series-pop-what { color: var(--ink); }
+.series-pop-settlement .series-pop-amount { color: var(--brand-strong); }
+.series-pop-none { font-size: 12px; color: var(--muted); padding: 8px 0; }
+.series-pop-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
+}
+
 /* A plain entry's day number: no circle, but it opens the day, so it shows a pointer and a faint underline. */
 .day-num { cursor: pointer; border-radius: 3px; }
 .day-num:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -1736,3 +1878,138 @@ button.save-state:focus-visible { outline: 2px solid var(--brand); outline-offse
 .money-pick-source small { color: var(--muted); font-size: 10px; }
 .money-pick-source .money-pick-balance { flex: 0 0 auto; justify-items: end; }
 .money-pick-source .money-pick-balance strong { color: var(--brand); font-variant-numeric: tabular-nums; }
+
+.series-pop-settle, .series-pop-settle-all { border: 1px solid var(--brand); background: transparent; color: var(--brand); border-radius: 10px; padding: 1px 8px; font: 600 11px var(--sans); cursor: pointer; }
+.series-pop-settle:hover, .series-pop-settle-all:hover { background: var(--brand); color: #fff; }
+.series-pop-settle-all { display: block; margin: 6px 0 0; padding: 4px 10px; }
+
+/* Settle dialog, compact: person + net on one line, groups collapsed to a total, settle form in few rows. */
+.shared-dialog { width: min(520px, calc(100% - 20px)); padding: 12px 16px; }
+.shared-dialog .modal-header { margin-bottom: 6px; }
+.shared-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.shared-top .shared-who { margin: 0; flex: none; }
+.shared-top .shared-summary { margin: 0; font-size: 12.5px; font-weight: 600; min-width: 0; }
+.shared-dialog .shared-who select { height: 28px; font-size: 12.5px; }
+.shared-group, .shared-history { border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 6px; }
+.shared-group > summary, .shared-history > summary { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; list-style: none; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.shared-group > summary::-webkit-details-marker, .shared-history > summary::-webkit-details-marker { display: none; }
+.shared-group > summary i, .shared-history > summary i { font-size: 12px; transition: transform .15s; }
+.shared-group[open] > summary i, .shared-history[open] > summary i { transform: rotate(90deg); }
+.shared-group > summary span { flex: 1; }
+.shared-group > summary b { font: 600 12.5px var(--mono); text-transform: none; letter-spacing: 0; }
+.shared-group.is-in > summary b { color: var(--income); }
+.shared-group.is-out > summary b { color: var(--expense); }
+.shared-group > div, .shared-history > ul { padding: 0 8px 4px; max-height: 190px; overflow: auto; }
+.shared-open-row { padding: 4px 0; gap: 6px; grid-template-columns: 18px minmax(0, 1fr) auto 80px; }
+.shared-open-amount { width: 80px; height: 24px; }
+.shared-settle h3 { margin: 8px 0 4px; }
+.shared-cash-row { gap: 8px; }
+.shared-cash-row label { gap: 2px; }
+.shared-dialog input[type="text"], .shared-dialog input[type="date"], .shared-dialog input[name="note"] { height: 28px; }
+.shared-dir { margin: 6px 0 2px; }
+.shared-net { margin: 4px 0; font-size: 12.5px; }
+.shared-record { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; border: 0; padding: 0; margin: 4px 0; font-size: 12.5px; }
+.shared-record legend { float: left; padding: 0; margin-right: 4px; color: var(--muted); font-size: 12px; }
+.shared-settle .shared-note { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.shared-settle .shared-note input { flex: 1; }
+.shared-history { margin-top: 8px; }
+.shared-dialog .modal-actions { margin-top: 8px; }
+
+.shared-open-row { grid-template-columns: minmax(0, 1fr) auto 62px; }
+.shared-open-plan { font-size: 11px; font-weight: 700; color: var(--income); text-align: right; }
+.shared-open-row.is-planned { background: color-mix(in srgb, var(--income) 10%, transparent); border-radius: 4px; }
+
+.series-pop-row { grid-template-columns: 92px minmax(0, 1fr) auto 78px; }
+.series-pop-state.is-none, .series-pop-state.is-settlement { color: var(--muted); }
+.series-pop-state.is-settled::before { content: "✓ "; }
+.series-pop-net { margin: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.series-pop-settle-all { margin: 0; }
+.series-pop-footer { margin: 0; }
+
+/* Settle marker: one dot filled with the series colour and a symbol inside (✓ settled, ½ part paid, • open),
+   preceded by an arrow: → I paid, ← they paid. */
+.settle-status, .settle-status.is-settled, .settle-status.is-ongoing, .settle-status.is-open,
+:root[data-theme="light"] .settle-status.is-settled, :root[data-theme="light"] .settle-status.is-ongoing, :root[data-theme="light"] .settle-status.is-open {
+  width: 15px; height: 15px; margin-right: 4px; border: 0; background: var(--c); color: #fff;
+}
+.settle-status .settle-icon { font: 700 9px/1 var(--sans); }
+.settle-status .settle-icon::before, .settle-status.is-settled .settle-icon::before, .settle-status.is-ongoing .settle-icon::before, .settle-status.is-open .settle-icon::before { content: none; }
+.settle-dir { display: inline-block; margin-right: 3px; font: 700 12px/1 var(--sans); vertical-align: middle; color: var(--muted); }
+.settle-dir.is-out { color: var(--expense); }
+.settle-dir.is-in { color: var(--income); }
+
+.settle-dir { margin: 0 0 0 5px; }
+.settle-status { width: 14px; height: 14px; border-radius: 50%; box-shadow: none; }
+
+/* Small solid dot, coloured by state as before: green settled, brand part paid, red open. */
+.settle-status, .settle-status.is-settled, .settle-status.is-ongoing, .settle-status.is-open,
+:root[data-theme="light"] .settle-status.is-settled, :root[data-theme="light"] .settle-status.is-ongoing, :root[data-theme="light"] .settle-status.is-open { width: 7px; height: 7px; margin-right: 5px; }
+.settle-status .settle-icon { display: none; }
+.settle-status.is-settled, :root[data-theme="light"] .settle-status.is-settled { background: var(--st-done); }
+.settle-status.is-ongoing, :root[data-theme="light"] .settle-status.is-ongoing { background: var(--brand); }
+.settle-status.is-open, :root[data-theme="light"] .settle-status.is-open { background: var(--expense); }
+
+/* Dot: 2/3 of the earlier 7px. */
+.settle-status, .settle-status.is-settled, .settle-status.is-ongoing, .settle-status.is-open,
+:root[data-theme="light"] .settle-status.is-settled, :root[data-theme="light"] .settle-status.is-ongoing, :root[data-theme="light"] .settle-status.is-open { width: 5px; height: 5px; margin-right: 4px; }
+
+/* What settlements paid on a section: small, grey, read-only, between the name and the total. */
+.paid-note { display: block; min-width: 0; font: 400 11px/1.35 var(--sans); color: var(--muted); }
+.paid-note span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger-cat > summary > .paid-note { grid-column: 2 / -1; grid-row: 2; margin-top: -3px; padding-bottom: 3px; }
+.ledger-type-section > summary > .paid-note { flex: 1; align-self: center; }
+.ledger-type-section > summary > .paid-note span { font: 400 11px var(--sans); }
+/* The entry's own first line: status in grey, not editable. */
+.paid-banner { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 2px 6px; margin-bottom: 2px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 10%, transparent); color: var(--muted); font: 400 11px/1.4 var(--sans); user-select: none; pointer-events: none; }
+.paid-banner b { font-weight: 600; }
+
+/* The settled note shows only while its block is open. */
+details:not([open]) > summary > .paid-note { display: none; }
+
+/* Special page, shared expenses: one card per person (and currency); open entries first, settled ones folded away. */
+.shared-person-block { border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-soft); overflow: hidden; }
+.shared-person-block > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 8px 10px; cursor: pointer; list-style: none; }
+.shared-person-block > summary::-webkit-details-marker { display: none; }
+.shared-person-block > summary .hub-caret { align-self: center; }
+.shared-person-block[open] > summary .hub-caret, .shared-closed[open] > summary .hub-caret { transform: rotate(90deg); }
+.shared-person { font: 600 14px var(--sans); color: var(--ink); }
+.shared-person-block > summary small, .shared-closed > summary small { color: var(--muted); font: 500 10.5px var(--mono); }
+.shared-net { margin-left: auto; font: 600 12.5px var(--mono); }
+.shared-net.income { color: var(--income); }
+.shared-net.expense { color: var(--expense); }
+.shared-person-block > summary .shared-counts { flex-basis: 100%; padding-left: 22px; margin-top: -2px; }
+.shared-person-body { padding: 0 6px 6px; }
+.shared-settle-btn { display: inline-flex; align-items: center; gap: 5px; margin: 2px 4px 6px; padding: 3px 10px; border: 1px solid var(--brand); border-radius: 12px; background: transparent; color: var(--brand); font: 600 11.5px var(--sans); cursor: pointer; }
+.shared-settle-btn:hover { background: var(--brand); color: #fff; }
+.shared-closed { margin-top: 4px; border-top: 1px dashed var(--line-soft); }
+.shared-closed > summary { display: flex; align-items: center; gap: 8px; padding: 6px 4px; cursor: pointer; list-style: none; color: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.shared-closed > summary::-webkit-details-marker { display: none; }
+.shared-rows { display: grid; }
+.shared-person-block .shared-row { grid-template-columns: 8px 40px minmax(0, 1fr) auto; gap: 8px; min-height: 34px; padding: 4px 6px; border-radius: 5px; }
+.shared-person-block .shared-dot { width: 8px; height: 8px; }
+.shared-when { display: grid; line-height: 1.15; }
+.shared-when small { font: 400 9.5px var(--mono); color: var(--faint, var(--muted)); }
+.shared-state i { margin-right: 4px; font-style: normal; opacity: .75; }
+
+/* Capsules: a closed person or hashtag is a compact pill; opening it widens it to the full row and shows its content
+   right there. Any number can be open at once; the rest keep wrapping as pills around them. */
+.pill-wrap { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+.pill-wrap > details { margin: 0; flex: 0 0 auto; max-width: 100%; }
+.pill-wrap > details[open] { flex: 1 0 100%; }
+.pill-wrap > details:not([open]) { border-radius: 999px; background: var(--surface); }
+.pill-wrap > details:not([open]) > summary { flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; white-space: nowrap; }
+.pill-wrap > details:not([open]) > summary small:not(.pill-count), .pill-wrap > details:not([open]) > summary .hashtag-sums,
+.pill-wrap > details:not([open]) > summary .shared-counts, .pill-wrap > details:not([open]) > summary .shared-buffer { display: none; }
+.pill-wrap > details:not([open]) > summary .shared-net { margin-left: 2px; font-size: 11.5px; }
+.pill-count { display: none; min-width: 18px; padding: 0 6px; border-radius: 99px; background: var(--hover); color: var(--muted); font: 600 10.5px/17px var(--mono); text-align: center; }
+.pill-wrap > details:not([open]) > summary .pill-count { display: inline-block; }
+.pill-wrap > details:not([open]) > summary .hub-caret { display: none; }
+.pill-wrap > details > summary { cursor: pointer; }
+.pill-wrap > .hub-tag + .hub-tag { margin-top: 0; }
+
+/* Repayments under a block's header: every transaction that paid on its shared entries, visible once the block is open. */
+.paid-banner.is-list { display: grid; gap: 1px; margin: 2px 0 4px; padding: 4px 8px; }
+.paid-line { display: block; }
+.paid-line b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.paid-line em { font-style: normal; color: var(--ink); }
+.ledger-entries > .paid-banner { margin-left: -2px; }

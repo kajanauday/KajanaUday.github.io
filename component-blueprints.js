@@ -102,6 +102,58 @@
   // A description's mark and its status word together, in the order a row reads: status first, then the dot.
   const AboutTags = (about, scope, ctx) => `${StatusCapsule(about, ctx)}${AboutMark(about, scope, ctx)}`;
 
+  // Settlement status indicator for shared expenses: shows a tick (settled) or dot (pending)
+  // like Teams status. Clicking opens the shared series history popup.
+  const SettleStatusMark = (entry, ctx) => {
+    if (!entry.shared || !entry.sid) return '';
+    const series = ctx.sharedSeries && ctx.sharedSeries(entry);
+    const owed = ctx.sharedOwed && ctx.sharedOwed(entry);
+    const settled = owed?.settled === true || (series && series.state === 'done');
+    const ongoing = series && series.state !== 'done' && series.state !== 'open';
+    const colour = series?.colour || ctx.fixedColour?.(series?.colour, series?.id || entry.sid) || '#d4af37';
+    const title = settled
+      ? `Settled — click to see full history`
+      : ongoing
+        ? `Partially settled — click to see details`
+        : `Open — click to see details`;
+    const cls = settled ? 'is-settled' : (ongoing ? 'is-ongoing' : 'is-open');
+    const glyph = settled ? '✓' : '';
+    return `<span class="settle-status ${cls}" data-settle-status data-entry-id="${ctx.esc(entry.id)}" data-sid="${ctx.esc(entry.sid)}" style="--c:${colour}" title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}" role="button" tabindex="0"><span class="settle-icon" aria-hidden="true">${glyph}</span></span>`;
+  };
+
+  // After the description: → I paid (they owe me their part), ← they paid (I owe my part).
+  const SettleDirMark = (entry, ctx) => {
+    if (!entry.shared || !entry.sid) return '';
+    const paidByMe = entry.shared.by !== 'friend';
+    const title = paidByMe ? `I paid · ${entry.shared.with} owes me their part` : `${entry.shared.with} paid · I owe my part`;
+    return `<span class="settle-dir ${paidByMe ? 'is-out' : 'is-in'}" title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}">${paidByMe ? '→' : '←'}</span>`;
+  };
+
+  // What settlements paid on a group of entries (a subsection, a block): per transaction, the amount that came from these
+  // entries. Read-only, small and grey, between the name and the total.
+  const paidLine = (row, property, ctx) => `<span class="paid-line"><b>${ctx.exact(row.amount, property)}</b> settled in <em>“${ctx.esc(row.name)}”</em>${row.date ? ` · ${ctx.esc(row.date)}` : ''}</span>`;
+  const PaidNote = (entries, property, ctx) => {
+    if (!ctx.sharedPaid) return '';
+    const byId = new Map();
+    (entries || []).forEach(entry => ctx.sharedPaid(entry).forEach(paid => {
+      const row = byId.get(paid.id) || { name: paid.name, amount: 0, date: paid.date };
+      row.amount += paid.amount;
+      byId.set(paid.id, row);
+    }));
+    if (!byId.size) return '';
+    const rows = [...byId.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    return `<div class="paid-banner is-list" aria-label="Repayments, read only">${rows.map(row => paidLine(row, property, ctx)).join('')}</div>`;
+  };
+  // The first line of a shared entry that has been paid on: its status, then every repayment transaction. Grey, read-only.
+  const PaidBanner = (entry, property, ctx) => {
+    const paid = ctx.sharedPaid ? ctx.sharedPaid(entry) : [];
+    if (!paid.length) return '';
+    const owed = ctx.sharedOwed?.(entry);
+    const total = paid.reduce((sum, row) => sum + row.amount, 0);
+    const text = owed?.settled ? `Settled ${ctx.exact(total, property)}` : `Part settled ${ctx.exact(total, property)} · ${ctx.exact(owed?.owed || 0, property)} open`;
+    return `<div class="paid-banner" aria-label="Settlement status, read only"><b>${text}</b>${paid.map(row => paidLine(row, property, ctx)).join('')}</div>`;
+  };
+
   // ---- a settlement's or a pot's lifecycle ------------------------------------------------------
   // Draft → Open → Clear → Settled → Merged. Worked out from what the section holds (see ExpenseStore.sectionState),
   // so it can never disagree with its entries.
@@ -228,7 +280,8 @@
   // day number, as before. Clicking the circle opens the day: its settlements (top) and its hashtags (bottom).
   const DayOrb = (entry, text, ctx) => {
     // A plain entry keeps its bare day number; the number still opens the day, for its hashtags.
-    if (!entry.shared) return `<span class="day-num" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="Open this day: hashtags">${text}</span>`;
+    // Shared entries too: their status shows in the settle marker beside the description, so the day needs no second mark.
+    return `<span class="day-num" data-day-orb data-entry-id="${ctx.esc(entry.id)}" title="Open this day: hashtags">${text}</span>`;
     // The disc takes its series colour from the fixed list; a settled entry also has its bottom 15% filled dark green.
     const settled = Boolean(ctx.sharedOwed && ctx.sharedOwed(entry)?.settled);
     const colour = window.SharedLedger.fixedColour(entry.series?.colour, entry.series?.id || entry.sid);
@@ -285,7 +338,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
+    return `<div class="ledger-entry-cell"${tagLine(entry, ctx)}>${PaidBanner(entry, property, ctx)}<div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${SettleStatusMark(entry, ctx)}${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, SettleDirMark(entry, ctx))}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -358,7 +411,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong></summary><div class="ledger-entries">${PaidNote(category.entries, property, ctx)}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -372,7 +425,7 @@
   // calculations set (GI, GE, GB), told apart by colour.
   const SectionTotals = ({ income, expenses, balance }, property, ctx) => {
     const parts = [['income', income, 'Income'], ['expense', expenses, 'Expenses'], ['balance', balance, 'Balance']].filter(([, amount]) => amount !== undefined);
-    return parts.length ? `<span class="ledger-totals section-totals">${parts.map(([tone, amount, title]) => `<span class="${tone}" title="${title}">${amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(amount), property)}</span>`).join('')}</span>` : '';
+    return parts.length ? `<span class="ledger-totals section-totals">${parts.map(([tone, amount, title]) => `<span class="${tone}" title="${title}">${amount === 0 ? '·' : `${amount < 0 ? '−' : ''}${ctx.fmt(Math.abs(amount), property)}`}</span>`).join('')}</span>` : '';
   };
   const TypeSection = (type, sections, { mKey, property }, state, ctx, isOpen, carry = null, heading = null, balances = []) => {
     if (!sections.length && !carry && !balances.length) return '';
@@ -494,7 +547,7 @@
     const linkChips = type === 'net' && meta?.link && ctx.linkedMonths
       ? ctx.linkedMonths(meta.link, property).filter(month => month.key !== mKey).map(month => `<button type="button" class="link-chip" data-link-month="${month.key}" data-link-property="${property}" title="Linked: open ${ctx.esc(month.label)}"><i class="ti ti-link" aria-hidden="true"></i>${ctx.esc(month.short)}</button>`).join('')
       : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${PaidNote(categories.flatMap(({ category }) => category.entries), property, ctx)}${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.

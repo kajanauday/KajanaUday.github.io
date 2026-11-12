@@ -120,3 +120,72 @@ test('series colours are a fixed list of twelve, used in order and wrapping afte
   assert.equal(SL.colourAt(-13), SL.SERIES_COLOURS[11]);
   assert.equal(SL.fixedColour('#2563EB', 'S1'), '#2563eb');
 });
+
+// ---- automatic allocation and the buffer ----
+{
+  const test = require('node:test'); const assert = require('node:assert');
+  const L = require('../shared-ledger.js');
+  const mk = (id, amt, date, by = 'friend') => ({ id, amount: amt, paidBy: by, hisPct: 50, shared: true, date });
+  test('allocate: 100 against 80 and 40 clears the 80, keeps 20', () => {
+    const entries = [mk('a', 160, '2026-01-01'), mk('b', 80, '2026-01-02')]; // I owe 80 and 40
+    const r = L.allocate({ entries, settlements: [], cash: -100 });
+    assert.deepEqual(r.items, [{ to: 'a', a: 80 }]);
+    assert.equal(r.buffer, -20); assert.equal(r.credit, -20);
+  });
+  test('buffer carries into the next payment', () => {
+    const entries = [mk('a', 160, '2026-01-01'), mk('b', 80, '2026-01-02')];
+    const first = L.allocate({ entries, settlements: [], cash: -100 });
+    const st = [{ id: 's1', items: first.items, cash: -100, credit: first.credit }];
+    assert.equal(L.buffer(st), -20);
+    const second = L.allocate({ entries, settlements: st, cash: -20 }); // 20 + 20 buffer = 40
+    assert.deepEqual(second.items, [{ to: 'b', a: 40 }]);
+    assert.equal(second.buffer, 0); assert.equal(second.credit, 20);
+    const res = L.settle({ entries, settlements: st, items: second.items, cash: -20, treatment: 'none', credit: second.credit });
+    assert.equal(res.ok, true); assert.equal(res.forgiven, 0);
+  });
+  test('smaller than every item: all goes to buffer', () => {
+    const r = L.allocate({ entries: [mk('a', 160, '2026-01-01')], settlements: [], cash: -50 });
+    assert.deepEqual(r.items, []); assert.equal(r.buffer, -50);
+  });
+}
+
+// ---- editing a settled entry ----
+{
+  const test = require('node:test'); const assert = require('node:assert');
+  const L = require('../shared-ledger.js');
+  const mk = (id, amt, date, by = 'friend') => ({ id, amount: amt, paidBy: by, hisPct: 50, shared: true, date });
+  const st = [{ id: 's', items: [{ to: 'a', a: 80 }], cash: -80 }];
+  test('amount reduced after settling: the excess becomes buffer', () => {
+    const p = L.pending([mk('a', 100, '2026-01-01')], st); // I now owe 50, 80 was paid
+    assert.equal(p.buffer, -30); assert.equal(p.net, 0); assert.equal(p.overall, 30 * 1);
+  });
+  test('amount raised after settling, no buffer: reopens the difference', () => {
+    const p = L.pending([mk('a', 200, '2026-01-01')], st); // owe 100, paid 80
+    assert.equal(p.payableTotal, 20); assert.equal(p.buffer, 0);
+  });
+  test('amount raised, buffer available: covered at once', () => {
+    const credit = [{ id: 's', items: [{ to: 'a', a: 80 }], cash: -100, credit: -20 }];
+    const p = L.pending([mk('a', 200, '2026-01-01')], credit);
+    assert.equal(p.payableTotal, 0); assert.equal(p.buffer, 0);
+  });
+  test('reduced share feeds the next payment', () => {
+    const entries = [mk('a', 100, '2026-01-01'), mk('b', 120, '2026-01-02')]; // a: owe 50 (paid 80, +30 buffer), b: owe 60
+    const r = L.allocate({ entries, settlements: st, cash: -30 }); // 30 + 30 buffer = 60 -> clears b
+    assert.deepEqual(r.items, [{ to: 'b', a: 60 }]); assert.equal(r.buffer, 0);
+  });
+}
+
+// ---- a settled entry removed: its payments are kept as buffer and cover what is open ----
+{
+  const test = require('node:test'); const assert = require('node:assert');
+  const L = require('../shared-ledger.js');
+  test('deleted settled entry: released credit becomes buffer and covers an open item', () => {
+    const entries = [{ id: 'b', amount: 120, paidBy: 'friend', hisPct: 50, shared: true, date: '2026-01-02' }]; // I owe 60; 'a' was deleted
+    const st = [
+      { id: 's1', items: [{ to: 'a', a: 80 }], cash: -80 },
+      { id: 's2', items: [], cash: 0, credit: -80 }
+    ];
+    const p = L.pending(entries, st);
+    assert.equal(p.payableTotal, 0); assert.equal(p.buffer, -20);
+  });
+}
