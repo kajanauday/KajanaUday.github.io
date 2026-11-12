@@ -2155,3 +2155,136 @@ details.shared-settle > summary i { font-size: 12px; transition: transform .15s;
 details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .ledger-cat > summary strong.repay-amt { color: var(--repay); font-weight: 600; }
 .ledger-type-section > summary > .repay-chip { margin-left: auto; margin-right: 10px; }
+
+/* The lifecycle label (Clear, Open, Settled…) at half its size; its tooltip still carries the full words. */
+.ledger-state { zoom: .5; }
+.repay-mark { zoom: .7; }
+
+/* The dustbin: a header button with a count, and the list of the last 25 deletions. */
+#trash-button { position: relative; }
+.trash-count { position: absolute; top: -4px; right: -4px; min-width: 16px; padding: 0 4px; border-radius: 99px; background: var(--brand); color: var(--on-brand, #fff); font: 700 10px/16px var(--sans); text-align: center; }
+.trash-dialog { width: min(520px, calc(100% - 20px)); max-height: 82vh; }
+.trash-note { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.trash-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 56vh; overflow: auto; }
+.trash-list li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 4px; border-top: 1px dotted var(--line-soft); }
+.trash-list li > i { color: var(--muted); font-size: 16px; }
+.trash-what { min-width: 0; display: grid; }
+.trash-what b { overflow: hidden; font-weight: 500; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.trash-what small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.trash-drop { opacity: .6; }
+.trash-drop:hover { opacity: 1; }
+.trash-empty { display: block !important; color: var(--muted); padding: 16px 4px !important; text-align: center; }
+
+/* AutoSettled: items the buffer paid by itself. */
+.auto-mark { margin-left: 5px; padding: 0 6px; border-radius: 99px; background: color-mix(in srgb, var(--st-done) 14%, transparent); color: var(--st-done); font: 700 9.5px/15px var(--sans); letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
+.shared-auto { border: 1px solid var(--line-soft); border-radius: 8px; margin-bottom: 6px; }
+.shared-auto > summary { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; list-style: none; font-size: 12px; color: var(--muted); }
+.shared-auto > summary::-webkit-details-marker { display: none; }
+.shared-auto > summary i { font-size: 12px; transition: transform .15s; }
+.shared-auto[open] > summary i { transform: rotate(90deg); }
+.shared-auto > summary small { margin-left: auto; padding: 0 7px; border-radius: 99px; background: var(--hover); color: var(--ink); font-weight: 600; }
+.shared-auto-body { padding: 0 8px 8px; }
+.shared-auto-list { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; max-height: 150px; overflow: auto; }
+.shared-auto-list li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px dotted var(--line-soft); font-size: 12.5px; }
+.shared-auto-list li span { min-width: 0; display: grid; }
+.shared-auto-list li small { color: var(--muted); font-size: 10.5px; }
+.shared-auto-list li em { font: normal 600 12px var(--sans); color: var(--st-done); white-space: nowrap; }
+.shared-use-buffer { border: 1px solid var(--st-done); border-radius: 10px; background: transparent; color: var(--st-done); padding: 0 6px; font: 600 10.5px/16px var(--sans); cursor: pointer; white-space: nowrap; }
+.shared-use-buffer:hover { background: var(--st-done); color: #fff; }
+.shared-open-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+
+/* Shared flag in the middle of a heading line: red while open, green once settled. */
+.shared-flag { justify-self: center; padding: 0 9px; border-radius: 99px; font: 700 10px/16px var(--sans); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.shared-flag.is-open { background: color-mix(in srgb, var(--expense) 14%, transparent); color: var(--expense); }
+.shared-flag.is-settled { background: color-mix(in srgb, var(--st-done) 16%, transparent); color: var(--st-done); }
+.ledger-type-section > summary > .shared-flag { margin: 0 auto; }
+.repay-mark.is-unused { --c: var(--muted); background: var(--hover); color: var(--muted); }
+.repay-mark.is-unused .cleared-ball { background: var(--muted); }
+.shared-open-row { grid-template-columns: 18px minmax(0, 1fr) auto auto; }
+.shared-open-plan { display: flex; align-items: center; gap: 4px; }
+.shared-open-amount { width: 84px; height: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: right; font: inherit; font-size: 12.5px; }
+.shared-open-row.is-planned { background: color-mix(in srgb, var(--brand) 8%, transparent); border-radius: 4px; }
+.shared-payfrom { display: grid; gap: 2px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+.shared-payfrom select { height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; }
+.shared-payfrom[hidden], #shared-forgive-buffer[hidden], .shared-forgive[hidden] { display: none !important; }
+
+/* Shared label: left, right after the heading's name, in the app's gold while open (not red), green once settled. */
+.shared-flag { justify-self: auto; margin-left: 8px; }
+.shared-flag.is-open { background: color-mix(in srgb, var(--brand) 18%, transparent); color: var(--brand-strong); }
+.ledger-type-section > summary > .shared-flag { margin: 0 0 0 8px; }
+.ledger-cat-title .shared-flag { flex: none; }
+
+/* Shared label in the middle of the heading line (gold while open, green once settled); on a narrow screen it falls back to sitting after the name. */
+.ledger-cat > summary, .ledger-type-section > summary { position: relative; }
+.ledger-cat > summary .shared-flag, .ledger-type-section > summary > .shared-flag { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; z-index: 1; pointer-events: auto; }
+@media (max-width: 700px) {
+  .ledger-cat > summary .shared-flag, .ledger-type-section > summary > .shared-flag { position: static; transform: none; margin-left: 8px; }
+}
+
+/* Sorting no longer has buttons in the heading; only a faint note while a subsection is not in newest-first order. */
+.sort-hint { margin-left: 6px; color: var(--muted); font: 500 10.5px var(--sans); opacity: .8; white-space: nowrap; }
+.ledger-cat[data-sortable] > summary { touch-action: pan-y; }
+
+/* "Shared" and "repaid" sit in exactly the same place: the middle of the heading line. */
+.ledger-cat > summary .repay-chip, .ledger-type-section > summary > .repay-chip { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; z-index: 1; }
+.ledger-cat > summary .shared-flag + .repay-chip, .ledger-type-section > summary > .shared-flag + .repay-chip { left: calc(50% + 70px); transform: translate(0, -50%); }
+@media (max-width: 700px) {
+  .ledger-cat > summary .repay-chip, .ledger-type-section > summary > .repay-chip { position: static; transform: none; margin-left: 8px; }
+}
+
+/* The repaid amount is a capsule like the Shared label, in the repayment teal. */
+.repay-chip { padding: 0 9px; border-radius: 99px; background: color-mix(in srgb, var(--repay) 16%, transparent); color: var(--repay); font: 700 11px/16px var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Link pies. Repayment side: a filled wedge in the repayment teal. Shared side: a ring in the app's gold. Same size and family,
+   told apart by shape and colour; clicking either goes to the other end. */
+.link-pie { --size: 13px; flex: none; display: inline-block; width: var(--size); height: var(--size); margin-left: 5px; border-radius: 50%; vertical-align: middle; box-sizing: border-box; }
+.link-pie[role="button"] { cursor: pointer; transition: transform .15s; }
+.link-pie[role="button"]:hover, .link-pie[role="button"]:focus-visible { transform: scale(1.18); outline: none; }
+.link-pie.is-pay { border: 1.5px solid var(--repay); background: conic-gradient(var(--repay) calc(var(--p) * 1%), transparent 0); }
+.link-pie.is-get { background: conic-gradient(var(--brand) calc(var(--p) * 1%), color-mix(in srgb, var(--brand) 22%, transparent) 0); -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px); mask: radial-gradient(circle, transparent 3px, #000 3.5px); }
+.shared-flag .link-pie, .repay-chip .link-pie { --size: 11px; margin: 0 5px 0 -3px; }
+.link-left { margin-left: 5px; color: var(--repay); font: 600 10.5px var(--sans); white-space: nowrap; }
+.repay-chip .link-left { margin-left: 4px; }
+
+/* The link picker and the jump list. */
+.link-picker { width: min(460px, calc(100% - 20px)); max-height: 82vh; }
+.lp-list { display: grid; gap: 10px; max-height: 56vh; overflow: auto; margin: 6px 0; }
+.lp-group h3 { margin: 0 0 4px; color: var(--muted); font: 600 11.5px var(--sans); }
+.lp-option { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+.lp-option:hover { background: var(--hover); }
+.lp-option.is-sub { padding-left: 22px; }
+.lp-what { min-width: 0; display: grid; }
+.lp-what b { overflow: hidden; font-weight: 500; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.lp-what small { color: var(--muted); font-size: 10.5px; }
+.lp-option em { font: normal 600 12px var(--sans); color: var(--ink); white-space: nowrap; }
+.lp-go { display: grid; width: 100%; padding: 7px 8px; border: 0; border-bottom: 1px dotted var(--line-soft); background: transparent; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.lp-go:hover { background: var(--hover); }
+.lp-go small { color: var(--muted); font-size: 10.5px; }
+.lp-none { color: var(--muted); }
+.repay-chip .link-sep { opacity: .6; margin: 0 2px; }
+
+/* The shared marker is only the ring now: no capsule, no word. Green once everything under it is settled. */
+.shared-flag { padding: 0; background: none !important; color: inherit; line-height: 0; }
+.shared-flag .link-pie { --size: 14px; margin: 0; }
+.link-pie.is-get.is-done { background: var(--st-done); }
+
+/* The ring's colour tells who put the money in (this replaces the arrows): gold = I did, blue = they did, grey = both. */
+.link-pie.is-get { --ring: var(--brand); background: conic-gradient(var(--ring) calc(var(--p) * 1%), color-mix(in srgb, var(--ring) 22%, transparent) 0); }
+.link-pie.is-get.is-iput { --ring: var(--brand); }
+.link-pie.is-get.is-tput { --ring: var(--tag0, #4a7bd8); }
+.link-pie.is-get.is-bput { --ring: var(--muted); }
+.link-pie.is-get.is-done { background: var(--ring); }
+
+/* The entry's single marker, before its description. */
+.ledger-entry .link-pie[data-settle-status] { --size: 12px; margin: 0 6px 0 0; }
+
+/* Standard pies: a circle with a coloured outline and a wedge filled clockwise from the top, the rest a light tint of the same
+   colour. Same drawing for both sides; only the colour differs (teal: a repayment; gold: I put the money in; blue: they did). */
+.link-pie { border: 1.5px solid var(--ring, var(--brand)); background: conic-gradient(var(--ring, var(--brand)) calc(var(--p) * 1%), color-mix(in srgb, var(--ring, var(--brand)) 14%, transparent) 0); -webkit-mask: none; mask: none; }
+.link-pie.is-pay { --ring: var(--repay); border-color: var(--repay); }
+.link-pie.is-get { border-width: 1.5px; }
+.link-pie.is-get.is-done { background: var(--ring); }
+.ledger-entry .link-pie[data-settle-status] { --size: 13px; margin: 0 0 0 6px; }
+.link-pie.is-get, .link-pie.is-pay { -webkit-mask: none; mask: none; border: 1.5px solid var(--ring, var(--brand)); }
+.shared-undo { margin-left: 6px; padding: 0 8px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: 600 10.5px/16px var(--sans); cursor: pointer; }
+.shared-undo:hover { border-color: var(--expense); color: var(--expense); }

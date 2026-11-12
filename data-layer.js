@@ -40,6 +40,7 @@
   // The figure a row counts for: a shared expense counts my share of its full amount (worked out from its split, so the
   // stored amount is never changed by sharing); any other row counts its amount as it is.
   const REPAY_COLOUR = '#0d9488';
+  const TRASH_LIMIT = 25;
   // What an entry counts for once its notes are in: with notes, their sum (a shared entry then counts my share of that sum);
   // without, its own figure.
   const entryWith = (item, notes) => {
@@ -504,9 +505,13 @@
     const key = meta.closed
       ? (meta.mergedFrom?.length ? 'merged' : 'settled')
       : !meta.entries ? 'draft'
-        : kind === 'settlement' && meta.settle && meta.settle.owed !== 0 ? 'open' : 'clear';
+        : kind === 'settlement' && meta.settle && meta.settle.owed !== 0 ? 'open'
+          // Money lent, held or borrowed is open while any of it is still out (across every month linked to it), and clear
+          // once it has all come back or been paid back. Only a savings pot is "Active" while it holds money.
+          : MONEY_OUT_KINDS.includes(kind) && Number(meta.outstanding) > 0 ? 'open' : 'clear';
     const state = SECTION_STATES[key];
-    return { key, kind, label: kind === 'settlement' ? state.label : state.savings, title: state.title };
+    const named = kind === 'settlement' || MONEY_OUT_KINDS.includes(kind);
+    return { key, kind, label: named ? state.label : state.savings, title: key === 'open' && kind !== 'settlement' ? 'Money is still out' : state.title };
   }
 
   // Each block has a name of its own, kept per month and currency beside that month's section list. A month holds
@@ -516,6 +521,7 @@
     const given = String(names?.[kind] ?? '').trim();
     return given || BLOCK_NAMES[kind] || BLOCK_NAMES.settlement;
   };
+  const MONEY_OUT_KINDS = ['hold', 'lent', 'borrowed'];
   const sectionKind = section => (SECTION_KINDS.includes(section?.kind) ? section.kind : 'settlement');
   const subsectionRole = (section, name) => {
     const kind = sectionKind(section);
@@ -1137,8 +1143,10 @@
 
   class ExpenseStore {
     // Build with ExpenseStore.open(), which reads currencies and years (not entries) from Firebase.
-    constructor({ db, currencies, years, events = {} }) {
+    constructor({ db, currencies, years, events = {}, trash = {} }) {
       this.db = db;
+      // The dustbin: the last TRASH_LIMIT things deleted, newest first (see addTrash).
+      this.trashList = Object.values(trash || {}).filter(item => item && item.id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
       this.currencies = currencies;
       this.years = years;
       this.transactions = [];
@@ -1161,10 +1169,10 @@
     static async open({ databaseURL, root, readOnly = false, auth = null, offline = null }) {
       const wire = new FirebaseDb(databaseURL, root, readOnly, auth);
       const db = offline?.vault ? new OfflineSync(offline.vault, wire, { ...offline, readOnly }) : wire;
-      const [currencies, years, events] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events')]);
+      const [currencies, years, events, trash] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events'), db.get('trash').catch(() => null)]);
       const ordered = Object.fromEntries(Object.entries(currencies || {}).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
       Object.values(years || {}).forEach(normalizeYear);
-      const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {} });
+      const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {}, trash: trash || {} });
       store.sync = db === wire ? null : db;
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
@@ -1578,7 +1586,8 @@
     // Every settlement of every loaded year, newest first. A settlement is kept in the year it is dated in.
     // Settlements as saved, newest first.
     realSettleList() {
-      return Object.entries(this.years).flatMap(([year, node]) => Object.entries(node.settles || {}).map(([id, settle]) => ({ ...settle, id, year: Number(year) })))
+      if (this.realCache) return this.realCache;
+      return this.realCache = Object.entries(this.years).flatMap(([year, node]) => Object.entries(node.settles || {}).map(([id, settle]) => ({ ...settle, id, year: Number(year) })))
         .sort((a, b) => String(b.date).localeCompare(String(a.date)) || a.id.localeCompare(b.id));
     }
     // Every settlement: the saved ones, plus one worked out for each entry of a repayment section (see repayFor). Those are
@@ -1586,6 +1595,32 @@
     settleList() {
       return [...this.realSettleList(), ...this.virtualSettles()]
         .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.id).localeCompare(String(b.id)));
+    }
+    // ---- the dustbin ----
+    // Everything deleted is kept here so it can be put back: an entry (with its notes), a note, a subsection (with its entries),
+    // a section. Only the last 25 are kept; adding one over that drops the oldest. Saved at trash/<id>.
+    addTrash(item) {
+      const entry = JSON.parse(JSON.stringify({ ...item, id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, at: new Date().toISOString() }));
+      this.trashList.unshift(entry);
+      const update = { [`trash/${entry.id}`]: entry };
+      while (this.trashList.length > TRASH_LIMIT) update[`trash/${this.trashList.pop().id}`] = null;
+      return this.queue(() => this.db.patch(update));
+    }
+    removeTrash(id) {
+      this.trashList = this.trashList.filter(item => item.id !== id);
+      return this.queue(() => this.db.patch({ [`trash/${id}`]: null }));
+    }
+    clearTrash() {
+      const update = Object.fromEntries(this.trashList.map(item => [`trash/${item.id}`, null]));
+      this.trashList = [];
+      return Object.keys(update).length ? this.queue(() => this.db.patch(update)) : Promise.resolve();
+    }
+    // Takes a saved settlement away (an adjustment made when a shared entry was deleted, undone by restoring it).
+    removeSettle(id) {
+      const update = {};
+      Object.entries(this.years).forEach(([year, node]) => { if (node.settles?.[id]) { delete node.settles[id]; update[`years/${year}/settles/${id}`] = null; } });
+      this.resetShared();
+      return Object.keys(update).length ? this.queue(() => this.db.patch(update)) : Promise.resolve();
     }
     // ---- repayments: any block of the ledger can be where a person's repayments are recorded ----
     // years/<year>/repay is a list of targets { property, with, year?, section, category?, entry? }: a whole section, one of
@@ -1620,7 +1655,7 @@
       this.resetShared();
       return Object.keys(update).length ? this.queue(() => this.db.patch(update)) : Promise.resolve();
     }
-    resetShared() { this.seriesIndex = null; this.resolvedIndex = null; this.paidIndex = null; this.virtualIndex = null; }
+    resetShared() { this.seriesIndex = null; this.resolvedIndex = null; this.paidIndex = null; this.virtualIndex = null; this.realCache = null; }
     // Marks every entry of a repayment section as a repayment (kept out of income and expenses, like a cleared entry) and
     // takes the mark off any entry that has left one. Run before totals are worked out or saved.
     syncRepayFlags() {
@@ -1637,30 +1672,45 @@
       if (changed) this.resetShared();
       return changed;
     }
-    virtualSettles() {
-      if (this.virtualIndex) return this.virtualIndex;
-      const out = [];
-      const real = this.realSettleList();
-      const repays = this.transactions.filter(item => !item.parentId && !item.eventId && this.repayFor(item))
-        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
-      const people = new Map();
-      repays.forEach(item => { const who = this.repayFor(item); const key = `${item.property}|${who}`; (people.get(key) || people.set(key, { property: item.property, who, list: [] }).get(key)).list.push(item); });
-      people.forEach(({ property, who, list }) => {
-        const entries = this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId && row.property === property && row.shared.with === who)
-          .map(row => ({ id: row.sid, amount: this.fullAmount(row), paidBy: row.shared.by, hisPct: row.shared.his, shared: true, date: row.date, property, with: who }));
-        const settles = real.filter(settle => settle.property === property && settle.with === who);
-        list.forEach(item => {
-          const moved = Math.round(Math.abs(this.entryTotal(item.id)));
-          if (!moved) return;
-          const cash = item.type === 'income' ? moved : -moved;
-          const plan = global.SharedLedger.allocate({ entries, settlements: settles, cash });
-          const virtual = { id: `rp-${item.id}`, date: item.date, property, with: who, items: plan.items.map(({ to, a }) => ({ to, a })), cash, forgiven: 0, treatment: 'none', note: '', credit: plan.credit, virtual: true, name: item.description };
-          settles.push(virtual);
-          out.push(virtual);
-        });
-      });
-      this.virtualIndex = out;
-      return out;
+    // The app makes no settlements by itself: a repayment entry is only money you have paid or received. Settling is something
+    // you do in the settle pane, choosing which owed items the money covers.
+    virtualSettles() { return []; }
+    // The entries in the blocks chosen for a person's repayments, and the settlements that have used each one.
+    repayEntries(property, who) {
+      return this.transactions.filter(item => !item.parentId && !item.eventId && item.property === property && this.repayFor(item) === who)
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.id).localeCompare(String(b.id)));
+    }
+    repaySignature(item) { return `${item.date}|${item.description}|${Math.round(Math.abs(this.entryTotal(item.id)))}`; }
+    // The settlement(s) that used this repayment entry, or none: what the REPAYMENT badge says (used or not).
+    repayUse(item) {
+      const sig = this.repaySignature(item);
+      const used = this.realSettleList().filter(settle => settle.via === sig);
+      return { used: used.length > 0, items: used.reduce((sum, settle) => sum + (settle.items || []).length, 0) };
+    }
+    repayUsed(item) { return this.repayUse(item).used; }
+    // How much of a repayment entry has gone to shared expenses (settlements that name it as the money source), what is left of it
+    // as buffer for other things, and which shared entries it paid (their keys).
+    payerStats(item) {
+      const sig = this.repaySignature(item);
+      const total = Math.round(Math.abs(this.entryTotal(item.id)));
+      const uses = this.realSettleList().filter(settle => settle.via === sig);
+      const used = uses.reduce((sum, settle) => sum + (settle.items || []).reduce((inner, row) => inner + Math.abs(Number(row.a) || 0), 0), 0);
+      return { total, used: Math.min(used, total), balance: Math.max(0, total - used), targets: [...new Set(uses.flatMap(settle => (settle.items || []).map(row => row.to)))] };
+    }
+    // The repayment entries (their signatures) that paid on one shared entry, and how much each paid.
+    payersOf(sid) {
+      const out = new Map();
+      this.realSettleList().filter(settle => settle.via).forEach(settle => (settle.items || []).forEach(row => { if (row.to === sid) out.set(settle.via, (out.get(settle.via) || 0) + Math.abs(Number(row.a) || 0)); }));
+      return [...out.entries()].map(([sig, amount]) => ({ sig, amount }));
+    }
+    rowBySignature(sig) { return this.transactions.find(row => !row.parentId && !row.eventId && this.repaySignature(row) === sig) || null; }
+    // What share of a shared entry has been paid off, by any settlement: { due, paid }.
+    receiverStats(item) {
+      if (!item?.sid || !item.shared) return { due: 0, paid: 0 };
+      const parts = global.SharedLedger.split({ amount: this.fullAmount(item), paidBy: item.shared.by, hisPct: item.shared.his });
+      const due = item.shared.by === 'friend' ? parts.iOwe : parts.friendOwes;
+      const open = this.sharedOwed(item)?.owed ?? due;
+      return { due, paid: Math.max(0, due - open) };
     }
     saveSettle(settle) {
       const at = String(settle.date).slice(0, 4);
@@ -1779,6 +1829,7 @@
           // are the months added up, so the year card answers "is this cleared?" without opening a single month.
           if (section._meta.settle) {
             into._meta.kind = section._meta.kind;
+            into._meta.outstanding = Math.max(into._meta.outstanding || 0, section._meta.outstanding || 0);
             const totals = into._meta.settle ||= { kind: section._meta.kind, cashIn: 0, cashOut: 0, owed: 0, share: 0, saved: 0, returns: 0, settleIn: 0, settleOut: 0, allocated: 0, unallocated: 0, byRole: {}, purposes: [], cleared: true };
             ['cashIn', 'cashOut', 'owed', 'share', 'saved', 'returns', 'settleIn', 'settleOut', 'allocated', 'unallocated'].forEach(field => { totals[field] += section._meta.settle[field] || 0; });
             // Each thing the settlement is about, over the whole year: a purpose opened in March and paid off in
@@ -2106,7 +2157,7 @@
     country(year, monthIndex, currency) {
       const region = this.currencies[currency];
       const totals = this.monthTotals(year, monthIndex, currency);
-      const sections = this.groupIntoSections(this.items(year, currency, monthIndex), this.sections(year, monthIndex, currency));
+      const sections = this.groupIntoSections(this.items(year, currency, monthIndex), this.sections(year, monthIndex, currency), `${year}-${String(monthIndex + 1).padStart(2, '0')}-31`);
       // Events shown in months appear as their own ★ section, read-only here; they are edited in the event.
       const shown = this.items(year, currency, monthIndex, { withEvents: true }).filter(item => item.eventId);
       [...new Set(shown.map(item => item.eventId))].forEach(id => ['expense', 'income'].forEach(type => {
@@ -2122,7 +2173,7 @@
       };
     }
     // Files items under a section list: by their stored section, else by subsection name, else under "Other".
-    groupIntoSections(items, list) {
+    groupIntoSections(items, list, through = '9999-12-31') {
       const sections = {};
       const claimed = new Set();
       [...list]
@@ -2151,6 +2202,14 @@
             // The months an item in a block is linked across (see openCloseDialog): the same link on each month's section.
             built._meta.link = section.link || '';
             built._meta.entries = Object.values(built.categories).reduce((sum, category) => sum + category._meta.entries, 0);
+            // How much of the money in this block is still out, as of the end of this month: each linked item's balance
+            // (what was lent, held or borrowed, less what came back), over every month loaded.
+            if (MONEY_OUT_KINDS.includes(built._meta.kind)) {
+              const ids = [...new Set(Object.values(built.categories).flatMap(category => category.entries).map(entry => entry.moneyId).filter(Boolean))];
+              built._meta.outstanding = ids.length
+                ? ids.reduce((sum, id) => sum + linkedMoneyBalance(id, built._meta.kind, this.transactions.filter(row => row.moneyId === id), row => this.entryTotal(row.id), through), 0)
+                : Math.max(0, Number(built._meta.settle?.[{ hold: 'held', lent: 'lent', borrowed: 'borrowed' }[built._meta.kind]]) || 0);
+            }
             // The section's own description and each subsection's, kept with the section so they travel with it.
             built._meta.about = section.about || '';
             built._meta.subAbout = { ...(section.subAbout || {}) };

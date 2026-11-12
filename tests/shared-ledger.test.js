@@ -163,10 +163,10 @@ test('series colours are a fixed list of twelve, used in order and wrapping afte
     const p = L.pending([mk('a', 200, '2026-01-01')], st); // owe 100, paid 80
     assert.equal(p.payableTotal, 20); assert.equal(p.buffer, 0);
   });
-  test('amount raised, buffer available: covered at once', () => {
+  test('amount raised, buffer available: stays open until the buffer is used (nothing is settled by itself)', () => {
     const credit = [{ id: 's', items: [{ to: 'a', a: 80 }], cash: -100, credit: -20 }];
     const p = L.pending([mk('a', 200, '2026-01-01')], credit);
-    assert.equal(p.payableTotal, 0); assert.equal(p.buffer, 0);
+    assert.equal(p.payableTotal, 20); assert.equal(p.buffer, -20); assert.equal(p.auto.length, 0);
   });
   test('reduced share feeds the next payment', () => {
     const entries = [mk('a', 100, '2026-01-01'), mk('b', 120, '2026-01-02')]; // a: owe 50 (paid 80, +30 buffer), b: owe 60
@@ -186,6 +186,6 @@ test('series colours are a fixed list of twelve, used in order and wrapping afte
       { id: 's2', items: [], cash: 0, credit: -80 }
     ];
     const p = L.pending(entries, st);
-    assert.equal(p.payableTotal, 0); assert.equal(p.buffer, -20);
+    assert.equal(p.payableTotal, 60); assert.equal(p.buffer, -80); assert.equal(p.auto.length, 0);
   });
 }

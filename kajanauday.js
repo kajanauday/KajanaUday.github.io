@@ -718,8 +718,43 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     const sortModes = (() => {
       try { return JSON.parse(localStorage.getItem(SORT_KEY) || '{}') || {}; } catch (error) { return {}; }
     })();
+    // Orders one subsection by day or amount (a second use flips the direction). Used by the row menu and the swipe gesture.
+    function sortSubsection(key, field, name) {
+      const current = sortModes[key] || 'date-desc';
+      const active = current.startsWith(field);
+      const dir = active ? current.slice(field.length + 1) : 'desc';
+      const to = active ? `${field}-${dir === 'desc' ? 'asc' : 'desc'}` : `${field}-desc`;
+      if (to === 'date-desc') delete sortModes[key]; else sortModes[key] = to;
+      saveSortModes();
+      renderLedger({ loadMissing: false });
+      showToast(`${name}: ${B().SORT_LABELS[to]}.`);
+    }
     function saveSortModes() {
       try { localStorage.setItem(SORT_KEY, JSON.stringify(sortModes)); } catch (error) { /* Not remembered; still applies now. */ }
+    }
+    // Swipe across a subsection's heading to sort it: right for day, left for amount (again flips the direction).
+    {
+      let start = null;
+      let swiped = 0;
+      document.addEventListener('pointerdown', event => {
+        const head = event.target.closest?.('.ledger-cat[data-sortable] > summary');
+        start = head && event.isPrimary ? { x: event.clientX, y: event.clientY, t: Date.now(), head } : null;
+      }, true);
+      document.addEventListener('pointerup', event => {
+        if (!start) return;
+        const { x, y, t, head } = start;
+        start = null;
+        const dx = event.clientX - x;
+        const dy = event.clientY - y;
+        if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) / 2 || Date.now() - t > 700) return;
+        swiped = Date.now();
+        const cat = head.parentElement;
+        sortSubsection(cat.dataset.key, dx > 0 ? 'date' : 'amount', cat.dataset.category);
+      }, true);
+      // A swipe must not also open or close the subsection.
+      document.addEventListener('click', event => {
+        if (swiped && Date.now() - swiped < 500 && event.target.closest?.('.ledger-cat[data-sortable] > summary')) { event.preventDefault(); event.stopPropagation(); swiped = 0; }
+      }, true);
     }
     // The ledger shows one year's months, or (the ★ tab beside the years) the special cards and hashtags page (see
     // renderHub). Remembered for the tab.
@@ -736,6 +771,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       sharedSeries: entry => store.sharedSeriesStatus(entry),
       linkedMonths: (link, property) => store.linkedSections(link, property).map(({ year, monthIndex }) => ({ key: keyOf(year, monthIndex), label: monthLabel(new Date(year, monthIndex, 1)), short: `${SHORT_MONTHS[monthIndex]} ${year}` })),
       cardName: id => store.events[id]?.name || '',
+      payerStats: entry => store.payerStats(entry),
+      receiverStats: entry => store.receiverStats(entry),
+      linkJumps: entry => (entry.sid && entry.shared
+        ? store.payersOf(entry.sid).map(item => store.rowBySignature(item.sig)).filter(Boolean)
+        : store.payerStats(entry).targets.map(sid => transactions.find(row => row.sid === sid)).filter(Boolean)).map(row => sharedJump(row)),
+      repayUse: entry => store.repayUse(entry),
       sharedOwed: entry => store.sharedOwed(entry),
       sharedPaid: entry => (entry?.sid ? store.sharedPaid(entry.sid) : []),
       exact: (minor, property) => exactMoney(minor, property),
@@ -751,6 +792,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       loadReferenceMonths();
       store.syncRepayFlags();
       store.refreshSeries();
+      updateTrashBadge();
       // Every year is read once in the background, so a series that runs past its own month shows its colour in every month.
       if (!allYearsRequested) {
         allYearsRequested = true;
@@ -1336,6 +1378,301 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // Deleting a subsection also takes it off that month's own section list.
     // `section`, when given, keeps a subsection's removal inside that one section: two settlements may each have a
     // row called "My share", and clearing one must not take the other with it.
+
+    // ---- Repayments linked to shared expenses (from the right-click menu) ----
+    // A repayment is money you paid (an Expense) or received (an Income) to settle a shared expense. Right-click it and link it to
+    // the shared block or entry it pays; or right-click the shared one and pick the repayment. Either way the same thing happens:
+    // the repayment's block becomes a repayment block for that person (kept out of your expenses), and its money goes onto the
+    // shared items, oldest first. If the shared side is smaller, the rest stays on the repayment as buffer for other things; if
+    // it is larger, the repayment is used up entirely and the shared side keeps what is still open.
+    const fmtLink = (minor, property) => exactMoney(minor, property);
+    function repayPayerRows(target) {
+      if (target.kind === 'entry') { const row = transactions.find(item => item.id === target.id); return row && !row.parentId ? [row] : []; }
+      if (target.kind === 'subsection') return entriesOf(target.mKey, target.property, target.type, target.section, target.category);
+      if (target.kind === 'section' && target.section) return entriesOf(target.mKey, target.property, target.type, target.section);
+      return [];
+    }
+    // Can these rows be repayments at all? Returns what is wrong, or ''.
+    function repayPayerProblem(rows) {
+      if (!rows.length) return 'There is nothing here to use.';
+      if (rows.some(row => row.eventId)) return 'Special card entries cannot be repayments.';
+      if (rows.some(row => row.type !== 'income' && row.type !== 'expense')) return 'Only Income or Expenses entries can be repayments.';
+      if (new Set(rows.map(row => row.type)).size > 1) return 'Money paid and money received cannot be mixed.';
+      if (rows.some(row => row.sid && row.shared)) return 'A shared expense cannot also be a repayment.';
+      if (rows.some(row => row.cleared?.id && !String(row.cleared.id).startsWith('rp:'))) return 'Part of this already records a settlement.';
+      if (rows.some(row => row.moneyId || row.markerOf || row.refKey)) return 'Part of this is linked to a loan or a marker.';
+      if (!rows.some(row => store.entryTotal(row.id))) return 'It has no amount.';
+      return '';
+    }
+    // The shared entries still open, for a payer of this type: money I paid settles what I owe; money I received settles what is owed me.
+    function openSharedFor(type, property) {
+      const wanted = type === 'expense' ? 'friend' : 'me';
+      return sharedRows().filter(row => row.property === property && !row.eventId && (row.shared.by === 'friend') === (wanted === 'friend') && (store.sharedOwed(row)?.owed || 0) > 0)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    }
+    // Groups rows by person, then by block (section › subsection): the picker's list.
+    function groupSharedBlocks(rows) {
+      const people = new Map();
+      rows.forEach(row => {
+        const who = row.shared.with;
+        const person = people.get(who) || people.set(who, new Map()).get(who);
+        const key = `${row.section || ''}›${row.category}`;
+        (person.get(key) || person.set(key, { section: row.section || '', category: row.category, rows: [] }).get(key)).rows.push(row);
+      });
+      return people;
+    }
+    // One reusable dialog: a titled list of radio options, grouped, and a confirm button.
+    function openLinkPicker({ title, subtitle, groups, confirm, onPick }) {
+      let dialog = document.querySelector('#link-picker');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'link-picker';
+        dialog.className = 'modal month-dialog link-picker';
+        document.body.append(dialog);
+      }
+      const options = [];
+      const html = groups.map(group => `<section class="lp-group"><h3>${escapeHtml(group.head)}</h3>${group.options.map(option => {
+        options.push(option);
+        return `<label class="lp-option${option.indent ? ' is-sub' : ''}"><input type="radio" name="lp" value="${options.length - 1}"><span class="lp-what"><b>${escapeHtml(option.label)}</b><small>${escapeHtml(option.hint || '')}</small></span><em>${escapeHtml(option.amount || '')}</em></label>`;
+      }).join('')}</section>`).join('') || '<p class="lp-none">Nothing to choose from.</p>';
+      dialog.innerHTML = `<form method="dialog" novalidate><div class="modal-header"><div><p>${escapeHtml(subtitle || '')}</p><h2>${escapeHtml(title)}</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="lp-list">${html}</div><div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">${escapeHtml(confirm)}</button></div></form>`;
+      dialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => dialog.close()));
+      dialog.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        const chosen = dialog.querySelector('[name="lp"]:checked');
+        if (!chosen) return showToast('Choose one first.');
+        dialog.close();
+        onPick(options[Number(chosen.value)]);
+      });
+      dialog.showModal();
+    }
+    // Links payer rows to shared rows: registers the payer as a repayment for that person, then settles oldest first from each
+    // payer's balance. `registry` is the place to register ({ section, category?, entry? }).
+    function applyRepayLink(payerRows, sharedTargets, who, property, registry) {
+      if (isViewer) return viewOnly();
+      const missing = payerRows.some(row => store.repayFor(row) !== who);
+      if (missing) {
+        const problem = repayProblem({ property, with: who, ...registry });
+        if (problem && !/^Already covered/.test(problem)) return showToast(problem);
+        if (!problem) trackSave(store.changeRepay({ property, with: who, ...registry }));
+      }
+      store.syncRepayFlags();
+      const direction = payerRows[0].type === 'expense' ? 'i-owe-friend' : 'friend-owes-me';
+      let paid = 0;
+      let buffer = 0;
+      let still = 0;
+      payerRows.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id.localeCompare(b.id)).forEach(payer => {
+        let available = store.payerStats(payer).balance;
+        const items = [];
+        sharedTargets.slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).forEach(target => {
+          if (available <= 0) return;
+          const bundle = sharedBundle(property, who);
+          const open = [...bundle.pending.receivable, ...bundle.pending.payable].find(row => row.id === target.sid && row.direction === direction);
+          if (!open || !open.owed) return;
+          const a = Math.min(available, open.owed);
+          items.push({ to: target.sid, a });
+          available -= a;
+        });
+        if (items.length) {
+          const bundle = sharedBundle(property, who);
+          const total = items.reduce((sum, row) => sum + row.a, 0);
+          const cash = direction === 'i-owe-friend' ? -total : total;
+          const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items, cash, treatment: 'none' });
+          if (!result.ok) return showToast(result.error);
+          trackSave(store.saveSettle({ id: newSharedKey('st'), date: payer.date, property, with: who, items: result.settlement.items, cash: result.settlement.cash, forgiven: 0, treatment: 'none', via: store.repaySignature(payer), name: payer.description, link: true }));
+          paid += total;
+        }
+        buffer += store.payerStats(payer).balance;
+      });
+      sharedTargets.forEach(target => { still += store.sharedOwed(target)?.owed || 0; });
+      saveTransactions();
+      renderLedger();
+      showToast(paid
+        ? `Paid ${fmtLink(paid, property)} to ${who}.${buffer ? ` ${fmtLink(buffer, property)} is left on the repayment as buffer.` : ''}${still ? ` ${fmtLink(still, property)} is still open on the shared side.` : ''}`
+        : 'Nothing was paid: the repayment has no balance left, or nothing was open.');
+    }
+    // Menu action, from the repayment side: pick the shared block or entry it pays.
+    function repayToShared(target) {
+      const rows = repayPayerRows(target);
+      const problem = repayPayerProblem(rows);
+      if (problem) return showToast(problem);
+      const property = rows[0].property;
+      const people = groupSharedBlocks(openSharedFor(rows[0].type, property));
+      if (!people.size) return showToast(rows[0].type === 'expense' ? 'There is no shared expense open that you owe.' : 'There is no shared expense open that is owed to you.');
+      const groups = [...people.entries()].map(([who, blocks]) => ({
+        head: `${who} · ${regions[property]?.code || property}`,
+        options: [...blocks.values()].flatMap(block => [
+          { label: `${block.category}`, hint: `${block.section ? `${block.section} · ` : ''}whole subsection, ${block.rows.length} ${block.rows.length === 1 ? 'entry' : 'entries'}`, amount: fmtLink(block.rows.reduce((sum, row) => sum + store.sharedOwed(row).owed, 0), property), who, rows: block.rows },
+          ...block.rows.map(row => ({ indent: true, label: row.description, hint: row.date, amount: fmtLink(store.sharedOwed(row).owed, property), who, rows: [row] }))
+        ])
+      }));
+      const registry = target.kind === 'entry'
+        ? { section: rows[0].section, category: rows[0].category, entry: { date: rows[0].date, description: rows[0].description, amount: Number(rows[0].amount) } }
+        : { section: target.section, ...(target.kind === 'subsection' ? { category: target.category } : {}) };
+      const total = rows.reduce((sum, row) => sum + store.payerStats(row).balance, 0);
+      openLinkPicker({ title: 'Which shared expense does it pay?', subtitle: `${fmtLink(total, property)} available · ${rows.length === 1 ? rows[0].description : target.label}`, groups, confirm: 'Link and pay',
+        onPick: option => applyRepayLink(rows, option.rows, option.who, property, registry) });
+    }
+    // Menu action, from the shared side: pick the repayment block or entry that pays it.
+    function repayFromPayer(target, sharedSide, direction) {
+      const property = sharedSide[0].property;
+      const who = sharedSide[0].shared.with;
+      const type = direction === 'i-owe-friend' ? 'expense' : 'income';
+      const usable = transactions.filter(row => !row.parentId && !row.eventId && row.property === property && row.type === type && !(row.sid && row.shared) && !repayPayerProblem([row])
+        && (store.repayFor(row) === who || !store.repayFor(row)) && store.payerStats(row).balance > 0)
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      if (!usable.length) return showToast(type === 'expense' ? 'There is no expense of yours to pay it with.' : 'There is no income entry to collect it with.');
+      const blocks = new Map();
+      usable.forEach(row => { const key = `${row.section || ''}›${row.category}`; (blocks.get(key) || blocks.set(key, { section: row.section || '', category: row.category, rows: [] }).get(key)).rows.push(row); });
+      const groups = [{ head: type === 'expense' ? 'Money I paid (expenses)' : 'Money I received (income)', options: [...blocks.values()].slice(0, 40).flatMap(block => [
+        { label: block.category, hint: `${block.section ? `${block.section} · ` : ''}whole subsection, ${block.rows.length} ${block.rows.length === 1 ? 'entry' : 'entries'}`, amount: fmtLink(block.rows.reduce((sum, row) => sum + store.payerStats(row).balance, 0), property), rows: block.rows, registry: { section: block.section, category: block.category } },
+        ...block.rows.slice(0, 15).map(row => ({ indent: true, label: row.description, hint: row.date, amount: fmtLink(store.payerStats(row).balance, property), rows: [row], registry: { section: row.section, category: row.category, entry: { date: row.date, description: row.description, amount: Number(row.amount) } } }))
+      ]) }];
+      const owedNow = sharedSide.reduce((sum, row) => sum + (store.sharedOwed(row)?.owed || 0), 0);
+      openLinkPicker({ title: 'Which repayment pays it?', subtitle: `${fmtLink(owedNow, property)} open · ${who}`, groups, confirm: 'Link and pay',
+        onPick: option => applyRepayLink(option.rows, sharedSide, who, property, option.registry) });
+    }
+    // The menu lines. Only what fits is offered: a repayment can only pay shared expenses, and a shared one can only be paid by a repayment.
+    function repayLinkItems(target) {
+      if (isViewer || target.mKey.startsWith('ev:') || !['entry', 'subsection', 'section'].includes(target.kind) || (target.kind === 'section' && !target.section)) return [];
+      const rows = repayPayerRows(target);
+      if (!rows.length) return [];
+      const sharedHere = rows.filter(row => row.sid && row.shared);
+      if (sharedHere.length) {
+        const open = sharedHere.filter(row => (store.sharedOwed(row)?.owed || 0) > 0);
+        const items = [];
+        ['i-owe-friend', 'friend-owes-me'].forEach(direction => {
+          const mine = open.filter(row => (row.shared.by === 'friend') === (direction === 'i-owe-friend'));
+          if (mine.length) items.push({ icon: 'coin', label: direction === 'i-owe-friend' ? 'Pay it from a repayment…' : 'Collect it with a repayment…', hint: direction === 'i-owe-friend' ? 'link an expense of yours that paid it' : 'link income that paid you back', run: () => repayFromPayer(target, mine, direction) });
+        });
+        return items;
+      }
+      if (repayPayerProblem(rows)) return [];
+      if (!openSharedFor(rows[0].type, rows[0].property).length) return [];
+      return [{ icon: 'arrows-exchange', label: 'Use as repayment for a shared expense…', hint: rows[0].type === 'expense' ? 'money I paid, to settle what I owe' : 'money I received, to settle what I am owed', run: () => repayToShared(target) }];
+    }
+    // The pie on a row: one other end goes straight there; several are listed.
+    function openJumpList(list) {
+      let dialog = document.querySelector('#jump-list');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'jump-list';
+        dialog.className = 'modal month-dialog link-picker';
+        document.body.append(dialog);
+        dialog.addEventListener('click', event => {
+          if (event.target.closest('[data-close-dialog]')) return dialog.close();
+          const go = event.target.closest('[data-jump]');
+          if (go) { dialog.close(); openSearchResult(JSON.parse(go.dataset.jump)); }
+        });
+      }
+      dialog.innerHTML = `<div class="modal-header"><div><p>Linked</p><h2>Go to…</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="lp-list">${list.map(jump => {
+        const row = transactions.find(item => item.id === jump.entryId);
+        return `<button type="button" class="lp-go" data-jump="${escapeHtml(JSON.stringify(jump))}"><b>${escapeHtml(row?.description || 'Entry')}</b><small>${escapeHtml(row?.date || '')}</small></button>`;
+      }).join('')}</div>`;
+      dialog.showModal();
+    }
+
+    // ---- The dustbin: the last 25 deleted things, restorable ----
+    function binSubsection(scope, { month, property, type, within, category }, items, adjust = []) {
+      const holder = scope.own().find(item => item.type === type && (!within || item.name === within) && item.subsections.includes(category));
+      trackSave(store.addTrash({
+        kind: 'category', label: category, detail: `${scope.label} · ${property.toUpperCase()}${items.length ? ` · ${items.length} ${items.length === 1 ? 'item' : 'items'}` : ''}`,
+        mKey: month, property, type, within: within || '', category, items, adjust,
+        sectionName: holder?.name || '', role: holder?.roles?.[category] || '', about: holder?.subAbout?.[category] || ''
+      }));
+    }
+    function updateTrashBadge() {
+      const count = store.trashList.length;
+      const badge = document.querySelector('#trash-count');
+      if (!badge) return;
+      badge.hidden = !count;
+      badge.textContent = String(count);
+      const button = document.querySelector('#trash-button');
+      if (button) button.hidden = isViewer;
+    }
+    const TRASH_KIND = { entry: ['receipt', 'Entry'], note: ['corner-down-right', 'Note'], category: ['folder', 'Subsection'], section: ['layout-list', 'Section'] };
+    function openTrashDialog() {
+      let dialog = document.querySelector('#trash-dialog');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'trash-dialog';
+        dialog.className = 'modal month-dialog trash-dialog';
+        document.body.append(dialog);
+        dialog.addEventListener('click', event => {
+          if (event.target.closest('[data-close-dialog]')) return dialog.close();
+          const restore = event.target.closest('[data-trash-restore]');
+          if (restore) return restoreTrash(restore.dataset.trashRestore);
+          const drop = event.target.closest('[data-trash-drop]');
+          if (drop) { trackSave(store.removeTrash(drop.dataset.trashDrop)); updateTrashBadge(); return renderTrashDialog(); }
+          if (event.target.closest('[data-trash-empty]') && window.confirm('Remove everything in the bin for good?')) { trackSave(store.clearTrash()); updateTrashBadge(); renderTrashDialog(); }
+        });
+      }
+      renderTrashDialog();
+      dialog.showModal();
+    }
+    function renderTrashDialog() {
+      const dialog = document.querySelector('#trash-dialog');
+      if (!dialog) return;
+      const list = store.trashList;
+      dialog.innerHTML = `<div class="modal-header"><div><p>Recently deleted</p><h2>Dustbin</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+        <p class="trash-note">The last 25 deletions, newest first. A new one over 25 pushes out the oldest.</p>
+        <ul class="trash-list">${list.map(item => {
+          const [icon, word] = TRASH_KIND[item.kind] || ['trash', 'Item'];
+          const when = new Date(item.at);
+          const extra = item.kind === 'entry' && item.items?.length > 1 ? ` · +${item.items.length - 1} ${item.items.length === 2 ? 'note' : 'notes'}` : '';
+          return `<li><i class="ti ti-${icon}" aria-hidden="true"></i><span class="trash-what"><b>${escapeHtml(item.label || '(no name)')}</b><small>${word} · ${escapeHtml(item.detail || '')}${extra} · ${escapeHtml(when.toLocaleDateString())} ${escapeHtml(when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</small></span><button type="button" class="quiet-button" data-trash-restore="${escapeHtml(item.id)}">Restore</button><button type="button" class="icon-button trash-drop" data-trash-drop="${escapeHtml(item.id)}" aria-label="Delete for good" title="Delete for good"><i class="ti ti-x" aria-hidden="true"></i></button></li>`;
+        }).join('') || '<li class="trash-empty">Nothing deleted recently.</li>'}</ul>
+        <div class="modal-actions"><button type="button" class="quiet-button" data-trash-empty${list.length ? '' : ' disabled'}>Empty the bin</button><button type="button" class="primary-button" data-close-dialog>Close</button></div>`;
+    }
+    async function restoreTrash(id) {
+      const rec = store.trashList.find(item => item.id === id);
+      if (!rec) return;
+      if (isViewer) return viewOnly();
+      const done = () => {
+        (rec.adjust || []).forEach(adjustId => trackSave(store.removeSettle(adjustId)));
+        trackSave(store.removeTrash(id));
+        updateTrashBadge();
+        renderTrashDialog();
+        renderLedger();
+        showToast(`Restored “${rec.label}”.`);
+      };
+      if (!rec.mKey) return showToast('Cannot tell where this belonged.');
+      const scope = panelScope(rec.mKey, rec.property);
+      if (rec.kind === 'section') {
+        const own = scope.own();
+        if (own.some(item => item.name === rec.sectionData.name && item.type === rec.sectionData.type)) return showToast(`A section named “${rec.sectionData.name}” already exists there.`);
+        own.push(JSON.parse(JSON.stringify(rec.sectionData)));
+        scope.save();
+        return done();
+      }
+      // The months the items belong to must be loaded before they can be put back.
+      const months = new Set(rec.mKey.startsWith('ev:') ? [] : (rec.items || []).map(item => item.date.slice(0, 7)));
+      try { await Promise.all([...months].map(key => store.ensureMonth(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1))); } catch (error) { return showToast('Could not load that month. Try again.'); }
+      const items = JSON.parse(JSON.stringify(rec.items || []));
+      const stamp = Date.now().toString(36);
+      const renamed = new Map(items.map(item => [item.id, `${item.id}-r${stamp}`]));
+      if (rec.kind === 'note' && !transactions.some(row => row.id === items[0]?.parentId)) return showToast('The entry this note belonged to is gone. Restore that first.');
+      items.forEach(item => {
+        item.id = renamed.get(item.id);
+        if (item.parentId && renamed.has(item.parentId)) item.parentId = renamed.get(item.parentId);
+        transactions.push(item);
+      });
+      // Its subsection (and section) must be on the month's list again, or the entry would have nowhere to show.
+      const first = items.find(item => !item.parentId);
+      const type = rec.type || first?.type;
+      const sectionName = rec.sectionName || rec.within || first?.section;
+      const own = scope.own();
+      let holder = own.find(item => item.type === type && (!sectionName || item.name === sectionName)) || own.find(item => item.type === type);
+      const category = rec.category || first?.category;
+      if (holder && category && !holder.subsections.includes(category)) {
+        holder.subsections.push(category);
+        if (rec.role) (holder.roles ||= {})[category] = rec.role;
+        if (rec.about) (holder.subAbout ||= {})[category] = rec.about;
+        scope.save();
+      }
+      saveTransactions();
+      done();
+    }
     function deleteRow({ deleteRow: kind, entryId, month, property, type, section, category }) {
       const within = type === 'net' && section ? section : null;
       const inRow = {
@@ -1348,6 +1685,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const emptyListed = kind === 'category' && !rows.length && rowScope.sections().some(item => item.type === type && (!within || item.name === within) && item.subsections.includes(category));
       if (emptyListed) {
         if (!window.confirm(`Remove the empty subsection "${category}" from ${rowScope.label}?`)) return;
+        binSubsection(rowScope, { month, property, type, within, category }, []);
         rowScope.own().filter(item => item.type === type && (!within || item.name === within)).forEach(item => {
           item.subsections = item.subsections.filter(name => name !== category);
           delete item.roles?.[category];
@@ -1356,7 +1694,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         rowScope.save();
         editDraft = null;
         renderLedger();
-        return showToast(`Removed "${category}".`);
+        return showToast(`Removed "${category}". It is in the bin if you need it back.`);
       }
       if (!rows.length) {
         editDraft = null;
@@ -1380,6 +1718,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const scope = kind === 'note' ? '' : ` (${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''})`;
       const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${rowScope.label}` : '';
       if (!window.confirm(`Delete ${label}${scope}${where}? This cannot be undone.`)) return;
+      // Into the dustbin first (with the adjustments shared payments make), so the delete can be undone.
+      const adjust = [];
+      [...doomed].forEach(item => releasePayments(item, adjust));
+      const snapshot = [...doomed].map(item => JSON.parse(JSON.stringify(item)));
+      if (kind === 'category') binSubsection(rowScope, { month, property, type, within, category }, snapshot, adjust);
+      else trackSave(store.addTrash({ kind, label: rows[0].description, detail: `${rows[0].date} · ${rows[0].property.toUpperCase()}`, mKey: month, property: rows[0].property, type: rows[0].type, items: snapshot, adjust }));
       if (kind === 'category') {
         rowScope.own().filter(item => item.type === type && (!within || item.name === within)).forEach(item => {
           item.subsections = item.subsections.filter(name => name !== category);
@@ -1388,7 +1732,6 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         });
         rowScope.save();
       }
-      [...doomed].forEach(releasePayments);
       for (let index = transactions.length - 1; index >= 0; index--) {
         if (doomed.has(transactions[index])) transactions.splice(index, 1);
       }
@@ -1772,6 +2115,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (dayOrb) {
           event.preventDefault();
           return openDayPopup(dayOrb.dataset.entryId);
+        }
+        const pie = event.target.closest('[data-link-jump]');
+        if (pie) {
+          event.preventDefault();
+          event.stopPropagation();
+          const list = JSON.parse(pie.dataset.linkJump);
+          return list.length === 1 ? openSearchResult(list[0]) : openJumpList(list);
         }
         const settleStatus = event.target.closest('[data-settle-status]');
         if (settleStatus) {
@@ -3056,15 +3406,17 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     // A shared entry that settlements paid on is being deleted, un-shared or moved to someone else. What was paid on it is real
     // cash, so it is kept as buffer for that person (+ they paid me ahead, − I paid them ahead) by one adjustment settlement.
     // Open items are then covered from the buffer by the usual rules. Returns the amount released (minor units).
-    function releasePayments(item) {
+    function releasePayments(item, bag = null) {
       if (!item?.sid || !item.shared) return 0;
       const applied = store.realSettleList().reduce((sum, settle) => sum + (settle.items || []).filter(row => row.to === item.sid).reduce((inner, row) => inner + Math.abs(Number(row.a) || 0), 0), 0);
       if (!applied) return 0;
       const now = new Date();
       const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const sign = item.shared.by === 'friend' ? -1 : 1;
+      const adjustId = newSharedKey('st');
+      bag?.push(adjustId);
       trackSave(store.saveSettle({
-        id: newSharedKey('st'), date, property: item.property, with: item.shared.with, items: [], cash: 0, forgiven: 0, treatment: 'none',
+        id: adjustId, date, property: item.property, with: item.shared.with, items: [], cash: 0, forgiven: 0, treatment: 'none',
         credit: sign * applied, note: `“${item.description}” was removed or changed; ${exactMoney(applied, item.property)} paid on it is kept as buffer`
       }));
       return applied;
@@ -3275,6 +3627,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderSeriesHistoryPopup();
       document.querySelector('#series-history-dialog').showModal();
     }
+    // Takes a settlement back: what it paid becomes open again, and a repayment it used is free to be used another way.
+    // (A transaction recorded with it, if any, is left where it is.)
+    function undoSettlement(id) {
+      if (isViewer) return viewOnly();
+      if (!window.confirm('Undo this settlement? The items it paid become open again, and the repayment it used can be used another way. A transaction recorded with it stays in the ledger.')) return;
+      trackSave(store.removeSettle(id));
+      renderLedger();
+      if (document.querySelector('#shared-dialog')?.open) renderSharedPanel();
+      if (document.querySelector('#series-history-dialog')?.open) renderSeriesHistoryPopup();
+      showToast('Settlement undone.');
+    }
+    document.addEventListener('click', event => {
+      const undo = event.target.closest('[data-undo-settle]');
+      if (undo) { event.preventDefault(); event.stopPropagation(); undoSettlement(undo.dataset.undoSettle); }
+    }, true);
     const goSeriesRow = row => {
       document.querySelector('#series-history-dialog').close();
       openSearchResult(JSON.parse(row.dataset.seriesJump));
@@ -3334,6 +3701,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           myShare: share,
           state: status.state,
           settled: owed?.settled || false,
+          auto: Boolean(owed?.covered),
           kind: 'source',
           id: entry.sid,
           entryId: entry.id,
@@ -3353,6 +3721,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
               state: 'settlement',
               kind: 'settlement',
               id: settle.id,
+              undoId: settle.virtual || isViewer ? null : settle.id,
               // The transaction that paid: a repayment entry (worked out from it) or the one recorded with the settlement.
               jump: (() => {
                 const paidBy = transactions.find(row => (settle.virtual ? `rp-${row.id}` === settle.id : row.cleared?.id === settle.id));
@@ -3382,12 +3751,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const list = document.querySelector('#series-pop-list');
       list.innerHTML = history.map(h => {
         const stateClass = h.kind === 'settlement' ? 'is-settlement' : h.noShare ? 'is-none' : (h.settled ? 'is-settled' : (h.state === 'done' ? 'is-settled' : (h.state === 'merged' ? 'is-ongoing' : 'is-open')));
-        const stateLabel = h.kind === 'settlement' ? 'Settlement' : h.noShare ? 'No share' : (h.settled || h.state === 'done' ? 'Settled' : (h.state === 'merged' ? 'Partially settled' : 'Open'));
+        const stateLabel = h.kind === 'settlement' ? 'Settlement' : h.noShare ? 'No share' : h.auto ? 'AutoSettled' : (h.settled || h.state === 'done' ? 'Settled' : (h.state === 'merged' ? 'Partially settled' : 'Open'));
         return `<div class="series-pop-row${h.kind === 'settlement' ? ' series-pop-settlement' : ''}${h.jump ? ' is-jump' : ''}"${h.jump ? ` data-series-jump="${escapeHtml(JSON.stringify(h.jump))}" role="link" tabindex="0" title="Go to this transaction"` : ''}>
           <span class="series-pop-when">${escapeHtml(h.date.slice(8))} ${SHORT_MONTHS[Number(h.date.slice(5,7))-1]} ${h.date.slice(0,4)}</span>
           <span class="series-pop-what"><strong>${escapeHtml(h.title)}</strong><small>${escapeHtml(h.detail)}</small></span>
           <span class="series-pop-amount">${money(h.amount)}</span>
-          <span class="series-pop-state ${stateClass}">${h.kind === 'source' && stateClass === 'is-open' || stateClass === 'is-ongoing' ? `<button type="button" class="series-pop-settle" data-series-settle="${escapeHtml(h.entryId)}">Settle</button>` : escapeHtml(stateLabel)}</span>
+          <span class="series-pop-state ${stateClass}">${h.undoId ? `<button type="button" class="series-pop-settle" data-undo-settle="${escapeHtml(h.undoId)}" title="Take this settlement back">Undo</button>` : h.kind === 'source' && stateClass === 'is-open' || stateClass === 'is-ongoing' ? `<button type="button" class="series-pop-settle" data-series-settle="${escapeHtml(h.entryId)}">Settle</button>` : escapeHtml(stateLabel)}</span>
         </div>`;
       }).join('') || '<div class="series-pop-none">No history in this series.</div>';
       const allBtn = overallSettled ? '' : `<button type="button" class="series-pop-settle-all" data-series-settle-all>Settle up with ${escapeHtml(name)}…</button>`;
@@ -3557,14 +3926,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       document.querySelector('#shared-dialog').showModal();
     }
     // The open items, oldest first. They are cleared automatically by the payment; nothing to tick.
-    function sharedOpenRows(list, name, property) {
+    // The open items, oldest first, each with a tick ("include this in the payment") and the amount to clear, starting at what is
+    // open. Nothing is settled unless it is ticked here.
+    function sharedOpenRows(list, name, property, buffer = 0) {
       return list.slice().sort((x, y) => String(x.entry.date).localeCompare(String(y.entry.date))).map(row => {
         const entry = row.entry;
         const who = entry.paidBy === 'friend' ? `${name} paid` : 'I paid';
-        return `<div class="shared-open-row" data-sid="${escapeHtml(row.id)}">
+        const useBuffer = buffer && Math.sign(buffer) === (row.direction === 'friend-owes-me' ? 1 : -1)
+          ? `<button type="button" class="shared-use-buffer" data-use-buffer="${escapeHtml(row.id)}" title="Pay this with the buffer you hold">Use ${sharedMoney(Math.min(Math.abs(buffer), row.owed), property)}</button>` : '';
+        return `<div class="shared-open-row" data-sid="${escapeHtml(row.id)}"><label class="shared-open-pick"><input type="checkbox" name="pick" value="${escapeHtml(row.id)}" aria-label="Include ${escapeHtml(entry.description)}"></label>
           <span class="shared-open-what"><b>${escapeHtml(entry.description)}</b><small>${escapeHtml(entry.date)} · ${escapeHtml(who)} · ${entry.hisPct}% his</small></span>
           <span class="shared-open-owed">${sharedMoney(row.owed, property)}</span>
-          <span class="shared-open-plan" data-plan-for="${escapeHtml(row.id)}"></span></div>`;
+          <span class="shared-open-plan">${useBuffer}<input class="shared-open-amount" type="text" inputmode="decimal" autocomplete="off" data-sid="${escapeHtml(row.id)}" value="${(row.owed / 100).toFixed(2)}" aria-label="Amount to clear for ${escapeHtml(entry.description)}"></span></div>`;
       }).join('') || '<p class="shared-none">Nothing open here.</p>';
     }
     function renderSharedPanel() {
@@ -3591,33 +3964,29 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const overall = pending.overall;
       summary.textContent = (overall === 0 ? 'All square' : overall > 0 ? `${name} owes you ${money(overall)} overall` : `You owe ${name} ${money(overall)} overall`)
         + (held ? ` · ${held > 0 ? `${name} paid ${money(held)} ahead` : `you paid ${money(held)} ahead`} (buffer)` : '');
-      document.querySelector('#shared-owed-list').innerHTML = sharedOpenRows(pending.receivable, name, property);
-      document.querySelector('#shared-owe-list').innerHTML = sharedOpenRows(pending.payable, name, property);
+      document.querySelector('#shared-owed-list').innerHTML = sharedOpenRows(pending.receivable, name, property, pending.buffer);
+      document.querySelector('#shared-owe-list').innerHTML = sharedOpenRows(pending.payable, name, property, pending.buffer);
       renderRepayBox(property, name);
+      // What the buffer settled by itself, and where that money came from.
+      const autoBox = document.querySelector('#shared-auto');
+      autoBox.hidden = !pending.auto.length;
+      document.querySelector('#shared-auto-count').textContent = String(pending.auto.length);
+      document.querySelector('#shared-auto-from').textContent = pending.from.length
+        ? `The buffer came from: ${pending.from.map(item => `${item.kind === 'payment' ? 'payment' : 'reduced entry'} “${item.label}”${item.date ? ` (${item.date})` : ''} ${money(Math.abs(item.amount))}`).join(' · ')}.`
+        : 'Paid ahead earlier.';
+      document.querySelector('#shared-auto-list').innerHTML = pending.auto.map(row => `<li><span><b>${escapeHtml(row.entry.description)}</b><small>${escapeHtml(row.entry.date)}</small></span><em>${money(row.amount)}</em></li>`).join('');
       document.querySelector('#shared-owed-total').textContent = pending.receivable.length ? `${money(pending.receivableTotal)} · ${pending.receivable.length}` : '—';
       document.querySelector('#shared-owe-total').textContent = pending.payable.length ? `${money(pending.payableTotal)} · ${pending.payable.length}` : '—';
       const describe = sid => entries.find(entry => entry.id === sid)?.description || 'an item';
       document.querySelector('#shared-history').innerHTML = settles.slice().sort((a, b) => b.date.localeCompare(a.date)).map(settle => {
         const covers = settle.items.map(item => describe(item.to)).join(', ');
         const letGo = settle.forgiven ? ` · ${money(Math.abs(settle.forgiven))} let go (${settle.treatment === 'none' ? 'left out' : settle.treatment === 'expense' ? 'counted as expense' : 'counted as income'})` : '';
-        return `<li><span>${escapeHtml(settle.date)}</span> <b class="${settle.cash >= 0 ? 'income' : 'expense'}">${settle.cash >= 0 ? '+' : '−'} ${money(settle.cash)}</b> <small>${covers ? `covers ${escapeHtml(covers)}` : 'kept in buffer'}${settle.credit ? ` · buffer ${settle.credit > 0 ? '+' : '−'}${money(settle.credit)}` : ''}${letGo}${settle.note ? ` · ${escapeHtml(settle.note)}` : ''}</small></li>`;
+        return `<li><span>${escapeHtml(settle.date)}</span> <b class="${settle.cash >= 0 ? 'income' : 'expense'}">${settle.cash >= 0 ? '+' : '−'} ${money(settle.cash)}</b> <small>${covers ? `covers ${escapeHtml(covers)}` : 'kept in buffer'}${settle.credit ? ` · buffer ${settle.credit > 0 ? '+' : '−'}${money(settle.credit)}` : ''}${letGo}${settle.note ? ` · ${escapeHtml(settle.note)}` : ''}</small>${isViewer ? '' : ` <button type="button" class="shared-undo" data-undo-settle="${escapeHtml(settle.id)}" title="Take this settlement back: the items it paid become open again">Undo</button>`}</li>`;
       }).join('') || '<li class="shared-none">No settlements yet.</li>';
       settle.hidden = isViewer;
-      // With repayment blocks chosen, repayments come from their entries and settle by themselves: the manual cash form is
-      // folded away (still there for cash that is in no block) and its Save button hidden until it is opened.
-      const repaid = store.virtualSettles().filter(row => row.property === property && row.with === name);
-      const hasBlocks = store.repayTargets(property, name).length > 0;
-      sharedState.hasBlocks = hasBlocks;
-      const repaidLine = document.querySelector('#shared-repaid');
-      repaidLine.hidden = !hasBlocks;
-      if (hasBlocks) {
-        const moved = repaid.reduce((sum, row) => sum + row.cash, 0);
-        const cleared = repaid.reduce((sum, row) => sum + row.items.reduce((inner, item) => inner + item.a, 0), 0);
-        repaidLine.innerHTML = `<b>From your repayment blocks</b> ${repaid.length} ${repaid.length === 1 ? 'payment' : 'payments'} · ${money(Math.abs(moved))} ${moved >= 0 ? 'received' : 'paid'} · ${money(cleared)} cleared${pending.buffer ? ` · ${pending.buffer > 0 ? `${name} paid ${money(pending.buffer)} ahead` : `you paid ${money(pending.buffer)} ahead`}` : ''}. Their amounts are used as they are; nothing to type.`;
-      }
-      settle.open = !hasBlocks;
-      document.querySelector('#shared-settle-title').textContent = hasBlocks ? 'Other cash, in no repayment block' : 'Settle now';
-      syncSaveButton();
+      settle.open = true;
+      document.querySelector('#shared-repaid').hidden = true;
+      fillPayFrom(property, name);
       if (!form.elements.date.value) {
         const now = new Date();
         form.elements.date.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -3631,99 +4000,64 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const minor = Math.round(Math.abs(typed.value) * 100);
       return form.elements.dir.value === 'out' ? -minor : minor;
     }
-    // What the typed payment would clear by itself, with the buffer already held counted in.
-    function sharedPlan(form) {
+    // The items ticked as part of this payment, each with the amount typed for it.
+    function sharedPicked(form) {
       const { property, name } = sharedParse(sharedState.key);
-      const { entries, settles } = sharedBundle(property, name);
-      const cash = sharedCash(form);
-      if (cash === null || cash === 0) return null;
-      return SharedLedger.allocate({ entries, settlements: settles, cash });
+      const { pending } = sharedBundle(property, name);
+      return [...pending.receivable, ...pending.payable]
+        .filter(row => form.querySelector(`[name="pick"][value="${CSS.escape(row.id)}"]`)?.checked)
+        .map(row => {
+          const typed = ExpenseStore.readAmount(form.querySelector(`input.shared-open-amount[data-sid="${CSS.escape(row.id)}"]`)?.value ?? '');
+          const a = typed.error || typed.empty ? 0 : Math.round(Math.abs(typed.value) * 100);
+          return { to: row.id, a, direction: row.direction };
+        });
     }
-    // Live: which items the payment clears, and what is left over in the buffer.
+    // The ticked items net to the cash that moves: fill it in, and the direction, so the usual case needs no typing.
+    function sharedFillCash(form) {
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      const net = items.reduce((sum, item) => sum + (item.direction === 'friend-owes-me' ? item.a : -item.a), 0);
+      form.elements.amount.value = items.length ? (Math.abs(net) / 100).toFixed(2) : '';
+      form.querySelector(`[name="dir"][value="${net < 0 ? 'out' : 'in'}"]`).checked = true;
+    }
+    // Live: what the ticked items come to and the cash; any difference must be said (let go, or kept as buffer).
     function sharedRecalc() {
       if (!sharedState.key) return;
       const form = document.querySelector('#shared-form');
       const { property, name } = sharedParse(sharedState.key);
       const money = minor => sharedMoney(minor, property);
-      const plan = sharedPlan(form);
-      const cleared = new Set((plan?.items || []).map(item => item.to));
-      document.querySelectorAll('[data-plan-for]').forEach(tag => {
-        const on = cleared.has(tag.dataset.planFor);
-        tag.textContent = on ? '✓ clears' : '';
-        tag.closest('.shared-open-row').classList.toggle('is-planned', on);
-      });
-      document.querySelectorAll('.shared-group').forEach(group => {
-        if (plan?.items.length && group.querySelector('.is-planned')) group.open = true;
-      });
-      const line = document.querySelector('#shared-net');
-      const held = sharedBundle(property, name).pending.buffer;
-      if (!plan) line.textContent = held ? `Buffer held: ${held > 0 ? `${name} paid ${money(held)} ahead` : `you paid ${money(held)} ahead`}. Enter an amount; it is used first.` : 'Enter the amount; items are cleared automatically, oldest first.';
-      else {
-        const total = plan.items.reduce((sum, item) => sum + item.a, 0);
-        const used = held && Math.sign(held) === Math.sign(plan.funds) ? ` (incl. ${money(held)} buffer)` : '';
-        line.textContent = `${plan.items.length ? `Clears ${plan.items.length} item${plan.items.length === 1 ? '' : 's'} · ${money(total)}${used}` : 'Clears no whole item'}`
-          + `${plan.buffer ? ` · ${money(plan.buffer)} kept in buffer for next time` : ''}`;
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      const received = items.filter(item => item.direction === 'friend-owes-me').reduce((sum, item) => sum + item.a, 0);
+      const paid = items.filter(item => item.direction === 'i-owe-friend').reduce((sum, item) => sum + item.a, 0);
+      const net = received - paid;
+      document.querySelectorAll('.shared-open-row').forEach(row => row.classList.toggle('is-planned', Boolean(row.querySelector('[name="pick"]')?.checked)));
+      const cash = sharedCash(form);
+      document.querySelector('#shared-net').textContent = items.length
+        ? `Includes ${items.length} item${items.length === 1 ? '' : 's'} · ${money(received + paid)} · ${net >= 0 ? `${name} pays you ${money(net)}` : `you pay ${name} ${money(net)}`}`
+        : 'Tick the items this payment includes.';
+      const diff = cash === null || !items.length ? 0 : net - cash;
+      document.querySelector('#shared-forgive').hidden = diff === 0;
+      if (diff !== 0) {
+        // Money beyond the items (same way round) can be kept as buffer; anything else is let go.
+        const extra = Math.abs(cash) > Math.abs(net) && Math.sign(cash) === (Math.sign(net) || Math.sign(cash));
+        document.querySelector('#shared-forgive-text').textContent = extra
+          ? `${money(Math.abs(cash) - Math.abs(net))} more than the ticked items.`
+          : diff > 0 ? `${name} lets go of ${money(diff)} he owes you.` : `You let go of ${money(-diff)} you owe ${name}.`;
+        document.querySelector('#shared-forgive-yes').textContent = extra ? 'Count it as my expense or income (decide below)' : diff > 0 ? 'Count it as my expense (it was money I never got back)' : 'Count it as my income (a debt I no longer owe)';
+        document.querySelector('#shared-forgive-buffer').hidden = !extra;
       }
-      document.querySelector('#shared-forgive').hidden = true;
+    }
+    // The repayment entries (in the blocks chosen for this person) not yet used in a settlement: pick one as where the money came from.
+    function fillPayFrom(property, name) {
+      const select = document.querySelector('#shared-payfrom');
+      if (!select) return;
+      const before = select.value;
+      const entries = store.repayEntries(property, name).filter(row => !store.repayUsed(row));
+      select._rows = entries;
+      select.innerHTML = `<option value="">Type the amount</option>${entries.map((row, index) => `<option value="${index}"${String(index) === before ? ' selected' : ''}>${escapeHtml(row.date)} · ${escapeHtml(row.description)} · ${escapeHtml(formatMoney(Math.abs(store.entryTotal(row.id)), property))} ${row.type === 'income' ? '(he paid me)' : '(I paid him)'}</option>`).join('')}`;
+      select.closest('label').hidden = !entries.length;
     }
     // Where a person's repayments are recorded: a path from year to section, subsection and entry, each step optional after
     // the section. Several targets can be added; each is listed with a × to take it off.
-    const repayNew = '\u0000new';
-    function repayBlocks(property, year) {
-      // Every section of this currency in the loaded months (or one year), with its subsections.
-      const found = new Map();
-      const special = new Set();
-      store.yearIds().filter(id => !year || String(id) === String(year)).forEach(id => { for (let month = 0; month < 12; month++) store.sections(id, month, property).forEach(section => {
-        if (section.type !== 'income' && section.type !== 'expense') { special.add(section.name); return; }
-        const item = found.get(section.name) || { name: section.name, categories: new Set() };
-        (section.subsections || []).forEach(name => item.categories.add(name));
-        found.set(section.name, item);
-      }); });
-      transactions.filter(row => row.property === property && !row.eventId && !row.parentId && row.section && (row.type === 'income' || row.type === 'expense') && (!year || row.date.startsWith(`${year}-`))).forEach(row => {
-        if (special.has(row.section)) return;
-        const item = found.get(row.section) || { name: row.section, categories: new Set() };
-        item.categories.add(row.category);
-        found.set(row.section, item);
-      });
-      special.forEach(name => found.delete(name));
-      return found;
-    }
-    const repayPick = id => document.querySelector(`#shared-repay-${id}`);
-    function fillRepayPath(level = 'year') {
-      const { property, name } = sharedParse(sharedState.key);
-      const years = store.yearIds().map(String).sort().reverse();
-      const keep = id => repayPick(id).value;
-      if (level === 'year') {
-        const before = keep('year');
-        repayPick('year').innerHTML = `<option value="">Any year</option>${years.map(year => `<option value="${year}"${year === before ? ' selected' : ''}>${year}</option>`).join('')}`;
-      }
-      if (['year', 'section'].includes(level)) {
-        const blocks = repayBlocks(property, keep('year'));
-        const before = keep('section');
-        repayPick('section').innerHTML = `<option value="">Choose a section…</option>${[...blocks.keys()].sort((a, b) => a.localeCompare(b)).map(item => `<option value="${escapeHtml(item)}"${item === before ? ' selected' : ''}>${escapeHtml(item)}</option>`).join('')}<option value="${repayNew}"${before === repayNew ? ' selected' : ''}>＋ New section…</option>`;
-      }
-      if (['year', 'section', 'category'].includes(level)) {
-        const section = keep('section');
-        const blocks = repayBlocks(property, keep('year'));
-        const cats = section && section !== repayNew ? [...(blocks.get(section)?.categories || [])].sort((a, b) => a.localeCompare(b)) : [];
-        const before = keep('category');
-        repayPick('category').innerHTML = `<option value="">Whole section</option>${cats.map(item => `<option value="${escapeHtml(item)}"${item === before ? ' selected' : ''}>${escapeHtml(item)}</option>`).join('')}`;
-        repayPick('category').disabled = !cats.length;
-      }
-      const section = keep('section');
-      const entries = section && section !== repayNew ? transactions.filter(row => row.property === property && !row.eventId && !row.parentId && row.section === section
-        && (!keep('year') || row.date.startsWith(`${keep('year')}-`)) && (!keep('category') || row.category === keep('category')))
-        .sort((a, b) => b.date.localeCompare(a.date)) : [];
-      // Pick none to take the whole section (or subsection); pick several to take each of those entries.
-      repayPick('entry').title = `Leave empty for the whole ${keep('category') ? 'subsection' : 'section'}; pick one or more entries (Ctrl/Cmd-click for several)`;
-      repayPick('entry').innerHTML = `${entries.map((row, index) => `<option value="${index}">${escapeHtml(row.date)} · ${escapeHtml(row.description)} · ${escapeHtml(formatMoney(Math.abs(Number(row.amount)), property))}</option>`).join('')}`;
-      repayPick('entry').disabled = !entries.length;
-      repayPick('entry')._rows = entries;
-      document.querySelector('#shared-repay-newrow').hidden = section !== repayNew;
-      repayPick('category').hidden = section === repayNew;
-      repayPick('entry').hidden = section === repayNew;
-      syncSaveButton();
-    }
     function repayLabel(target, property) {
       const parts = [target.year || 'Any year', target.section, target.category, target.entry ? `${target.entry.date} · ${target.entry.description}` : ''].filter(Boolean);
       return parts.join(' › ');
@@ -3732,17 +4066,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const targets = store.repayTargets(property, name);
       document.querySelector('#shared-repay-state').textContent = targets.length ? `${targets.length} set` : 'not set';
       document.querySelector('#shared-repay-list').innerHTML = targets.map((target, index) => `<li><span title="${escapeHtml(repayLabel(target, property))}">${escapeHtml(repayLabel(target, property))}</span><button type="button" data-repay-remove="${index}" aria-label="Remove" title="Remove"><i class="ti ti-x" aria-hidden="true"></i></button></li>`).join('');
-      fillRepayPath('year');
     }
     // A section picked in the repayment path is waiting to be used: the form's button then uses it, with its own amounts,
     // instead of asking for an amount that moved.
-    function syncSaveButton() {
-      const pending = Boolean(repayPick('section')?.value);
-      const button = document.querySelector('#shared-save');
-      const settle = document.querySelector('#shared-settle');
-      button.textContent = pending ? 'Use selected as repayment' : 'Save settlement';
-      button.hidden = !pending && Boolean(sharedState.hasBlocks) && !settle.open;
-    }
     function afterRepayChange(message) {
       store.syncRepayFlags();
       saveTransactions();
@@ -3781,36 +4107,24 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (wrong) return `“${wrong.description}” has no amount, so it cannot settle anything.`;
       return '';
     }
-    function addRepayTarget() {
+    // Pays one open item with the buffer (all of it, or as much as the buffer holds), and records it as a settlement of its own.
+    function useBufferOn(sid) {
+      if (isViewer) return viewOnly();
       const { property, name } = sharedParse(sharedState.key);
-      let section = repayPick('section').value;
-      if (!section) return showToast('Choose a section first.');
-      if (section === repayNew) {
-        section = ExpenseStore.safeKey(repayPick('section').closest('.shared-repay').querySelector('#shared-repay-new').value.trim().replace(/\s+/g, ' '));
-        if (!section) return showToast('Name the new section first.');
-        const mKey = keyOf(currentMonth.getFullYear(), currentMonth.getMonth());
-        const scope = panelScope(mKey, property);
-        const own = scope.own();
-        if (!own.some(item => item.name === section && item.type === 'expense')) { own.push({ name: section, type: 'expense', subsections: ['Repayments'] }); scope.save(); }
-      }
-      const base = { property, with: name, ...(repayPick('year').value ? { year: repayPick('year').value } : {}), section, ...(repayPick('category').value ? { category: repayPick('category').value } : {}) };
-      const picked = [...repayPick('entry').selectedOptions].map(option => repayPick('entry')._rows?.[Number(option.value)]).filter(Boolean);
-      const targets = picked.length ? picked.map(entry => ({ ...base, entry: { date: entry.date, description: entry.description, amount: Number(entry.amount) } })) : [base];
-      const added = [];
-      const refused = [];
-      targets.forEach(target => {
-        const problem = repayProblem(target);
-        if (problem) return refused.push(problem);
-        // A wider target takes over the narrower ones already kept for this person.
-        if (!target.entry) {
-          store.repayTargets(property, name).filter(row => row.section === target.section && (!target.year || row.year === target.year) && (!target.category || row.category === target.category))
-            .forEach(row => trackSave(store.changeRepay(row, true)));
-        }
-        trackSave(store.changeRepay(target));
-        added.push(target);
-      });
-      if (!added.length) return showToast(refused[0] || 'Nothing to add.');
-      afterRepayChange(`${added.length === 1 ? repayLabel(added[0], property) : `${added.length} places`} now repay ${name}.${refused.length ? ` ${refused.length} skipped: ${refused[0]}` : ''}`);
+      const bundle = sharedBundle(property, name);
+      const row = [...bundle.pending.receivable, ...bundle.pending.payable].find(item => item.id === sid);
+      if (!row) return showToast('That item has nothing open.');
+      const sign = row.direction === 'friend-owes-me' ? 1 : -1;
+      if (Math.sign(bundle.pending.buffer) !== sign) return showToast('The buffer is on the other side.');
+      const applied = Math.min(Math.abs(bundle.pending.buffer), row.owed);
+      const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: [{ to: sid, a: applied }], cash: 0, treatment: 'none', credit: -sign * applied });
+      if (!result.ok) return showToast(result.error);
+      const now = new Date();
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      trackSave(store.saveSettle({ id: newSharedKey('st'), date, property, with: name, items: result.settlement.items, cash: 0, forgiven: 0, treatment: 'none', credit: result.settlement.credit, name: 'Buffer used', note: `Paid from the buffer: “${row.entry.description}”` }));
+      renderSharedPanel();
+      renderLedger();
+      showToast(`Used ${sharedMoney(applied, property)} of the buffer on “${row.entry.description}”.`);
     }
     function saveSharedSettlement(form) {
       const error = document.querySelector('#shared-error');
@@ -3820,19 +4134,21 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const bundle = sharedBundle(property, name);
       const cash = sharedCash(form);
       const date = form.elements.date.value;
-      if (!cash) return fail('Enter the amount that moved.');
-      const plan = sharedPlan(form);
-      const items = plan.items;
-      const credit = plan.credit;
+      const items = sharedPicked(form).filter(item => item.a > 0);
+      if (!items.length) return fail('Tick the items this payment includes.');
+      if (cash === null) return fail('Enter the amount that moved.');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Pick the date.');
       const plain = items.map(({ to, a }) => ({ to, a }));
-      const probe = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: plain, cash, credit });
+      const net = items.reduce((sum, item) => sum + (item.direction === 'friend-owes-me' ? item.a : -item.a), 0);
+      const probe = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: plain, cash });
       if (!probe.ok) return fail(probe.error);
       let treatment = 'none';
+      let credit = 0;
       if (probe.forgiven !== 0) {
         const answer = form.elements.forgive.value;
-        if (!answer) return fail('Say whether the amount let go counts as income or expense, or is left out.');
-        treatment = answer === 'yes' ? (probe.forgiven > 0 ? 'expense' : 'income') : 'none';
+        if (!answer) return fail('Say what happens to the difference: let it go (income or expense), leave it out, or keep it as buffer.');
+        if (answer === 'buffer') credit = cash - net;
+        else treatment = answer === 'yes' ? (probe.forgiven > 0 ? 'expense' : 'income') : 'none';
       }
       const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: plain, cash, treatment, credit });
       if (!result.ok) return fail(result.error);
@@ -3866,6 +4182,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         cash: result.settlement.cash, forgiven: result.forgiven, treatment, note: form.elements.note.value.trim()
       };
       if (result.settlement.credit) record.credit = result.settlement.credit;
+      // Money taken from a repayment entry: remember which, so it shows as used and cannot be used twice.
+      const via = document.querySelector('#shared-payfrom')?._rows?.[Number(document.querySelector('#shared-payfrom').value)];
+      if (via && document.querySelector('#shared-payfrom').value !== '') { record.via = store.repaySignature(via); record.name = via.description; }
       [entry, recorded].filter(Boolean).forEach(row => transactions.push(row));
       if (entry || recorded) saveTransactions();
       trackSave(store.saveSettle(record));
@@ -3876,12 +4195,19 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(`Settled with ${name}.`);
     }
+    document.addEventListener('click', event => { if (event.target.closest('#trash-button')) openTrashDialog(); });
     function setupSharedDialogs() {
       const panel = document.querySelector('#shared-dialog');
       if (!panel) return;
       const form = document.querySelector('#shared-form');
       form.addEventListener('change', event => {
         const target = event.target;
+        if (target.id === 'shared-payfrom') {
+          const via = target._rows?.[Number(target.value)];
+          if (via) { form.elements.amount.value = (Math.abs(store.entryTotal(via.id)) / 100).toFixed(2); form.querySelector(`[name="dir"][value="${via.type === 'income' ? 'in' : 'out'}"]`).checked = true; form.elements.date.value = via.date; }
+          return sharedRecalc();
+        }
+        if (target.name === 'pick') sharedFillCash(form);
         if (target.name === 'who') {
           sharedState.key = target.value;
           form.elements.amount.value = '';
@@ -3892,9 +4218,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       form.addEventListener('input', event => {
         if (event.target.name === 'amount') sharedRecalc();
+        if (event.target.dataset.sid) {
+          // Editing what one item clears changes the cash too, unless the money comes from a chosen repayment entry.
+          if (!document.querySelector('#shared-payfrom').value) sharedFillCash(form);
+          sharedRecalc();
+        }
       });
-      ['year', 'section', 'category'].forEach(level => repayPick(level).addEventListener('change', () => { fillRepayPath(level === 'year' ? 'section' : level === 'section' ? 'category' : 'entry'); if (repayPick('section').value) document.querySelector('#shared-settle').open = false; syncSaveButton(); }));
-      document.querySelector('#shared-repay-add').addEventListener('click', addRepayTarget);
+      form.addEventListener('click', event => {
+        const use = event.target.closest('[data-use-buffer]');
+        if (!use) return;
+        event.preventDefault();
+        useBufferOn(use.dataset.useBuffer);
+      });
       document.querySelector('#shared-repay-list').addEventListener('click', event => {
         const button = event.target.closest('[data-repay-remove]');
         if (!button) return;
@@ -3904,13 +4239,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         trackSave(store.changeRepay(target, true));
         afterRepayChange('Repayment target removed.');
       });
-      document.querySelector('#shared-settle').addEventListener('toggle', event => {
-        syncSaveButton();
-      });
       form.addEventListener('submit', event => {
         event.preventDefault();
         // A section is chosen in the repayment path: use it (its entries are the payments), nothing to type here.
-        if (repayPick('section').value) return addRepayTarget();
         saveSharedSettlement(form);
       });
       const mark = document.querySelector('#shared-mark-form');
@@ -5236,6 +5567,45 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             ? { icon: 'arrow-bar-to-up', label: 'Paste entry here as a subsection', hint: 'its notes become the entries in it', paste: fits }
             : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
       const write = list => (isViewer ? list.filter(item => item.read) : list);
+      // A group of related lines under one heading, opened on click: keeps the menu short and says in plain words what is inside.
+      const group = (label, icon, hint, items) => {
+        const list = items.filter(Boolean);
+        return list.length ? [{ icon, label, hint, submenu: { title: label, subtitle: target.label || '', items: list } }] : [];
+      };
+      // Ordering a subsection: by day or by amount, a second use flips it. (Swiping across its heading does the same.)
+      const sortItems = () => {
+        if (isEvent || target.kind !== 'subsection') return [];
+        const cat = target.row?.parentElement;
+        if (!cat?.hasAttribute('data-sortable')) return [];
+        const key = cat.dataset.key;
+        const current = sortModes[key] || 'date-desc';
+        const next = field => (current.startsWith(field) ? `${field}-${current.endsWith('desc') ? 'asc' : 'desc'}` : `${field}-desc`);
+        return [
+          { icon: 'calendar-down', label: 'Sort by day', hint: `now ${B().SORT_LABELS[current]} · swipe right`, run: () => sortSubsection(key, 'date', target.category) },
+          { icon: 'sort-descending-numbers', label: 'Sort by amount', hint: `${B().SORT_LABELS[next('amount')]} next · swipe left`, run: () => sortSubsection(key, 'amount', target.category) }
+        ];
+      };
+      // Move this entry to another subsection of the same panel without cutting and pasting: pick where from a list.
+      const moveToItems = () => {
+        if (isEvent || isViewer) return [];
+        const item = transactions.find(row => row.id === target.id);
+        if (!item || item.parentId) return [];
+        const items = [];
+        panelScope(mKey, property).sections().forEach(section => {
+          if (section.closed) return;
+          (section.subsections || []).forEach(sub => {
+            if (section.name === item.section && sub === item.category) return;
+            items.push({ icon: 'folder', label: sub, hint: section.name, run: () => {
+              if (!moveEntry(item, mKey, property, section.name, sub, section.type)) return;
+              saveTransactions();
+              revealKey = catKey(mKey, property, section.type, sub);
+              renderLedger();
+              showToast(`Moved “${item.description}” to ${sub}.`);
+            } });
+          });
+        });
+        return items.length ? [{ icon: 'arrows-move', label: 'Move to…', hint: 'another subsection', submenu: { title: 'Move to', subtitle: item.description, items } }] : [];
+      };
       // Cut this row: it is taken away from here and put down wherever it is next pasted. Cutting a second row in the
       // same panel adds it to the same move, so several go over together, but nothing has to be “picked” first — one
       // Cut is the whole gesture. Copy keeps its own line further down, so the two are never a pair of half-steps.
@@ -5318,6 +5688,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           : null;
         return write([
           { icon: 'plus', label: 'Add subsection', run: add },
+          ...group('Share & settle', 'users', 'use as a repayment', repayLinkItems(target)),
           ...(section?.mergedSections?.length > 1
             ? [{ icon: 'arrow-merge', label: 'Unpack merged sections', hint: 'restore the original sections and entries', run: () => unpackSection(mKey, property, target.section) }]
             : []),
@@ -5358,15 +5729,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ? [{ icon: 'adjustments-horizontal', label: 'Set up how it counts…', hint: `in “${home}”`, run: () => openSectionSetup(mKey, property, home, target.category) }]
           : [];
         return write([
-          { icon: 'plus', label: 'Add entry', run: add },
-          ...roleItems,
-          ...setupItems,
-          ...[aboutAction(target)].filter(Boolean),
-          ...cutItems(),
-          { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, home, target.category) },
-          ...pasteAction,
+          { icon: 'plus', label: 'Add entry', hint: 'to this subsection', run: add },
+          ...group('Share & settle', 'users', 'use as a repayment, set how it counts', [...repayLinkItems(target), ...roleItems, ...setupItems]),
+          ...group('Order, move & copy', 'arrows-move', clipboard ? 'something is ready to paste' : 'sort, cut, copy, paste', [...sortItems(), ...cutItems(), { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, home, target.category) }, ...pasteAction]),
+          ...group('Details', 'notes', 'description', [...[aboutAction(target)].filter(Boolean)]),
           { icon: 'pencil', label: 'Rename', run: edit({ kind: 'category', month: mKey, property, type: target.type, category: target.category }) },
-          { icon: 'trash', label: 'Delete subsection', hint: 'and its entries', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, section: target.section, category: target.category }) }
+          { icon: 'trash', label: 'Delete subsection', hint: 'and its entries; they go to the bin', danger: true, run: () => deleteRow({ deleteRow: 'category', month: mKey, property, type: target.type, section: target.section, category: target.category }) }
         ]);
       }
       if (kind === 'yearsection') return write([
@@ -5439,19 +5807,12 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             hint: covers, run: () => openAllocDialog(target.id) }];
         })();
         return write([
-          { icon: 'pencil', label: 'Edit', run: edit({ kind: 'entry', id: target.id }) },
-          ...sharedAction(target.id),
-          ...cardLinkAction(target.id),
-          ...moneyItems,
-          ...splitItems,
-          ...allocItems,
-          { icon: 'corner-down-right', label: 'Add note', run: add },
-          ...[aboutAction(target)].filter(Boolean),
-          { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
-          ...cutItems(),
-          { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) },
-          ...pasteAction,
-          { icon: 'trash', label: 'Delete entry', hint: 'and its notes', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
+          { icon: 'pencil', label: 'Edit', hint: 'name, amount, date', run: edit({ kind: 'entry', id: target.id }) },
+          { icon: 'corner-down-right', label: 'Add note', hint: 'a line inside this entry', run: add },
+          ...group('Share & settle', 'users', 'split a cost, repay, link to a shared expense', [...sharedAction(target.id), ...repayLinkItems(target), ...splitItems, ...allocItems, ...moneyItems]),
+          ...group('Move & copy', 'arrows-move', clipboard ? 'something is ready to paste' : 'move, copy, cut, paste', [...cutItems(), ...moveToItems(), { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) }, ...pasteAction]),
+          ...group('Details', 'notes', 'description, tags, special card', [...[aboutAction(target)].filter(Boolean), { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) }, ...cardLinkAction(target.id)]),
+          { icon: 'trash', label: 'Delete entry', hint: 'and its notes; it goes to the bin', danger: true, run: () => deleteRow({ deleteRow: 'entry', entryId: target.id }) }
         ]);
       }
       return write([
@@ -5515,6 +5876,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (index < 0) return;
       if (entriesOf(target.mKey, target.property, target.type, target.section).length) return showToast('Move or delete its entries first.');
       if (!window.confirm(`Delete the section “${target.section}” from ${scope.label}?`)) return;
+      trackSave(store.addTrash({ kind: 'section', label: target.section, detail: `${scope.label} · ${target.property.toUpperCase()}`, mKey: target.mKey, property: target.property, sectionData: JSON.parse(JSON.stringify(own[index])) }));
       own.splice(index, 1);
       scope.save();
       renderLedger();

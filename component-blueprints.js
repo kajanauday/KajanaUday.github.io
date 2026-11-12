@@ -104,21 +104,19 @@
 
   // Settlement status indicator for shared expenses: shows a tick (settled) or dot (pending)
   // like Teams status. Clicking opens the shared series history popup.
+  // One marker per shared entry, before its description, doing the work of both the old status dot and the old pie: its colour says
+  // who put the money in (gold: I did, blue: they did), its fill says how much has been paid back, and it is full once settled.
+  // Clicking it opens the entry's settlement history, where each payment can be followed to its repayment.
   const SettleStatusMark = (entry, ctx) => {
     if (!entry.shared || !entry.sid) return '';
-    const series = ctx.sharedSeries && ctx.sharedSeries(entry);
+    const stats = ctx.receiverStats ? ctx.receiverStats(entry) : { due: 0, paid: 0 };
     const owed = ctx.sharedOwed && ctx.sharedOwed(entry);
-    const settled = owed?.settled === true || (series && series.state === 'done');
-    const ongoing = series && series.state !== 'done' && series.state !== 'open';
-    const colour = series?.colour || ctx.fixedColour?.(series?.colour, series?.id || entry.sid) || '#d4af37';
-    const title = settled
-      ? `Settled — click to see full history`
-      : ongoing
-        ? `Partially settled — click to see details`
-        : `Open — click to see details`;
-    const cls = settled ? 'is-settled' : (ongoing ? 'is-ongoing' : 'is-open');
-    const glyph = settled ? '✓' : '';
-    return `<span class="settle-status ${cls}" data-settle-status data-entry-id="${ctx.esc(entry.id)}" data-sid="${ctx.esc(entry.sid)}" style="--c:${colour}" title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}" role="button" tabindex="0"><span class="settle-icon" aria-hidden="true">${glyph}</span></span>`;
+    const settled = owed?.settled === true;
+    const pct = settled ? 100 : stats.due ? Math.round(stats.paid / stats.due * 100) : 0;
+    const mine = entry.shared.by !== 'friend';
+    const state = settled ? 'Settled' : stats.paid ? 'Partly paid back' : 'Open';
+    const title = `${mine ? 'I put the money' : 'They put the money'} · ${state}${stats.due ? ` · ${ctx.fmt(stats.paid, entry.property)} of ${ctx.fmt(stats.due, entry.property)}` : ''} — click for the history`;
+    return `<span class="link-pie is-get ${mine ? 'is-iput' : 'is-tput'}${settled ? ' is-done' : ''}" style="--p:${pct}" data-settle-status data-entry-id="${ctx.esc(entry.id)}" data-sid="${ctx.esc(entry.sid)}" role="button" tabindex="0" title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}"></span>`;
   };
 
   // A small link on an entry the user linked to a special card; the title names the card.
@@ -245,6 +243,12 @@
     'amount-desc': (a, b) => b.amount - a.amount,
     'amount-asc': (a, b) => a.amount - b.amount
   };
+  // The sort buttons are gone from the heading (they cluttered the table). Sorting is on the subsection's menu and by swiping
+  // across its heading; only a faint note shows while a subsection is ordered other than newest-first.
+  const SortHint = (mode, ctx) => {
+    const [field, dir] = String(mode).split('-');
+    return `<small class="sort-hint" title="${ctx.esc(SORT_LABELS[mode] || mode)}">${field === 'amount' ? 'amount' : 'day'} ${dir === 'asc' ? '↑' : '↓'}</small>`;
+  };
   const SortButtons = (key, mode, name, ctx) => {
     const current = mode || 'date-desc';
     const button = (field, icons) => {
@@ -296,14 +300,75 @@
   // The CLEARED mark on an entry that settled a shared balance: the series colour as a ball, then the word.
   // What a repayment subsection holds: its entries are kept out of the totals, so their sum is shown on its own line.
   const repaidIn = entries => (entries || []).filter(entry => isRepay(entry)).reduce((sum, entry) => sum + Math.abs(entry._meta?.total || 0), 0);
-  const RepayChip = (entries, property, ctx, always = false, own = 0) => {
+  // The repaid amount, as a capsule in the middle of the heading. Same rule as the Shared label: a block wears it only when EVERY
+  // entry under it is a repayment; with only some, the REPAYMENT mark on those entries says it and the block says nothing.
+  const allRepay = entries => (entries || []).length > 0 && entries.every(entry => isRepay(entry));
+  const RepayChip = (entries, property, ctx) => {
     const total = repaidIn(entries);
-    // In a subsection whose own total is nothing but repayments, the total itself shows the repaid sum instead.
-    if (!always && !own) return '';
-    return total ? `<small class="repay-chip" title="Repaid here: not counted as an expense or income">repaid ${ctx.fmt(total, property)}</small>` : '';
+    return total ? `<small class="repay-chip" title="Repaid here: not counted as an expense or income">${(() => { const { pie, left } = payerSummary(entries.filter(isRepay), property, ctx); return `${pie}${ctx.fmt(total, property)}${left ? ` <span class="link-sep">·</span> ${left}` : ''}`; })()}</small>` : '';
+  };
+  // The "Shared" label, and where it goes:
+  //   - a block (subsection, or a whole Income / Expenses block) wears it only when EVERY entry under it is shared;
+  //   - when only some are, the label sits on those entries themselves, not on the block above them.
+  // It carries the kind of share: E equal (half each), T theirs (they carry all of it), O ours (all mine), M mixed. A block says
+  // the kind when all its entries share it, and M when they differ. A split that is none of the three alone (30/70, say) counts as M.
+  // Red while anything under it is open, green once all of it is settled.
+  const isShared = entry => Boolean(entry.sid && entry.shared);
+  const shareKind = entry => (Number(entry.shared.his) === 50 ? 'E' : Number(entry.shared.his) === 100 ? 'T' : Number(entry.shared.his) === 0 ? 'O' : 'M');
+  const KIND_WORDS = { E: 'equally', T: 'theirs: they carry all of it', O: 'ours: all mine', M: 'mixed' };
+  // The shared marker is the gold ring itself (no word): it is there on every shared block or entry, filled as far as it has been paid
+  // back, and green once all of it is settled. Its tooltip says the kind of share (E, T, O, M) and what is still open.
+  const SharedFlag = (entries, ctx) => {
+    const shared = (entries || []).filter(isShared);
+    if (!shared.length) return '';
+    const kinds = new Set(shared.map(shareKind));
+    const kind = kinds.size === 1 ? [...kinds][0] : 'M';
+    const open = shared.filter(entry => !ctx.sharedOwed?.(entry)?.settled).length;
+    const sum = receiverParts(shared, ctx);
+    const pct = sum.due ? sum.paid / sum.due * 100 : 100;
+    const status = open ? `${open} of ${shared.length} shared ${shared.length === 1 ? 'entry is' : 'entries are'} still open` : 'every shared entry here is settled';
+    const title = `Shared ${KIND_WORDS[kind]} · ${status}${sum.due ? ` · ${ctx.fmt(sum.paid, shared[0].property)} of ${ctx.fmt(sum.due, shared[0].property)} paid back` : ''}`;
+    // The ring's colour says who put the money in: gold when I did (they owe me), blue when they did (I owe them), neutral for a mix.
+    const payers = new Set(shared.map(entry => (entry.shared.by === 'friend' ? 'they' : 'me')));
+    const who = payers.size > 1 ? 'is-bput' : payers.has('me') ? 'is-iput' : 'is-tput';
+    const whoWords = payers.size > 1 ? 'some I put, some they put' : payers.has('me') ? 'I put the money' : 'they put the money';
+    return `<span class="shared-flag">${pieSpan('get', pct, `${whoWords} · ${title}`, jumpsFor(shared, ctx), ctx, ` ${who}`)}</span>`;
+  };
+  // ---- links between a repayment and the shared expenses it paid ----
+  // Two pies, told apart by shape and colour but cut from the same cloth. The repayment side is a filled wedge in teal: how much of
+  // its money has gone to shared expenses (full when all of it is used; the rest is its buffer, said beside it as "left X"). The
+  // shared side is a ring in gold: how much of what is owed has been paid off. Clicking either goes to the other end.
+  const pieSpan = (kind, pct, title, jumps, ctx, extra = '') => `<span class="link-pie is-${kind}${extra}" style="--p:${Math.round(pct)}" role="${jumps.length ? 'button' : 'img'}"${jumps.length ? ` tabindex="0" data-link-jump="${ctx.esc(JSON.stringify(jumps))}"` : ''} title="${ctx.esc(title)}" aria-label="${ctx.esc(title)}"></span>`;
+  const payerParts = (entries, ctx) => entries.reduce((sum, entry) => { const stats = ctx.payerStats?.(entry) || { total: 0, used: 0, balance: 0 }; return { total: sum.total + stats.total, used: sum.used + stats.used, balance: sum.balance + stats.balance }; }, { total: 0, used: 0, balance: 0 });
+  const receiverParts = (entries, ctx) => entries.reduce((sum, entry) => { const stats = ctx.receiverStats?.(entry) || { due: 0, paid: 0 }; return { due: sum.due + stats.due, paid: sum.paid + stats.paid }; }, { due: 0, paid: 0 });
+  const jumpsFor = (entries, ctx) => { const seen = new Set(); return entries.flatMap(entry => ctx.linkJumps?.(entry) || []).filter(jump => !seen.has(jump.entryId) && seen.add(jump.entryId)); };
+  const payerSummary = (entries, property, ctx) => {
+    const sum = payerParts(entries, ctx);
+    if (!sum.total) return { pie: '', left: '' };
+    const left = sum.used > 0 && sum.balance > 0 ? `<small class="link-left" title="Not yet used on a shared expense: kept as buffer for other things">left ${ctx.fmt(sum.balance, property)}</small>` : '';
+    const title = sum.used ? `Paid ${ctx.fmt(sum.used, property)} of ${ctx.fmt(sum.total, property)} to shared expenses${sum.balance ? `; ${ctx.fmt(sum.balance, property)} is buffer` : ''}` : 'Not linked to a shared expense yet';
+    return { pie: pieSpan('pay', sum.used / sum.total * 100, title, jumpsFor(entries, ctx), ctx), left };
+  };
+  const PayerPie = (entries, property, ctx) => { const { pie, left } = payerSummary(entries, property, ctx); return `${pie}${left}`; };
+  const ReceiverPie = (entries, property, ctx) => {
+    const sum = receiverParts(entries, ctx);
+    if (!sum.due || !sum.paid) return '';
+    return pieSpan('get', sum.paid / sum.due * 100, `${ctx.fmt(sum.paid, property)} of ${ctx.fmt(sum.due, property)} paid back`, jumpsFor(entries, ctx), ctx);
   };
   const isRepay = entry => String(entry.cleared?.id || '').startsWith('rp:');
-  const ClearedMark = entry => (isRepay(entry) ? `<span class="cleared-mark repay-mark" title="A repayment: not an expense or income; it settles shared items"><span class="cleared-ball" aria-hidden="true"></span>REPAYMENT</span>` : entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');
+  // An entry the buffer settled by itself: the label, with what it took and a pointer to the settle pane in its tooltip.
+  const AutoMark = (entry, ctx) => {
+    const covered = ctx.sharedOwed?.(entry)?.covered;
+    return covered ? `<span class="auto-mark" title="${ctx.esc(`Settled automatically from the buffer (${ctx.exact(covered, entry.property)}). The settle pane lists where the money came from.`)}">AutoSettled</span>` : '';
+  };
+  // A repayment entry: teal once a settlement has used it for owed items, grey with "not used" until then.
+  const RepayMark = (entry, ctx) => {
+    if (!isRepay(entry)) return '';
+    const use = ctx?.repayUse ? ctx.repayUse(entry) : { used: false, items: 0 };
+    const title = use.used ? `A repayment, used to settle ${use.items} owed ${use.items === 1 ? 'item' : 'items'}. Not an expense or income.` : 'A repayment not used yet: open the settle pane and include owed items to clear with it. Not an expense or income.';
+    return `<span class="cleared-mark repay-mark${use.used ? '' : ' is-unused'}" title="${ctx.esc(title)}"><span class="cleared-ball" aria-hidden="true"></span>REPAYMENT${use.used ? '' : ' · not used'}</span>`;
+  };
+  const ClearedMark = entry => (isRepay(entry) ? '' : entry.cleared ? `<span class="cleared-mark" style="--c:${entry.cleared.colour || '#94a3b8'}" title="Settled up: this entry clears a shared balance"><span class="cleared-ball" aria-hidden="true"></span>CLEARED</span>` : '');
   // What a repayment, or money arriving, said it was for. One payment usually covers more than one thing, so the mark
   // names the one thing when there is one and counts them when there are several; the whole list is in its title, with
   // anything not yet accounted for. A row that has said nothing carries no mark at all, exactly as before.
@@ -335,7 +400,7 @@
     : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx, AboutTags(sub.about, { kind: 'note', id: sub.id }, ctx))}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
-  const EntryRow = (entry, { mKey, type, property, order = null }, state, ctx) => {
+  const EntryRow = (entry, { mKey, type, property, order = null, showShared = false }, state, ctx) => {
     const isExpanded = state.expandedEntries.has(entry.id);
     // In a month, a note dated in another month is not drawn here; an event shows all of an entry's notes.
     const shown = entry.subEntries.filter(sub => notesShownIn(mKey, sub));
@@ -352,7 +417,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}>${PaidBanner(entry, property, ctx)}<div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${SettleStatusMark(entry, ctx)}${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${SettleDirMark(entry, ctx)}${CardMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
+    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${CardMark(entry, ctx)}${SettleStatusMark(entry, ctx)}${isRepay(entry) ? PayerPie([entry], entry.property, ctx) : ''}${AutoMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -407,9 +472,11 @@
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
     const order = inYear ? null : state.sortModes?.[key] || null;
+    // Every entry shared: the subsection wears the label. Only some: those entries wear it, and the subsection does not.
+    const allShared = category.entries.length > 0 && category.entries.every(isShared);
     const entries = inYear ? YearEntries(key, name, category, { mKey, type, property }, state, ctx) : [...category.entries]
       .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
-      .map(entry => EntryRow(entry, { mKey, type, property, order }, state, ctx))
+      .map(entry => EntryRow(entry, { mKey, type, property, order, showShared: !allShared }, state, ctx))
       .join('');
     // The sort buttons sit on the subsection's own line, straight after its name (and its event's section name). They
     // show only where there is something to order: two entries, or an entry with two notes. The year card keeps its
@@ -425,7 +492,7 @@
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
     const eventAttr = eventId ? ` data-event-id="${ctx.esc(eventId)}" title="From the event ${ctx.esc(sectionName.replace(/^★ /, ''))}; edit it in Events"` : '';
     const eventTag = eventId ? `<small class="ledger-cat-event"><i class="ti ti-star-filled" aria-hidden="true"></i>${ctx.esc(sectionName.replace(/^★ /, ''))}</small>` : '';
-    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable ? SortButtons(key, order, name, ctx) : ''}</span>${RepayChip(category.entries, property, ctx, false, category._meta.total)}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}${!category._meta.total && repaidIn(category.entries) ? `<strong class="repay-amt" title="Repaid here: not counted as an expense or income">${ctx.fmt(repaidIn(category.entries), property)}</strong>` : `<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong>`}</summary><div class="ledger-entries">${PaidNote(category.entries, property, ctx)}${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
+    return `<details class="ledger-cat${category.entries.length || draftHere ? '' : ' is-empty'}${eventId ? ' is-event-cat' : ''}" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"${sortable ? ' data-sortable' : ''}${eventAttr}><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span class="ledger-cat-title"><span class="ledger-cat-name">${ctx.esc(kind === 'settlement' ? plainName(name) : name)}</span>${allShared ? SharedFlag(category.entries, ctx) : ''}${AboutTags(about, { kind: 'subsection', mKey, property, type, section: sectionName, category: name }, ctx)}${inYear ? MonthsUsed(category._meta.months.length) : ''}${PurposeMark(purpose, kind, property, ctx)}${eventTag}${sortable && order ? SortHint(order, ctx) : ''}</span>${allRepay(category.entries) ? RepayChip(category.entries, property, ctx) : ''}${share === null ? '' : `<span class="ledger-share" title="Share of its section">${share}%</span>`}${allRepay(category.entries) ? `<strong class="repay-amt" title="Nothing counted here: these are repayments">·</strong>` : `<strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong>`}</summary><div class="ledger-entries">${draftHere ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></details>`;
   };
 
   // Level 3: Income / Expenses block. Merges every configured section of that type and shows the categories that
@@ -561,7 +628,7 @@
     const linkChips = type === 'net' && meta?.link && ctx.linkedMonths
       ? ctx.linkedMonths(meta.link, property).filter(month => month.key !== mKey).map(month => `<button type="button" class="link-chip" data-link-month="${month.key}" data-link-property="${property}" title="Linked: open ${ctx.esc(month.label)}"><i class="ti ti-link" aria-hidden="true"></i>${ctx.esc(month.short)}</button>`).join('')
       : '';
-    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${RepayChip(categories.flatMap(({ category }) => category.entries), property, ctx, true)}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${PaidNote(categories.flatMap(({ category }) => category.entries), property, ctx)}${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
+    return `<details class="ledger-type-section${heading ? ' is-named' : ''}${meta?.kind ? ` is-${meta.kind}` : ''}${meta?.closed ? ' is-closed' : ''}" data-type="${type}" data-key="${ctx.esc(typeKey)}"${heading ? ` data-section="${ctx.esc(heading.section)}"` : ''}${meta?.kind ? ` data-kind="${meta.kind}"` : ''}${lifeState ? ` data-state="${lifeState.key}"` : ''}${meta?.closed ? ' data-closed="true"' : ''} ${open ? 'open' : ''}><summary><i class="ti ti-chevron-right ledger-type-caret" aria-hidden="true"></i><strong>${title}</strong>${stateBadge}${SharedFlag((() => { const filled = categories.filter(({ category }) => category.entries.length); return filled.length && filled.every(({ category }) => category.entries.every(isShared)) ? filled.flatMap(({ category }) => category.entries) : []; })(), ctx)}${aboutBadge}${linkChips ? `<span class="link-chips">${linkChips}</span>` : ''}${(() => { const filled = categories.filter(({ category }) => category.entries.length); return filled.length && filled.every(({ category }) => allRepay(category.entries)) ? RepayChip(filled.flatMap(({ category }) => category.entries), property, ctx) : ''; })()}${settleHtml || (type === 'net' && sections[0]?._meta.stats ? SectionTotals(sections[0]._meta.stats, property, ctx) : `<span class="${toneOf(type, total)}">${amountText(type, total, property, ctx)}</span>`)}</summary><div>${ownRename}${mergedNote}${renameForm}${carryHtml}${balancesHtml}${subForm}${categoriesHtml || (subForm || carryHtml || balancesHtml ? '' : `<p class="ledger-none">${emptyNote}</p>`)}</div></details>`;
   };
 
   // Level 3: the one Settlements block, or the one Savings block, with every section of that kind inside it.
@@ -795,5 +862,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { SortHint, SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

@@ -37,6 +37,7 @@
     <div></div>
     <div class="header-actions">
       <button type="button" class="save-state" id="sync-button" aria-live="polite" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></button>
+      <button type="button" class="icon-button" id="trash-button" aria-label="Recently deleted" title="Recently deleted (last 25)"><i class="ti ti-trash" aria-hidden="true"></i><span class="trash-count" id="trash-count" hidden></span></button>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
@@ -82,19 +83,15 @@
         <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
       </div>
       <p class="shared-repaid" id="shared-repaid" hidden></p>
+      <details class="shared-auto" id="shared-auto" hidden>
+        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled automatically from the buffer</span><small id="shared-auto-count"></small></summary>
+        <div class="shared-auto-body"><p class="shared-hint" id="shared-auto-from"></p><ul class="shared-auto-list" id="shared-auto-list"></ul></div>
+      </details>
       <details class="shared-repay" id="shared-repay">
-        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Repayments recorded in…</span><small id="shared-repay-state"></small></summary>
+        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Repayment blocks</span><small id="shared-repay-state"></small></summary>
         <div class="shared-repay-body">
-          <p class="shared-hint">Pick where repayments are recorded: a whole section, one subsection, or a single entry. They are not expenses, and they settle the oldest open items on their own.</p>
+          <p class="shared-hint">These blocks and entries pay this person. To add one, right-click an expense or income entry (or a subsection) and choose “Use as repayment for a shared expense…”. Take one off here with ×.</p>
           <ul class="shared-repay-list" id="shared-repay-list"></ul>
-          <div class="shared-repay-path">
-            <select id="shared-repay-year" aria-label="Year"></select>
-            <select id="shared-repay-section" aria-label="Section"></select>
-            <select id="shared-repay-category" aria-label="Subsection"></select>
-            <select id="shared-repay-entry" aria-label="Entries" multiple size="4"></select>
-          </div>
-          <div class="shared-repay-row" id="shared-repay-newrow" hidden><input id="shared-repay-new" type="text" placeholder="New section name" maxlength="60" autocomplete="off"></div>
-          <button type="button" class="quiet-button" id="shared-repay-add">Add</button>
         </div>
       </details>
       <div class="shared-lists">
@@ -103,6 +100,7 @@
       </div>
       <details class="shared-settle" id="shared-settle" open>
         <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span id="shared-settle-title">Settle now</span></summary>
+        <label class="shared-payfrom" hidden><span>Money from</span><select id="shared-payfrom" aria-label="Where the money came from"></select></label>
         <div class="shared-cash-row">
           <label><span>Date</span><input type="date" name="date" required></label>
           <label><span>Amount that moved</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
@@ -116,6 +114,7 @@
           <p id="shared-forgive-text"></p>
           <label><input type="radio" name="forgive" value="yes"> <span id="shared-forgive-yes"></span></label>
           <label><input type="radio" name="forgive" value="no"> Leave it out</label>
+          <label id="shared-forgive-buffer" hidden><input type="radio" name="forgive" value="buffer"> Keep it as buffer for the next payment</label>
         </div>
         <fieldset class="shared-record"><legend>Record</legend>
           <label><input type="radio" name="record" value="no" checked> Just settle</label>

@@ -69,27 +69,28 @@
     (settlements || []).forEach(settlement => { const key = keyOf(settlement); credits.set(key, (credits.get(key) || 0) + whole(settlement.credit)); });
     const owed = new Map();
     const buffers = new Map();
+    const sources = new Map();
     new Set([...groups.keys(), ...credits.keys()]).forEach(key => {
       let held = credits.get(key) || 0;
+      // Where the buffer came from: payments that left a surplus, and entries reduced after money was paid on them.
+      const from = [];
+      (settlements || []).filter(settlement => keyOf(settlement) === key && whole(settlement.credit)).forEach(settlement => from.push({ kind: 'payment', date: settlement.date, label: settlement.name || settlement.note || 'Payment', amount: whole(settlement.credit) }));
       const rows = (groups.get(key) || []).map(entry => {
         const parts = split(entry);
         const mine = isPayerMe(entry);
         const due = mine ? parts.friendOwes : parts.iOwe;
         const paid = applied.get(entry.id) || 0;
         const sign = mine ? 1 : -1;
-        if (paid > due) held += sign * (paid - due);
+        if (paid > due) { held += sign * (paid - due); from.push({ kind: 'reduced', date: entry.date, label: entry.description || 'An entry', amount: sign * (paid - due) }); }
         return { entry, sign, open: Math.max(0, due - paid), covered: 0 };
       });
-      if (held !== 0) {
-        const sign = Math.sign(held);
-        rows.filter(row => row.sign === sign && row.open > 0)
-          .sort((x, y) => String(x.entry.date || '').localeCompare(String(y.entry.date || '')) || String(x.entry.id).localeCompare(String(y.entry.id)))
-          .forEach(row => { if (row.open <= Math.abs(held)) { held -= sign * row.open; row.covered = row.open; row.open = 0; } });
-      }
+      const lean = Math.sign(held);
+      sources.set(key, from.filter(item => Math.sign(item.amount) === lean));
+      // Nothing is covered from the buffer by itself: it stays as it is until a settlement uses it.
       rows.forEach(row => owed.set(row.entry.id, { id: row.entry.id, direction: row.sign > 0 ? 'friend-owes-me' : 'i-owe-friend', owed: row.open, covered: row.covered, settled: row.open === 0 }));
       buffers.set(key, held);
     });
-    return { owed, buffers };
+    return { owed, buffers, sources };
   }
 
   // Every open item, grouped by side, with the net between us. `net` is positive when the friend owes me overall, before
@@ -103,7 +104,10 @@
     const sum = list => list.reduce((total, row) => total + row.owed, 0);
     const buffer = [...resolved.buffers.values()].reduce((total, value) => total + value, 0);
     const net = sum(receivable) - sum(payable);
-    return { receivable, payable, receivableTotal: sum(receivable), payableTotal: sum(payable), net, buffer, overall: net - buffer };
+    // Items the buffer settled by itself, and what the buffer was made of.
+    const auto = rows.filter(row => row.covered > 0).map(row => ({ entry: row.entry, id: row.id, amount: row.covered, direction: row.direction }));
+    const from = [...resolved.sources.values()].flat();
+    return { receivable, payable, receivableTotal: sum(receivable), payableTotal: sum(payable), net, buffer, overall: net - buffer, auto, from };
   }
 
   // Checks a settlement before it is kept, and works out what it does. `items` are { to, a } pairs: the shared entries
