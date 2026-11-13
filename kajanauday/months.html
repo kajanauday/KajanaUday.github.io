@@ -19,17 +19,17 @@
   </script>
   <title>Kajana Uday Expenses | Monthly ledger</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="../kajanauday.css?v=20261111g">
+  <link rel="stylesheet" href="../kajanauday.css?v=20261113o">
   <script src="../firebase-config.js?v=20261012a" defer></script>
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
-  <script src="../shared-ledger.js?v=20261111g" defer></script>
-  <script src="../here-and-there.js?v=20261111g" defer></script>
-  <script src="../data-layer.js?v=20261111g" defer></script>
+  <script src="../shared-ledger.js?v=20261113o" defer></script>
+  <script src="../here-and-there.js?v=20261113o" defer></script>
+  <script src="../data-layer.js?v=20261113o" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
-  <script src="../component-blueprints.js?v=20261111g" defer></script>
-  <script src="../renderer-engine.js?v=20261112a" defer></script>
-  <script src="../kajanauday.js?v=20261111g" defer></script>
+  <script src="../component-blueprints.js?v=20261113o" defer></script>
+  <script src="../renderer-engine.js?v=20261113o" defer></script>
+  <script src="../kajanauday.js?v=20261113o" defer></script>
 </head>
 <body data-page="months">
   <header class="topbar ledger-topbar">
@@ -37,12 +37,40 @@
     <div></div>
     <div class="header-actions">
       <button type="button" class="save-state" id="sync-button" aria-live="polite" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></button>
+      <button type="button" class="icon-button" id="key-button" aria-label="Key: colours and marks" title="Key: colours, marks, what you can do" aria-expanded="false" aria-controls="legend-pop"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="trash-button" aria-label="Recently deleted" title="Recently deleted (last 25)"><i class="ti ti-trash" aria-hidden="true"></i><span class="trash-count" id="trash-count" hidden></span></button>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
       <button type="button" class="icon-button theme-button" id="theme-button" aria-label="Switch to light theme" title="Switch to light theme"><i class="ti ti-sun" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="logout-button" aria-label="Log out" title="Log out"><i class="ti ti-logout-2" aria-hidden="true"></i></button>
     </div>
   </header>
+  <div class="legend-pop" id="legend-pop" role="dialog" aria-label="Key" hidden>
+<div class="lg-body">
+        <div class="lg-row"><b>Money</b>
+          <span class="lg-chip c-income">Income</span><span class="lg-chip c-borrowed">Borrowed</span><span class="lg-chip lg-sep" aria-hidden="true"></span>
+          <span class="lg-chip c-expense">Expense</span><span class="lg-chip c-lent">Lent</span><span class="lg-chip lg-sep" aria-hidden="true"></span>
+          <span class="lg-chip c-savings">Saved</span><span class="lg-chip c-hold">Hold</span><span class="lg-chip lg-sep" aria-hidden="true"></span>
+          <span class="lg-chip c-balance">Balance</span>
+          <small class="lg-note">in · out · set aside · result</small>
+        </div>
+        <div class="lg-row"><b>Marks</b>
+          <span class="lg-chip"><span class="link-pie is-get is-iput" style="--p:100"></span>I put</span>
+          <span class="lg-chip"><span class="link-pie is-get is-tput" style="--p:100"></span>they put</span>
+          <span class="lg-chip"><span class="link-pie is-get is-iput" style="--p:55"></span>paid back</span>
+          <span class="lg-chip"><span class="link-pie is-pay" style="--p:60"></span>repayment</span>
+          <span class="lg-chip"><i class="ti ti-link" aria-hidden="true"></i>card</span>
+          <span class="lg-chip c-open">Open</span><span class="lg-chip c-cleared">Cleared</span><span class="lg-chip c-buffered">Buffered</span>
+        </div>
+        <div class="lg-row"><b>Do</b>
+          <span class="lg-chip"><i class="ti ti-pointer" aria-hidden="true"></i>right-click: menu</span>
+          <span class="lg-chip"><i class="ti ti-arrows-left-right" aria-hidden="true"></i>swipe a subsection: sort</span>
+          <span class="lg-chip"><i class="ti ti-circle-dot" aria-hidden="true"></i>click a mark: go to its other end</span>
+          <span class="lg-chip"><i class="ti ti-trash" aria-hidden="true"></i>bin</span>
+          <span class="lg-chip"><i class="ti ti-search" aria-hidden="true"></i>search</span>
+          <span class="lg-chip"><i class="ti ti-star-filled" aria-hidden="true"></i><i class="ti ti-hash" aria-hidden="true"></i>cards &amp; tags</span>
+        </div>
+      </div>
+      </div>
   <main class="ledger" id="ledger">
     <h1 class="sr-only">Monthly ledger</h1>
     <div class="year-bar">
@@ -136,6 +164,7 @@
         <label class="date-pick-field"><span>Date it happened</span><input type="date" name="date" required></label>
         <label class="date-pick-field"><span id="close-amount-label">Amount</span><input name="amount" type="text" inputmode="text" autocomplete="off" placeholder="0.00"></label>
       </div>
+      <label class="date-pick-field close-name"><span>Name of the entry</span><input name="label" type="text" maxlength="80" autocomplete="off"></label>
       <label class="check-field close-rest" id="close-rest"><input type="checkbox" name="rest"><span id="close-rest-label"></span></label>
       <p class="settings-error" id="close-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Save</button></div>
@@ -143,7 +172,7 @@
   </dialog>
   <dialog class="modal month-dialog money-picker-dialog" id="money-picker-dialog" aria-labelledby="money-picker-title">
     <div class="modal-header"><div><p id="money-picker-where"></p><h2 id="money-picker-title">Touch an asset or liability</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-    <p class="shared-hint">Choose an open savings, hold, lending, or borrowing entry. Record a positive return or repayment, or use a negative amount to add to that linked account.</p>
+    <p class="shared-hint" id="money-picker-hint"></p>
     <div class="money-picker-list" id="money-picker-list"></div>
     <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button></div>
   </dialog>

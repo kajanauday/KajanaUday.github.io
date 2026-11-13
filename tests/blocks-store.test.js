@@ -125,6 +125,9 @@ test('money borrowed: not income; only interest paid is an expense, and what is 
   assert.equal(year.own.expenses, 12000);
   assert.equal(store.yearHoldings(2026, 'JPY').open.borrowed, 300000);
   assert.equal(store.monthTotals(2026, 5, 'JPY').holdings.borrowed, 300000);
+  await store.ensureMonth(2026, 5);
+  assert.equal(store.country(2026, 5, 'JPY')._meta.holdings.borrowed, 300000);
+  assert.equal(store.yearbook(2026, 'JPY')._meta.holdings.borrowed, 300000);
   assert.equal(year.closing, 288000);
 });
 

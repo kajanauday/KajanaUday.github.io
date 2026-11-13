@@ -162,7 +162,8 @@
   // so it can never disagree with its entries.
   const StateCapsule = (meta, ctx) => {
     const state = store()?.sectionState ? store().sectionState(meta) : null;
-    return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>` : '';
+    const buffered = meta?.buffered ? '<span class="ledger-state is-buffered" title="Paid more than was out. Only noted; nothing is done with it.">Buffered</span>' : '';
+    return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>${buffered}` : '';
   };
 
   // A settlement's heading carries one figure: what it posts to the month, green when it is income and red when it is
@@ -355,6 +356,24 @@
     if (!sum.due || !sum.paid) return '';
     return pieSpan('get', sum.paid / sum.due * 100, `${ctx.fmt(sum.paid, property)} of ${ctx.fmt(sum.due, property)} paid back`, jumpsFor(entries, ctx), ctx);
   };
+  // Entries in a Borrowed, Lent out, On hold or Savings block say what they do to the balance: each is tinted in its block's colour,
+  // lighter when it takes from the balance and deeper when it adds to it.
+  const MONEY_KINDS = ['savings', 'hold', 'lent', 'borrowed'];
+  const MONEY_ROLE = { savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
+  const MONEY_WORDS = {
+    borrowed: { first: 'Borrowed', less: 'Repaying', more: 'Borrowing more' },
+    lent: { first: 'Lent', less: 'Getting back', more: 'Giving more' },
+    hold: { first: 'Held', less: 'Got back', more: 'Held more' },
+    savings: { first: 'Saved', less: 'Withdrawn', more: 'Saving more' }
+  };
+  const MoneyTag = (entry, moneyKind, moneyRole, ctx) => {
+    if (!moneyKind || (entry.moneyRole || moneyRole) !== MONEY_ROLE[moneyKind]) return '';
+    const total = Number(entry._meta?.total) || 0;
+    if (!total) return '';
+    const part = total < 0 ? 'less' : entry.moneyRef ? 'more' : 'first';
+    const words = MONEY_WORDS[moneyKind];
+    return `<span class="money-tag is-${moneyKind} is-${part}" title="${ctx.esc(part === 'less' ? 'Takes from the balance' : part === 'more' ? 'Adds to the balance' : 'The original amount')}">${ctx.esc(words[part])}</span>`;
+  };
   const isRepay = entry => String(entry.cleared?.id || '').startsWith('rp:');
   // An entry the buffer settled by itself: the label, with what it took and a pointer to the settle pane in its tooltip.
   const AutoMark = (entry, ctx) => {
@@ -400,7 +419,7 @@
     : `<div class="ledger-entry-cell ledger-sub-entry" data-note-id="${ctx.esc(sub.id)}"${tagLine(sub, ctx)}><div class="ledger-entry-line"><span class="ledger-entry"><time datetime="${sub.date}">${dateText(mKey, sub.date, ctx)}</time>${descAndComment(sub.description, sub.place, ctx, AboutTags(sub.about, { kind: 'note', id: sub.id }, ctx))}${amountTag(toneOf(type, sub.amount), sub.formula, amountText(type, sub.amount, property, ctx), ctx)}</span></div></div>`;
 
   // Level 5: entry row, with its sub-entries and sub-entry form when expanded -------------------
-  const EntryRow = (entry, { mKey, type, property, order = null, showShared = false }, state, ctx) => {
+  const EntryRow = (entry, { mKey, type, property, order = null, showShared = false, moneyKind = null, moneyRole = '' }, state, ctx) => {
     const isExpanded = state.expandedEntries.has(entry.id);
     // In a month, a note dated in another month is not drawn here; an event shows all of an entry's notes.
     const shown = entry.subEntries.filter(sub => notesShownIn(mKey, sub));
@@ -417,7 +436,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${CardMark(entry, ctx)}${SettleStatusMark(entry, ctx)}${isRepay(entry) ? PayerPie([entry], entry.property, ctx) : ''}${AutoMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
+    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${MoneyTag(entry, moneyKind, moneyRole, ctx)}${CardMark(entry, ctx)}${SettleStatusMark(entry, ctx)}${isRepay(entry) ? PayerPie([entry], entry.property, ctx) : ''}${AutoMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -476,7 +495,7 @@
     const allShared = category.entries.length > 0 && category.entries.every(isShared);
     const entries = inYear ? YearEntries(key, name, category, { mKey, type, property }, state, ctx) : [...category.entries]
       .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
-      .map(entry => EntryRow(entry, { mKey, type, property, order, showShared: !allShared }, state, ctx))
+      .map(entry => EntryRow(entry, { mKey, type, property, order, showShared: !allShared, moneyKind: MONEY_KINDS.includes(kind) ? kind : null, moneyRole: purpose?.role || '' }, state, ctx))
       .join('');
     // The sort buttons sit on the subsection's own line, straight after its name (and its event's section name). They
     // show only where there is something to order: two entries, or an entry with two notes. The year card keeps its
@@ -802,7 +821,22 @@
         + TypeSection('expense', byType.expense, { mKey, property }, state, ctx, true, carryFor('expense'), null, balancesFor('expense'))
         + GROUPS_KINDS.map(kind => GroupBlock(kind, blocks.filter(section => section._meta.type === 'net' && groupOf(section).kind === kind), { mKey, property, title: m.blockNames?.[kind], blockRun: blockRun(kind), settledAccounts: m.settledAccounts?.[kind], sharedHistory: m.sharedHistory }, state, ctx)).join('')
         + other.map(section => TypeSection(section._meta.type, [section], { mKey, property }, state, ctx, false, null, { title: section._meta.id, section: section._meta.id, meta: section._meta })).join('');
-    const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span><span class="expense" title="Expenses">${ctx.fmt(m.expense, property)}</span><span class="balance" title="${isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end'}">${ctx.fmt(m.closing, property)}</span>`;
+    // The figures read the way a cash-flow statement does: what comes in, then what goes out, then what is set aside, then where it leaves
+    // you. Money in is Income and Borrowed; money out is Expenses and Lent out; set aside is Savings and On hold; Balance closes the line.
+    // Each group is told apart by space and a hairline, not by dots.
+    const hold = {};
+    if (m.holdings) [['saved', 'savings', 'Savings'], ['held', 'held', 'On hold'], ['lent', 'lent', 'Lent out'], ['borrowed', 'borrowed', 'Borrowed']].forEach(([key, kind, label]) => {
+      const amount = Number(m.holdings[key]) || 0;
+      const value = amount ? ctx.fmt(amount, property) : '·';
+      hold[key] = (extra = '') => `<span class="holding ${kind}${amount ? '' : ' is-zero'}${extra}" title="${label}: ${value}" aria-label="${label}: ${value}">${value}</span>`;
+    });
+    const h = key => (hold[key] ? hold[key]() : '');
+    const hFirst = key => (hold[key] ? hold[key](' group-start') : '');
+    const balanceTitle = isEvent ? 'Net: income minus expenses' : isYearKey(mKey) ? 'Closing balance at year end' : 'Closing balance at month end';
+    const totals = `<span class="income" title="Income">${ctx.fmt(m.income, property)}</span>${h('borrowed')}`
+      + `<span class="expense group-start" title="Expenses">${ctx.fmt(m.expense, property)}</span>${h('lent')}`
+      + `${hFirst('saved')}${h('held')}`
+      + `<span class="balance group-start" title="${balanceTitle}">${ctx.fmt(m.closing, property)}</span>`;
     return `<section class="ledger-panel ${m.color}" data-property="${property}" aria-label="${m.name}">
         <header class="ledger-panel-head">
           <h3>${m.code}</h3>
@@ -836,11 +870,12 @@
     while (ordered.length && ordered[ordered.length - 1].placeholder) ordered.pop(); // nothing to line up after the last
     return `<span class="month-summary">${ordered.map(({ property, income, expense, balance, saved, held, lent, borrowed, placeholder }) => {
         if (placeholder) return `<span class="month-tag ms-cur is-placeholder has-holdings" aria-hidden="true"></span>`;
-        const holdings = holding(saved || 0, property, 'savings', 'savings')
-          + holding(held || 0, property, 'held', 'on hold')
-          + holding(lent || 0, property, 'lent', 'lent out')
-          + holding(borrowed || 0, property, 'borrowed', 'borrowed');
-        const body = `<span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${value(expense, property, 'expense', 'Out')}${value(balance, property, 'balance', 'Bal')}${holdings}`;
+        // Same order as the currency heading: in (Income, Borrowed), out (Expenses, Lent out), set aside (Savings, On hold), then Balance.
+        const gap = html => html.replace('class="ms-kv ', 'class="ms-kv is-gap ');
+        const body = `<span class="ms-code">${ctx.regions[property].code}</span>${value(income, property, 'income', 'In')}${holding(borrowed || 0, property, 'borrowed', 'borrowed')}`
+          + gap(value(expense, property, 'expense', 'Out')) + holding(lent || 0, property, 'lent', 'lent out')
+          + gap(holding(saved || 0, property, 'savings', 'savings')) + holding(held || 0, property, 'held', 'on hold')
+          + gap(value(balance, property, 'balance', 'Bal'));
         if (!mKey) return `<span class="month-tag ms-cur ${ctx.regions[property].color}">${body}</span>`;
         const on = Boolean(shown?.includes(property));
         const tip = shown ? `${on ? 'Hide' : 'Show'} ${ctx.regions[property].code}` : `Open with ${ctx.regions[property].code} only`;

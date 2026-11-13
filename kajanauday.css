@@ -301,6 +301,16 @@
     .ledger-totals span.income { color: var(--income); }
     .ledger-totals span.expense { color: var(--expense); }
     .ledger-totals span.balance { color: var(--ink); }
+    .ledger-totals span.holding { display: inline-flex; align-items: baseline; gap: 4px; }
+    .ledger-totals span.holding small { color: var(--muted); font: 500 9px var(--mono); }
+    .ledger-totals span.holding.savings { color: #1d4ed8; }
+    .ledger-totals span.holding.held { color: #64748b; }
+    .ledger-totals span.holding.lent { color: #7c3aed; }
+    .ledger-totals span.holding.borrowed { color: #db2777; }
+    :root:not([data-theme="light"]) .ledger-totals span.holding.savings { color: #3b82f6; }
+    :root:not([data-theme="light"]) .ledger-totals span.holding.held { color: #94a3b8; }
+    :root:not([data-theme="light"]) .ledger-totals span.holding.lent { color: #a78bfa; }
+    :root:not([data-theme="light"]) .ledger-totals span.holding.borrowed { color: #f472b6; }
     .ledger-sections { display: grid; gap: 6px; align-items: start; }
     .ledger-type-section { border: 0; background: transparent; padding: 0; margin: 0; }
     .ledger-type-section + .ledger-type-section { border-top: 0; }
@@ -2288,3 +2298,118 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .link-pie.is-get, .link-pie.is-pay { -webkit-mask: none; mask: none; border: 1.5px solid var(--ring, var(--brand)); }
 .shared-undo { margin-left: 6px; padding: 0 8px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--muted); font: 600 10.5px/16px var(--sans); cursor: pointer; }
 .shared-undo:hover { border-color: var(--expense); color: var(--expense); }
+
+/* Money-block entries: a label in the block's own colour, lighter when it takes from the balance, deeper when it adds. */
+.money-tag { margin-left: 6px; padding: 0 8px; border-radius: 99px; font: 700 10px/16px var(--sans); letter-spacing: .02em; white-space: nowrap; vertical-align: middle; --mt: #db2777; background: color-mix(in srgb, var(--mt) 16%, transparent); color: var(--mt); }
+.money-tag.is-borrowed { --mt: #db2777; }
+.money-tag.is-lent { --mt: #7c3aed; }
+.money-tag.is-hold { --mt: #64748b; }
+.money-tag.is-savings { --mt: #1d4ed8; }
+:root:not([data-theme="light"]) .money-tag.is-borrowed { --mt: #f472b6; }
+:root:not([data-theme="light"]) .money-tag.is-lent { --mt: #a78bfa; }
+:root:not([data-theme="light"]) .money-tag.is-hold { --mt: #94a3b8; }
+:root:not([data-theme="light"]) .money-tag.is-savings { --mt: #60a5fa; }
+.money-tag.is-less { background: color-mix(in srgb, var(--mt) 9%, transparent); color: color-mix(in srgb, var(--mt) 78%, var(--ink)); }
+.money-tag.is-more { background: color-mix(in srgb, var(--mt) 26%, transparent); font-weight: 800; }
+.money-tag.is-first { border: 1px solid color-mix(in srgb, var(--mt) 45%, transparent); background: transparent; }
+.money-pick-source.is-link { display: grid; gap: 6px; text-align: left; }
+.money-pick-actions { display: flex; gap: 6px; }
+
+/* The money picker, compact: each item is a 2 x 2 grid. Top row: what it is (left) and what is open (right); bottom row: the two buttons side by side. */
+.money-pick-source.is-link { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 10px; }
+.money-pick-source.is-link > span:first-child { min-width: 0; display: grid; text-align: left; }
+.money-pick-source.is-link > span:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.money-pick-source.is-link .money-pick-balance { display: grid; justify-items: end; text-align: right; }
+.money-pick-source.is-link .money-pick-balance small { margin-top: -2px; }
+.money-pick-source.is-link .money-pick-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.money-pick-source.is-link .money-pick-actions .quiet-button { min-height: 28px; padding: 0 8px; font-size: 12.5px; width: 100%; }
+.money-pick-group { margin-bottom: 8px; }
+.money-pick-group > div { display: grid; gap: 6px; }
+
+/* The money picker by section: a title row, the entries (tick some, or none for the whole section), and the two buttons side by side. */
+.money-pick-source.is-link { display: grid !important; grid-template-columns: 1fr; gap: 6px; padding: 8px 10px; }
+.money-pick-source.is-link > span:first-child { display: block; }
+.money-pick-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.money-pick-title > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.money-pick-title .money-pick-balance { display: grid; justify-items: end; }
+.money-pick-rows { display: grid; gap: 2px; }
+.money-pick-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 2px; border-radius: 5px; cursor: pointer; }
+.money-pick-row:hover { background: var(--hover); }
+.money-pick-row span { min-width: 0; display: grid; text-align: left; }
+.money-pick-row b { overflow: hidden; font-weight: 500; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.money-pick-row small { color: var(--muted); font-size: 10.5px; }
+.money-pick-row em { font: normal 600 12px var(--sans); white-space: nowrap; }
+
+/* The money picker, laid out like the month: block headings that open onto sections, ticks at the left, buttons at the end. */
+.money-picker-list { display: grid; gap: 6px; max-height: 62vh; overflow: auto; }
+.mp-block { border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-soft); --mp: var(--muted); }
+.mp-block.is-borrowed { --mp: #db2777; } .mp-block.is-lent { --mp: #7c3aed; } .mp-block.is-hold { --mp: #64748b; } .mp-block.is-savings { --mp: #1d4ed8; }
+:root:not([data-theme="light"]) .mp-block.is-borrowed { --mp: #f472b6; } :root:not([data-theme="light"]) .mp-block.is-lent { --mp: #a78bfa; }
+:root:not([data-theme="light"]) .mp-block.is-hold { --mp: #94a3b8; } :root:not([data-theme="light"]) .mp-block.is-savings { --mp: #60a5fa; }
+.mp-block > summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; list-style: none; }
+.mp-block > summary::-webkit-details-marker { display: none; }
+.mp-block > summary i { color: var(--muted); font-size: 12px; transition: transform .15s; }
+.mp-block[open] > summary i { transform: rotate(90deg); }
+.mp-block > summary strong { font: 500 12.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.mp-count { min-width: 18px; padding: 0 5px; border-radius: 99px; background: var(--surface); color: var(--ink); font: 500 10.5px/17px var(--mono); text-align: center; }
+.mp-total { margin-left: auto; font: normal 600 13px var(--mono); color: var(--mp); font-variant-numeric: tabular-nums; }
+.mp-block.is-empty { opacity: .55; }
+.mp-block.is-empty > summary { cursor: default; }
+.mp-none { margin: 0; padding: 0 12px 10px; color: var(--muted); font-size: 12px; }
+.mp-section { margin: 0 8px 8px; padding: 6px 8px 8px; border-radius: 8px; background: var(--surface); }
+.mp-section-head { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 2px 0 4px; cursor: pointer; }
+.mp-section-head strong { overflow: hidden; font-weight: 500; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.mp-section-head em, .mp-row em { font: normal 600 13px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-rows { display: grid; border-top: 1px dotted var(--line); }
+.mp-row { display: grid; grid-template-columns: 18px 46px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 30px; padding: 2px 0; border-top: 1px dotted var(--line-soft); cursor: pointer; }
+.mp-row:first-child { border-top: 0; }
+.mp-row:hover { background: var(--hover); }
+.mp-row time { color: var(--muted); font: 400 11.5px var(--mono); }
+.mp-row span { min-width: 0; display: grid; }
+.mp-row b { overflow: hidden; font-weight: 400; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.mp-row small { color: var(--muted); font-size: 10.5px; }
+.mp-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.mp-actions .quiet-button { min-height: 28px; padding: 0 8px; font-size: 12.5px; }
+.ledger-state.is-buffered { margin-left: 4px; background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+
+/* The totals line of a currency: no separator dots between the figures (the spacing stays), and the dot standing for an empty region is twice as big. */
+.ledger-totals span + span::before { content: ""; padding: 0 9px; }
+.ledger-totals span.holding.is-zero { font-size: 26px; line-height: .5; opacity: .8; }
+
+/* Month rows and currency headings: figures grouped as in a cash-flow statement (in | out | set aside | balance), groups told apart by space and a hairline. */
+.ms-kv + .ms-kv::before { content: ""; padding: 0 5px; }
+.ms-kv.is-gap::before { content: ""; display: inline-block; align-self: center; width: 1px; height: 12px; margin: 0 9px 0 6px; padding: 0; background: var(--line-strong); opacity: .6; }
+.month-block.is-empty:not(.is-open) .ms-kv.balance.is-gap::before { content: ""; }
+.ledger-totals span.group-start { margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--line); }
+.ledger-totals span.group-start::before { padding: 0; }
+
+/* Month rows: the dot standing for an empty figure is twice as big. */
+.ms-kv.is-zero:not(.balance) { font-size: 27px; line-height: .5; align-items: center; }
+.ms-kv.is-holding.is-zero { font-size: 27px; line-height: .5; }
+
+/* The key: colours, marks and what you can do, as chips and symbols; folded to one line, and it remembers if you opened it. */
+.legend-bar { margin: 8px 0 4px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--surface-soft); }
+.legend-bar > summary { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer; list-style: none; color: var(--muted); font: 600 11.5px var(--sans); }
+.legend-bar > summary::-webkit-details-marker { display: none; }
+.legend-bar[open] > summary { color: var(--ink); }
+.lg-body { display: grid; gap: 4px; padding: 2px 10px 8px; }
+.lg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.lg-row > b { min-width: 44px; color: var(--muted); font: 600 10.5px var(--sans); text-transform: uppercase; letter-spacing: .05em; }
+.lg-chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 99px; background: var(--surface); color: var(--ink); font: 600 11px/20px var(--sans); white-space: nowrap; }
+.lg-chip i { font-size: 12px; color: var(--muted); }
+.lg-chip .link-pie { margin: 0; --size: 11px; }
+.lg-chip.lg-sep { width: 1px; height: 12px; padding: 0; background: var(--line-strong); opacity: .6; }
+.lg-note { color: var(--muted); font-size: 10.5px; }
+.lg-chip.c-income { color: var(--income); } .lg-chip.c-expense { color: var(--expense); } .lg-chip.c-balance { color: var(--ink); }
+.lg-chip.c-borrowed { color: #db2777; } .lg-chip.c-lent { color: #7c3aed; } .lg-chip.c-hold { color: #64748b; } .lg-chip.c-savings { color: #1d4ed8; }
+:root:not([data-theme="light"]) .lg-chip.c-borrowed { color: #f472b6; } :root:not([data-theme="light"]) .lg-chip.c-lent { color: #a78bfa; }
+:root:not([data-theme="light"]) .lg-chip.c-hold { color: #94a3b8; } :root:not([data-theme="light"]) .lg-chip.c-savings { color: #60a5fa; }
+.lg-chip.c-open { background: var(--st-waiting-bg); color: var(--st-waiting); }
+.lg-chip.c-cleared { background: var(--st-done-bg); color: var(--st-done); }
+.lg-chip.c-buffered { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+
+/* The key as a panel under the top bar, opened from its icon beside the other tools. */
+.legend-pop { position: fixed; top: 54px; right: 12px; z-index: 60; width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 70px); overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 14px 40px rgba(0, 0, 0, .28); }
+.legend-pop[hidden] { display: none; }
+.legend-pop .lg-body { padding: 10px 12px 12px; }
+.legend-bar { display: none; }

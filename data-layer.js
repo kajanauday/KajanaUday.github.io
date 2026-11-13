@@ -353,7 +353,7 @@
   // or a savings pot. Both live inside their own single block; a month never has more than one of each block.
   const SECTION_KINDS = ['settlement', 'savings', 'hold', 'lent', 'borrowed'];
   const MONEY_ACCOUNT_ROLES = { savings: 'save', hold: 'hold', lent: 'lend', borrowed: 'borrow' };
-  function linkedMoneyBalance(moneyId, kind, items, amountOf = item => Number(item.amount), throughDate = '9999-12-31') {
+  function linkedMoneyBalance(moneyId, kind, items, amountOf = item => Number(item.amount), throughDate = '9999-12-31', raw = false) {
     const role = MONEY_ACCOUNT_ROLES[kind];
     if (!moneyId || !role) return 0;
     const balance = items.reduce((sum, item) => {
@@ -364,7 +364,7 @@
       if (kind === 'savings' && item.moneyRole === 'return' && amount < 0) return sum + amount;
       return sum;
     }, 0);
-    return Math.max(0, balance);
+    return raw ? balance : Math.max(0, balance);
   }
   // Three more blocks, each for money that sits somewhere and comes back (see the roles below):
   //   hold      hold     paid in (positive) or had back (negative) — a deposit or an advance; neither income nor expense
@@ -494,7 +494,7 @@
   const SECTION_STATES = {
     draft: { label: 'Draft', savings: 'Draft', title: 'Named, but nothing recorded in it yet' },
     open: { label: 'Open', savings: 'Open', title: 'Money is still outstanding' },
-    clear: { label: 'Clear', savings: 'Active', title: 'Nothing outstanding' },
+    clear: { label: 'Cleared', savings: 'Active', title: 'Nothing outstanding' },
     settled: { label: 'Settled', savings: 'Settled', title: 'Closed off — it still counts, but takes no new entries' },
     merged: { label: 'Merged', savings: 'Merged', title: 'Closed, and other closed ones were folded into it' }
   };
@@ -503,7 +503,7 @@
   function sectionState(meta = {}) {
     const kind = SECTION_KINDS.includes(meta.kind) ? meta.kind : 'settlement';
     const key = meta.closed
-      ? (meta.mergedFrom?.length ? 'merged' : 'settled')
+      ? (meta.autoClosed ? 'clear' : meta.mergedFrom?.length ? 'merged' : 'settled')
       : !meta.entries ? 'draft'
         : kind === 'settlement' && meta.settle && meta.settle.owed !== 0 ? 'open'
           // Money lent, held or borrowed is open while any of it is still out (across every month linked to it), and clear
@@ -1322,6 +1322,24 @@
       }));
       return out.sort((a, b) => a.year - b.year || a.monthIndex - b.monthIndex);
     }
+    // What a loan, hold or lending still has out, taking every month it is linked through: the original amounts (positive) less what came back or
+    // was paid (negative), for the entries in the subsections that count that way. { total, positives }: open when total > 0, over-paid when < 0.
+    linkedRoleTotals(link, currency, kind) {
+      const role = MONEY_ACCOUNT_ROLES[kind];
+      if (!link || !role) return { total: 0, positives: 0 };
+      const sections = new Map(this.linkedSections(link, currency).map(({ year, monthIndex, section }) => [`${year}-${String(monthIndex + 1).padStart(2, '0')}|${section.name}`, section]));
+      let total = 0;
+      let positives = 0;
+      this.transactions.forEach(item => {
+        if (item.parentId || item.eventId || item.property !== currency) return;
+        const section = sections.get(`${item.date.slice(0, 7)}|${item.section}`);
+        if (!section || (item.moneyRole || subsectionRole(section, item.category)) !== role) return;
+        const amount = this.entryTotal(item.id);
+        total += amount;
+        if (amount > 0 && !item.moneyRef) positives += amount;
+      });
+      return { total, positives };
+    }
     yearHoldings(year, currency) {
       const own = this.year(year)?.metadata?.[currency]?.holdings || emptyHoldings();
       const open = this.yearIds().filter(id => Number(id) <= Number(year))
@@ -1799,9 +1817,10 @@
       const months = MONTH_NAMES.map((_, monthIndex) => monthIndex).filter(monthIndex => this.monthNode(year, monthIndex)?.metadata?.[currency] && this.isLoaded(year, monthIndex));
       const slices = months.map(monthIndex => [monthIndex, this.monthSlice(year, monthIndex, currency)]);
       const totals = this.yearTotals(year, currency);
+      const holdings = this.yearHoldings(year, currency).open;
       const sharedSettles = this.settleList();
       const yearEnd = `${year}-12-31`;
-      const sig = `${slices.map(([monthIndex, slice]) => `${monthIndex}:${slice.sig}`).join(',')}#${JSON.stringify(totals)}#${JSON.stringify(sharedSettles)}`;
+      const sig = `${slices.map(([monthIndex, slice]) => `${monthIndex}:${slice.sig}`).join(',')}#${JSON.stringify(totals)}#${JSON.stringify(holdings)}#${JSON.stringify(sharedSettles)}`;
       const key = `${year}|${currency}`;
       const cached = this.books.get(key);
       if (cached?.sig === sig) return cached.book;
@@ -1987,7 +2006,7 @@
       const region = this.currencies[currency];
       const book = {
         // The block headings as the year's latest month calls them, so the year card reads like the months it sums.
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency), settledAccounts, sharedHistory },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, holdings, carried: Number(first?.carried) || 0, carriedFrom: months.length ? this.carriedFrom(year, months[0], currency) : '', months, blockNames: this.blockNames(year, months.length ? months[months.length - 1] : 0, currency), settledAccounts, sharedHistory },
         sections: out
       };
       this.books.set(key, { sig, book });
@@ -2157,7 +2176,7 @@
     country(year, monthIndex, currency) {
       const region = this.currencies[currency];
       const totals = this.monthTotals(year, monthIndex, currency);
-      const sections = this.groupIntoSections(this.items(year, currency, monthIndex), this.sections(year, monthIndex, currency), `${year}-${String(monthIndex + 1).padStart(2, '0')}-31`);
+      const sections = this.groupIntoSections(this.items(year, currency, monthIndex), this.sections(year, monthIndex, currency), '9999-12-31', currency);
       // Events shown in months appear as their own ★ section, read-only here; they are edited in the event.
       const shown = this.items(year, currency, monthIndex, { withEvents: true }).filter(item => item.eventId);
       [...new Set(shown.map(item => item.eventId))].forEach(id => ['expense', 'income'].forEach(type => {
@@ -2168,12 +2187,12 @@
         sections[`event:${id}:${type}`] = section;
       }));
       return {
-        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency), blockNames: this.blockNames(year, monthIndex, currency), blockCalcs: this.blockCalcs(year, monthIndex, currency) },
+        _meta: { id: currency, name: region.name, code: region.code, color: region.color, income: totals.income, expense: totals.expenses, closing: totals.closing, holdings: totals.holdings, carried: totals.carried, carriedFrom: this.carriedFrom(year, monthIndex, currency), blockNames: this.blockNames(year, monthIndex, currency), blockCalcs: this.blockCalcs(year, monthIndex, currency) },
         sections
       };
     }
     // Files items under a section list: by their stored section, else by subsection name, else under "Other".
-    groupIntoSections(items, list, through = '9999-12-31') {
+    groupIntoSections(items, list, through = '9999-12-31', currency = null) {
       const sections = {};
       const claimed = new Set();
       [...list]
@@ -2197,6 +2216,7 @@
             built._meta.settle = summary.settle;
             built._meta.roles = Object.fromEntries(Object.keys(built.categories).map(name => [name, subsectionRole(section, name)]));
             built._meta.closed = Boolean(section.closed);
+            built._meta.autoClosed = Boolean(section.autoClosed);
             built._meta.closedOn = section.closedOn || '';
             built._meta.mergedFrom = [...(section.mergedFrom || [])];
             // The months an item in a block is linked across (see openCloseDialog): the same link on each month's section.
@@ -2205,10 +2225,13 @@
             // How much of the money in this block is still out, as of the end of this month: each linked item's balance
             // (what was lent, held or borrowed, less what came back), over every month loaded.
             if (MONEY_OUT_KINDS.includes(built._meta.kind)) {
-              const ids = [...new Set(Object.values(built.categories).flatMap(category => category.entries).map(entry => entry.moneyId).filter(Boolean))];
-              built._meta.outstanding = ids.length
-                ? ids.reduce((sum, id) => sum + linkedMoneyBalance(id, built._meta.kind, this.transactions.filter(row => row.moneyId === id), row => this.entryTotal(row.id), through), 0)
-                : Math.max(0, Number(built._meta.settle?.[{ hold: 'held', lent: 'lent', borrowed: 'borrowed' }[built._meta.kind]]) || 0);
+              // A section linked across months is judged as one: every month's entries together (see linkedRoleTotals). Without a link, only its own.
+              const own = section.link && currency ? this.linkedRoleTotals(section.link, currency, built._meta.kind) : null;
+              const mine = Number(built._meta.settle?.[{ hold: 'held', lent: 'lent', borrowed: 'borrowed' }[built._meta.kind]]) || 0;
+              const net = own ? own.total : mine;
+              // Paid back (or given back) more than was out: only noted, as "Buffered"; nothing is done with it.
+              built._meta.buffered = net < 0 && (own ? own.positives > 0 : true);
+              built._meta.outstanding = Math.max(0, net);
             }
             // The section's own description and each subsection's, kept with the section so they travel with it.
             built._meta.about = section.about || '';
