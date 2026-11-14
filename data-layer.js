@@ -162,7 +162,8 @@
     name: section.name === undefined ? section.name : safeKey(section.name),
     subsections: (section.subsections || []).map(safeKey),
     ...(section.roles ? { roles: safeKeysOf(section.roles) } : {}),
-    ...(section.subAbout ? { subAbout: safeKeysOf(section.subAbout) } : {})
+    ...(section.subAbout ? { subAbout: safeKeysOf(section.subAbout) } : {}),
+    ...(section.subGroups ? { subGroups: safeKeysOf(section.subGroups) } : {})
   }));
   function normalizeYear(year = {}) {
     year.currencies ||= {};
@@ -259,6 +260,7 @@
       const cardOf = row => (row.card ? { card: String(row.card) } : {});
       const clearedOf = row => (row.cleared?.id ? { cleared: { id: String(row.cleared.id), colour: String(row.cleared.colour || '') } } : {});
       // A repayment keeps a stable key to the original money entry, plus enough context to find it after reload.
+      const groupsOf = row => (Array.isArray(row.groups) && row.groups.length ? { groups: [...new Set(row.groups.map(String))] } : {});
       const moneyLinkOf = row => ({
         ...(row.moneyId ? { moneyId: String(row.moneyId) } : {}),
         ...(row.moneyRole ? { moneyRole: String(row.moneyRole) } : {}),
@@ -271,8 +273,8 @@
           }
         } : {})
       });
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note) }));
-      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...cardOf(item), ...refOf(item), ...moneyLinkOf(item) };
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note), ...groupsOf(note) }));
+      const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...cardOf(item), ...refOf(item), ...groupsOf(item), ...moneyLinkOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
       entry.notes = notes;
@@ -1145,8 +1147,11 @@
 
   class ExpenseStore {
     // Build with ExpenseStore.open(), which reads currencies and years (not entries) from Firebase.
-    constructor({ db, currencies, years, events = {}, trash = {} }) {
+    constructor({ db, currencies, years, events = {}, trash = {}, groups = {} }) {
       this.db = db;
+      // Groups: named collections the user gathers things into, across months and years (see groupMembers). Only the
+      // names live here (groups/<id>); each entry, section and subsection says which groups it is in.
+      this.groups = groups || {};
       // The dustbin: the last TRASH_LIMIT things deleted, newest first (see addTrash).
       this.trashList = Object.values(trash || {}).filter(item => item && item.id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
       this.currencies = currencies;
@@ -1171,10 +1176,10 @@
     static async open({ databaseURL, root, readOnly = false, auth = null, offline = null }) {
       const wire = new FirebaseDb(databaseURL, root, readOnly, auth);
       const db = offline?.vault ? new OfflineSync(offline.vault, wire, { ...offline, readOnly }) : wire;
-      const [currencies, years, events, trash] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events'), db.get('trash').catch(() => null)]);
+      const [currencies, years, events, trash, groups] = await Promise.all([db.get('currencies'), db.get('years'), db.get('events'), db.get('trash').catch(() => null), db.get('groups').catch(() => null)]);
       const ordered = Object.fromEntries(Object.entries(currencies || {}).sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0)));
       Object.values(years || {}).forEach(normalizeYear);
-      const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {}, trash: trash || {} });
+      const store = new ExpenseStore({ db, currencies: ordered, years: years || {}, events: events || {}, trash: trash || {}, groups: groups || {} });
       store.sync = db === wire ? null : db;
       // Rebuild metadata in memory so carried balances show even for data saved before they existed; the next save writes it.
       store.yearIds().forEach(year => store.recomputeYear(year));
@@ -1326,6 +1331,32 @@
     }
     // What a loan, hold or lending still has out, taking every month it is linked through: the original amounts (positive) less what came back or
     // was paid (negative), for the entries in the subsections that count that way. { total, positives }: open when total > 0, over-paid when < 0.
+    // ---- groups: things gathered under a name, from any month or year ----
+    groupList() { return Object.entries(this.groups).map(([id, group]) => ({ id, ...group })).sort((a, b) => String(a.name).localeCompare(String(b.name))); }
+    groupName(id) { return this.groups[id]?.name || ''; }
+    saveGroup(id, fields) {
+      this.groups[id] = { ...(this.groups[id] || { created: new Date().toISOString().slice(0, 10) }), ...fields };
+      return this.queue(() => this.db.patch({ [`groups/${id}`]: this.groups[id] }));
+    }
+    deleteGroup(id) {
+      delete this.groups[id];
+      return this.queue(() => this.db.patch({ [`groups/${id}`]: null }));
+    }
+    // What is in a group, over every month loaded: its entries, and the sections and subsections that say they belong.
+    groupMembers(id) {
+      const entries = this.transactions.filter(item => !item.parentId && item.groups?.includes(id));
+      const notes = this.transactions.filter(item => item.parentId && item.groups?.includes(id));
+      const sections = [];
+      const subsections = [];
+      Object.entries(this.years).forEach(([year, node]) => Object.entries(node.monthSections || {}).forEach(([monthId, month]) => {
+        Object.entries(month || {}).forEach(([currency, own]) => (own?.sections || []).forEach(section => {
+          const at = { year: Number(year), monthIndex: MONTH_NAMES.indexOf(monthId.slice(5)), property: currency, type: section.type, section: section.name };
+          if (section.groups?.includes(id)) sections.push(at);
+          Object.entries(section.subGroups || {}).forEach(([name, list]) => { if (list?.includes(id)) subsections.push({ ...at, category: name }); });
+        }));
+      }));
+      return { entries, notes, sections, subsections };
+    }
     linkedBufferLent(link, currency) {
       const sections = new Set(this.linkedSections(link, currency).map(({ year, monthIndex, section }) => `${year}-${String(monthIndex + 1).padStart(2, '0')}|${section.name}`));
       return this.transactions.filter(item => !item.parentId && !item.eventId && item.property === currency && isBufferOffset(item) && sections.has(`${item.date.slice(0, 7)}|${item.section}`))
@@ -1390,7 +1421,7 @@
     // Metadata is rebuilt immediately so the UI shows new totals at once; the write is queued so writes land in order.
     // `year`, when given, is rebuilt and written even if no month's entries changed (e.g. only its section lists did).
     saveTransactions(year) {
-      const update = {};
+      const update = this.reconcileRepay();
       const years = new Set(year ? [String(year)] : []);
       const monthItems = this.transactions.filter(item => !item.eventId);
       this.synced.forEach((json, id) => {
@@ -1684,6 +1715,7 @@
     // Marks every entry of a repayment section as a repayment (kept out of income and expenses, like a cleared entry) and
     // takes the mark off any entry that has left one. Run before totals are worked out or saved.
     syncRepayFlags() {
+      this.rememberRepay();
       let changed = false;
       this.transactions.forEach(item => {
         if (item.parentId || item.eventId) return;
@@ -1706,6 +1738,70 @@
         .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.id).localeCompare(String(b.id)));
     }
     repaySignature(item) { return `${item.date}|${item.description}|${Math.round(Math.abs(this.entryTotal(item.id)))}`; }
+    // A settlement names the repayment entry it used by that signature (day, description, amount), so the link would be lost
+    // the moment the entry changed: a note added to it, its amount edited, a rename. These two keep it: every save moves the
+    // links of an entry whose signature changed to its new one (reconcileRepay), and an entry that already lost them is found
+    // again by its day and description (repairRepay). The writes wait for the next save; the figures are right at once.
+    rememberRepay() {
+      this.repayMemo ||= new Map();
+      const rows = this.transactions.filter(item => !item.parentId && !item.eventId);
+      rows.forEach(item => { if (!this.repayMemo.has(item.id)) this.repayMemo.set(item.id, this.repaySignature(item)); });
+      if (this.repairedAt === this.transactions.length) return;
+      this.repairedAt = this.transactions.length;
+      const settles = this.realSettleList().filter(settle => settle.via);
+      if (!settles.length) return;
+      const vias = new Set(settles.map(settle => settle.via));
+      const now = new Map();
+      rows.forEach(item => { const sig = this.repaySignature(item); (now.get(sig) || now.set(sig, []).get(sig)).push(item); });
+      settles.forEach(settle => {
+        if (now.has(settle.via)) return;
+        const [date, description] = String(settle.via).split('|');
+        const same = rows.filter(item => item.date === date && item.description === description);
+        if (same.length !== 1) return;
+        const to = this.repaySignature(same[0]);
+        if (vias.has(to)) return; // that entry has links of its own: this one belonged to an entry that is gone
+        const node = this.year(settle.year);
+        if (!node?.settles?.[settle.id]) return;
+        node.settles[settle.id].via = to;
+        (this.pendingRepayFix ||= {})[`years/${settle.year}/settles/${settle.id}/via`] = to;
+      });
+      if (this.pendingRepayFix) this.resetShared();
+    }
+    // Payments that were made from a repayment entry but whose entry cannot be found any more (deleted, or changed in a way
+    // the links could not follow): the items they cleared stay settled, and nothing says what paid them.
+    lostSettles() {
+      const known = new Set(this.transactions.filter(item => !item.parentId && !item.eventId).map(item => this.repaySignature(item)));
+      return this.realSettleList().filter(settle => (settle.via && !known.has(settle.via)) || (settle.link && !settle.via));
+    }
+    // Every saved payment that cleared part of one shared entry, with how much of it went to that entry.
+    paymentsOn(sid) {
+      return this.realSettleList().map(settle => ({ settle, amount: (settle.items || []).filter(item => item.to === sid).reduce((sum, item) => sum + Math.abs(Number(item.a) || 0), 0) }))
+        .filter(row => row.amount > 0);
+    }
+    reconcileRepay() {
+      this.rememberRepay();
+      const update = { ...(this.pendingRepayFix || {}) };
+      this.pendingRepayFix = null;
+      const rows = this.transactions.filter(item => !item.parentId && !item.eventId);
+      const used = new Set(this.realSettleList().map(settle => settle.via).filter(Boolean));
+      const moved = new Map();
+      rows.forEach(item => {
+        const before = this.repayMemo.get(item.id);
+        const after = this.repaySignature(item);
+        this.repayMemo.set(item.id, after);
+        if (before === undefined || before === after || !used.has(before)) return;
+        // Another entry that still has the old signature keeps the links.
+        if (rows.some(other => other !== item && this.repaySignature(other) === before)) return;
+        moved.set(before, after);
+      });
+      moved.forEach((after, before) => Object.entries(this.years).forEach(([year, node]) => Object.entries(node.settles || {}).forEach(([id, settle]) => {
+        if (settle.via !== before) return;
+        settle.via = after;
+        update[`years/${year}/settles/${id}/via`] = after;
+      })));
+      if (Object.keys(update).length) this.resetShared();
+      return update;
+    }
     // The settlement(s) that used this repayment entry, or none: what the REPAYMENT badge says (used or not).
     repayUse(item) {
       const sig = this.repaySignature(item);
@@ -2208,6 +2304,8 @@
           const own = items.filter(item => item.type === section.type && !claimed.has(item) && (item.section === section.name || (!item.section && section.subsections.includes(item.category))));
           own.forEach(item => claimed.add(item));
           sections[section.name] = this.buildSection(section.name, section.type, section.subsections, own);
+          if (section.groups?.length) sections[section.name]._meta.groups = [...section.groups];
+          if (section.subGroups) sections[section.name]._meta.subGroups = { ...section.subGroups };
           // A section added beside Income and Expenses is drawn as its own block, under its own name.
           if (section.block || section.type === 'net') sections[section.name]._meta.block = true;
           if (section.type === 'net') {
@@ -2288,6 +2386,7 @@
         ...(item.sid && item.shared ? { sid: item.sid, shared: item.shared, sharedTotal: this.fullAmount(item), ...(item.series ? { series: item.series } : {}) } : {}),
         ...(item.cleared ? { cleared: item.cleared } : {}),
         ...(item.card ? { card: item.card } : {}),
+        ...(item.groups?.length ? { groups: item.groups } : {}),
         ...(item.refKey ? { refKey: item.refKey } : {}), ...(item.refDate ? { refDate: item.refDate } : {}), ...(item.markerOf ? { markerOf: item.markerOf } : {}),
         ...(item.moneyId ? {
           moneyId: String(item.moneyId),
@@ -2300,7 +2399,7 @@
         } : {}),
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
-        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '' }))
+        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '', groups: sub.groups || [] }))
       };
     }
   }

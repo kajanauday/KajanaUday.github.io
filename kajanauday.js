@@ -1045,6 +1045,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       sharedSeries: entry => store.sharedSeriesStatus(entry),
       linkedMonths: (link, property) => store.linkedSections(link, property).map(({ year, monthIndex }) => ({ key: keyOf(year, monthIndex), label: monthLabel(new Date(year, monthIndex, 1)), short: `${SHORT_MONTHS[monthIndex]} ${year}` })),
       cardName: id => store.events[id]?.name || '',
+      groupMarks: ids => groupMarksHtml(ids),
       payerStats: entry => store.payerStats(entry),
       receiverStats: entry => store.receiverStats(entry),
       linkJumps: entry => (entry.sid && entry.shared
@@ -1108,6 +1109,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       revealKey = null;
       markPicks();
+      paintStaged();
       focusDrafts(host);
       fitSummaryColumns();
       applySyncMarks();
@@ -1774,21 +1776,139 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const problem = repayPayerProblem(rows);
       if (problem) return showToast(problem);
       const property = rows[0].property;
-      const people = groupSharedBlocks(openSharedFor(rows[0].type, property));
-      if (!people.size) return showToast(rows[0].type === 'expense' ? 'There is no shared expense open that you owe.' : 'There is no shared expense open that is owed to you.');
-      const groups = [...people.entries()].map(([who, blocks]) => ({
-        head: `${who} · ${regions[property]?.code || property}`,
-        options: [...blocks.values()].flatMap(block => [
-          { label: `${block.category}`, hint: `${block.section ? `${block.section} · ` : ''}whole subsection, ${block.rows.length} ${block.rows.length === 1 ? 'entry' : 'entries'}`, amount: fmtLink(block.rows.reduce((sum, row) => sum + store.sharedOwed(row).owed, 0), property), who, rows: block.rows },
-          ...block.rows.map(row => ({ indent: true, label: row.description, hint: row.date, amount: fmtLink(store.sharedOwed(row).owed, property), who, rows: [row] }))
-        ])
+      // What this repayment covers now (its settlements), and what it could cover: both are listed, the covered ones ticked,
+      // so the set can be changed in one go instead of untangling what is already counted first.
+      const signatures = new Set(rows.map(row => store.repaySignature(row)));
+      const mine = store.realSettleList().filter(settle => signatures.has(settle.via));
+      const covered = new Map();
+      mine.forEach(settle => (settle.items || []).forEach(item => covered.set(item.to, (covered.get(item.to) || 0) + Math.abs(Number(item.a) || 0))));
+      const coveredWho = rows.map(row => store.repayFor(row)).find(Boolean) || null;
+      // Items that are settled, by a payment whose repayment entry can no longer be found (its link was lost): shown in their own
+      // area so they can be tied to this repayment again.
+      const wantBy = rows[0].type === 'expense' ? 'friend' : 'me';
+      const lost = store.lostSettles().filter(settle => settle.property === property);
+      const lostAmount = new Map();
+      lost.forEach(settle => (settle.items || []).forEach(item => {
+        const row = sharedRows().find(entry => entry.sid === item.to);
+        if (!row || row.property !== property || (row.shared.by === 'friend') !== (wantBy === 'friend')) return;
+        lostAmount.set(item.to, (lostAmount.get(item.to) || 0) + Math.abs(Number(item.a) || 0));
       }));
+      const candidates = new Map();
+      openSharedFor(rows[0].type, property).forEach(row => candidates.set(row.id, row));
+      sharedRows().filter(row => covered.has(row.sid) && row.property === property).forEach(row => candidates.set(row.id, row));
+      sharedRows().filter(row => lostAmount.has(row.sid) && !covered.has(row.sid)).forEach(row => candidates.set(row.id, row));
+      const listed = [...candidates.values()].filter(row => !(covered.size && coveredWho) || row.shared.with === coveredWho)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      if (!listed.length) return showToast(rows[0].type === 'expense' ? 'There is no shared expense open that you owe.' : 'There is no shared expense open that is owed to you.');
+      const wholeOf = row => (store.sharedOwed(row)?.owed || 0) + (covered.get(row.sid) || 0);
+      const pool = rows.reduce((sum, row) => sum + store.payerStats(row).total, 0);
+      const coveredTotal = [...covered.values()].reduce((sum, value) => sum + value, 0);
+      const manyPeople = new Set(listed.map(row => row.shared.with)).size > 1;
+      const item = row => ({ row, amount: lostAmount.has(row.sid) && !covered.has(row.sid) ? lostAmount.get(row.sid) : wholeOf(row), covered: covered.get(row.sid) || 0, lost: lostAmount.has(row.sid) && !covered.has(row.sid), where: [manyPeople ? row.shared.with : '', row.section, row.category].filter(Boolean).join(' › ') });
+      const groups = [
+        { head: 'Covered by this repayment', checked: true, items: listed.filter(row => covered.has(row.sid)).map(item) },
+        { head: 'Settled, but not linked to any repayment', checked: false, note: 'Their link was lost. Tick the ones this repayment paid to tie them to it again.', items: listed.filter(row => lostAmount.has(row.sid) && !covered.has(row.sid)).map(item) },
+        { head: 'Not covered yet', checked: false, items: listed.filter(row => !covered.has(row.sid) && !lostAmount.has(row.sid)).map(item) }
+      ].filter(group => group.items.length);
       const registry = target.kind === 'entry'
         ? { section: rows[0].section, category: rows[0].category, entry: { date: rows[0].date, description: rows[0].description, amount: Number(rows[0].amount) } }
         : { section: target.section, ...(target.kind === 'subsection' ? { category: target.category } : {}) };
-      const total = rows.reduce((sum, row) => sum + store.payerStats(row).balance, 0);
-      openLinkPicker({ title: 'Which shared expense does it pay?', subtitle: `${fmtLink(total, property)} available · ${rows.length === 1 ? rows[0].description : target.label}`, groups, confirm: 'Link and pay',
-        onPick: option => applyRepayLink(rows, option.rows, option.who, property, registry) });
+      openCoveragePicker({
+        title: covered.size ? 'What does this repayment cover?' : 'Which shared expenses does it pay?',
+        subtitle: `${fmtLink(pool, property)} in this repayment${coveredTotal ? ` · ${fmtLink(coveredTotal, property)} covers now` : ''} · ${rows.length === 1 ? rows[0].description : target.label}`,
+        groups, pool, property, confirm: covered.size ? 'Save coverage' : 'Link and pay',
+        onSave: chosen => {
+          if (new Set(chosen.map(item => item.shared.with)).size > 1) return showToast('Choose shared expenses of one person.');
+          const who = chosen[0]?.shared.with || coveredWho;
+          const chosenSids = new Set(chosen.map(row => row.sid));
+          // What it covers is kept as it is: only what was unticked is taken back, and only what is newly ticked is paid, from
+          // whatever the repayment has left. Nothing already counted is worked out again.
+          let changed = false;
+          mine.forEach(settle => {
+            const keep = (settle.items || []).filter(item => chosenSids.has(item.to));
+            if (keep.length === (settle.items || []).length) return;
+            changed = true;
+            if (!keep.length) return trackSave(store.removeSettle(settle.id));
+            const { year, ...saved } = settle;
+            const total = keep.reduce((sum, item) => sum + Math.abs(Number(item.a) || 0), 0);
+            trackSave(store.saveSettle({ ...saved, items: keep, cash: (settle.cash < 0 ? -1 : 1) * total }));
+          });
+          // Settled items whose link was lost, and ticked here: their payments are tied to this repayment again (a payment that
+          // also paid unticked items is split, so the unticked ones stay as they were).
+          const relink = chosen.filter(row => lostAmount.has(row.sid) && !covered.has(row.sid));
+          const relinkSids = new Set(relink.map(row => row.sid));
+          if (relink.length) {
+            const payers = rows.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+            lost.forEach(settle => {
+              const items = settle.items || [];
+              const take = items.filter(item => relinkSids.has(item.to));
+              if (!take.length) return;
+              const sum = list => list.reduce((total, item) => total + Math.abs(Number(item.a) || 0), 0);
+              const payer = payers.find(row => store.payerStats(row).balance >= sum(take)) || payers[0];
+              const sign = settle.cash < 0 ? -1 : 1;
+              const { year, ...saved } = settle;
+              const via = store.repaySignature(payer);
+              if (take.length === items.length) trackSave(store.saveSettle({ ...saved, via }));
+              else {
+                const rest = items.filter(item => !relinkSids.has(item.to));
+                trackSave(store.saveSettle({ ...saved, items: rest, cash: sign * sum(rest) }));
+                trackSave(store.saveSettle({ ...saved, id: newSharedKey('st'), items: take, cash: sign * sum(take), via }));
+              }
+              changed = true;
+            });
+          }
+          const added = chosen.filter(row => !covered.has(row.sid) && !relinkSids.has(row.sid));
+          if (added.length) return applyRepayLink(rows, added, who, property, registry);
+          saveTransactions();
+          renderLedger();
+          showToast(changed ? 'Coverage saved; what it still covers was kept as it was.' : 'No change.');
+        }
+      });
+    }
+    // The picker for a repayment's coverage: the shared expenses it covers (ticked) and, below, those it does not cover yet
+    // (not ticked). Ticking an area's heading ticks all of it. The line under the list says how much of the repayment the ticks use.
+    function openCoveragePicker({ title, subtitle, groups, pool, property, confirm, onSave }) {
+      let dialog = document.querySelector('#link-picker');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'link-picker';
+        dialog.className = 'modal month-dialog link-picker';
+        document.body.append(dialog);
+      }
+      const rowsById = new Map();
+      // Laid out as the ledger lays out its entries: tick, day, description, amount. Two areas: what is covered (ticked) and
+      // what is not yet (unticked).
+      const html = groups.map(group => `<section class="lp-group"><h3><label><input type="checkbox" data-lp-area> ${escapeHtml(group.head)} <small>${group.items.length}</small></label></h3>${group.note ? `<p class="lp-note">${escapeHtml(group.note)}</p>` : ''}${group.items.map(entry => {
+        rowsById.set(entry.row.id, entry);
+        return `<label class="lp-entry" title="${escapeHtml(entry.where)}"><input type="checkbox" data-lp-row="${escapeHtml(entry.row.id)}"${group.checked ? ' checked' : ''}><time>${escapeHtml(String(entry.row.date).slice(5))}</time><span class="lp-what"><b>${escapeHtml(entry.row.description)}</b><small>${escapeHtml(entry.where)}${entry.covered ? ` · covers ${escapeHtml(fmtLink(entry.covered, property))}` : ''}${entry.lost ? ' · settled, link lost' : ''}</small></span><em>${escapeHtml(fmtLink(entry.amount, property))}</em></label>`;
+      }).join('')}</section>`).join('');
+      dialog.innerHTML = `<form method="dialog" novalidate><div class="modal-header"><div><p>${escapeHtml(subtitle || '')}</p><h2>${escapeHtml(title)}</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="lp-list">${html}</div><p class="lp-total" aria-live="polite"></p><div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">${escapeHtml(confirm)}</button></div></form>`;
+      const form = dialog.querySelector('form');
+      const chosenRows = () => [...form.querySelectorAll('[data-lp-row]')].filter(box => box.checked).map(box => rowsById.get(box.dataset.lpRow));
+      const refresh = () => {
+        // An area's box follows its entries.
+        form.querySelectorAll('.lp-group').forEach(section => {
+          const own = [...section.querySelectorAll('[data-lp-row]')];
+          const head = section.querySelector('[data-lp-area]');
+          head.checked = own.every(box => box.checked);
+          head.indeterminate = !head.checked && own.some(box => box.checked);
+        });
+        const wanted = chosenRows().reduce((sum, entry) => sum + entry.amount, 0);
+        form.querySelector('.lp-total').textContent = `Selected ${fmtLink(wanted, property)} of ${fmtLink(pool, property)}${wanted > pool ? ` · ${fmtLink(wanted - pool, property)} stays open` : wanted < pool ? ` · ${fmtLink(pool - wanted, property)} is left as buffer` : ''}`;
+      };
+      form.addEventListener('change', event => {
+        const head = event.target.closest('[data-lp-area]');
+        if (head) head.closest('.lp-group').querySelectorAll('[data-lp-row]').forEach(box => { box.checked = head.checked; });
+        refresh();
+      });
+      dialog.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => dialog.close()));
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        dialog.close();
+        onSave(chosenRows().map(entry => entry.row));
+      });
+      refresh();
+      dialog.showModal();
     }
     // Menu action, from the shared side: pick the repayment block or entry that pays it.
     function repayFromPayer(target, sharedSide, direction) {
@@ -1809,6 +1929,135 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       openLinkPicker({ title: 'Which repayment pays it?', subtitle: `${fmtLink(owedNow, property)} open · ${who}`, groups, confirm: 'Link and pay',
         onPick: option => applyRepayLink(option.rows, sharedSide, who, property, option.registry) });
     }
+    // Moves what a person still owes me on shared expenses I paid into one of my settlement sections, as money I laid out for
+    // them: an entry in its "paid for the group" subsection, the whole amount theirs. The shared expense itself stays as it
+    // is (my own half remains my expense); its open amount is marked as counted elsewhere, with no cash and no effect on
+    // income or expenses, so the same money is never asked for twice. From then on the settlement section carries it:
+    // what they pay back there (a "settled up" entry) closes it, as with anything else I laid out for them.
+    function countShareInSettlement(target, rows, sectionName) {
+      if (isViewer) return viewOnly();
+      const { mKey, property } = target;
+      const scope = panelScope(mKey, property);
+      const section = scope.own().find(item => item.type === 'net' && item.name === sectionName && ExpenseStore.sectionKind(item) === 'settlement');
+      if (!section) return showToast('Could not find that settlement.');
+      if (section.closed) return showToast(`“${section.name}” is closed. Reopen it first.`);
+      const made = [];
+      const settles = [];
+      for (const row of rows) {
+        const who = row.shared.with;
+        const owed = store.sharedOwed(row)?.owed || 0;
+        if (owed <= 0) continue;
+        const bundle = sharedBundle(property, who);
+        const open = bundle.pending.receivable.find(item => item.id === row.sid);
+        if (!open) continue;
+        const result = SharedLedger.settle({ entries: bundle.entries, settlements: bundle.settles, items: [{ to: row.sid, a: owed }], cash: 0, treatment: 'none' });
+        if (!result.ok) return showToast(result.error);
+        made.push({ row, who, owed, result });
+      }
+      if (!made.length) return showToast('Nothing is open on these for them to pay.');
+      let sub = section.subsections.find(name => ExpenseStore.subsectionRole(section, name) === 'cost');
+      if (!sub) {
+        sub = 'Paid for them';
+        if (!section.subsections.includes(sub)) section.subsections.push(sub);
+        (section.roles ||= {})[sub] = 'cost';
+      }
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      made.forEach(({ row, who, owed, result }) => {
+        trackSave(store.saveSettle({ id: newSharedKey('st'), date: today, property, with: who, items: result.settlement.items, cash: 0, forgiven: result.settlement.forgiven, treatment: 'none', name: `Counted in “${section.name}”`, note: `${who}'s part of “${row.description}” is now money I paid for them in “${section.name}”` }));
+        transactions.push({
+          id: newRowId(), property, date: dateIn(mKey, row.date), section: section.name, category: sub,
+          description: `${row.description} (${who}'s part)`, place: '', amount: -owed, type: 'net', split: { m: 'none' }, ...scope.fields
+        });
+        settles.push(owed);
+      });
+      scope.save();
+      saveTransactions();
+      revealKey = catKey(mKey, property, 'net', sub);
+      renderLedger();
+      showToast(`${fmtLink(settles.reduce((sum, value) => sum + value, 0), property)} now counts in “${section.name}” as money I paid for them. Entries there that they pay back will close it.`);
+    }
+    // What paid a shared expense, from the expense's side: every payment with the repayment entry it came from, or a note that the
+    // entry is missing. A payment made from a repayment can be unlinked (the item becomes open again) or, when its entry is
+    // missing, linked to another repayment entry. Payments recorded as cash in the shared panel are undone there.
+    const paymentLinks = { rows: [], draw: null };
+    function openPaymentLinks(rows) {
+      let dialog = document.querySelector('#payment-links');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'payment-links';
+        dialog.className = 'modal month-dialog payment-links';
+        document.body.append(dialog);
+        dialog.addEventListener('click', event => {
+          if (event.target.closest('[data-close-dialog]')) return dialog.close();
+          const unlink = event.target.closest('[data-pl-unlink]');
+          const relink = event.target.closest('[data-pl-relink]');
+          const [kind, settleId, sid] = (unlink?.dataset.plUnlink || relink?.dataset.plRelink || '').split('|');
+          if (!kind) return;
+          const settle = store.realSettleList().find(item => item.id === settleId);
+          const row = paymentLinks.rows.find(item => item.sid === sid);
+          if (!settle || !row) return showToast('That payment is gone. Reopen this list.');
+          if (isViewer) return viewOnly();
+          if (relink) return relinkPayment(settle, row, () => paymentLinks.draw());
+          if (!window.confirm(`Unlink this payment from “${row.description}”? The ${exactMoney(store.paymentsOn(sid).find(item => item.settle.id === settleId)?.amount, row.property)} it paid becomes open again; the repayment entry gets it back.`)) return;
+          unlinkPayment(settle, sid);
+          paymentLinks.draw();
+        });
+      }
+      const draw = () => {
+        const sections = rows.map(row => {
+          const payments = store.paymentsOn(row.sid);
+          const owed = store.sharedOwed(row)?.owed || 0;
+          const lines = payments.map(({ settle, amount }) => {
+            const source = settle.via ? store.rowBySignature(settle.via) : null;
+            const linked = Boolean(settle.via || settle.link);
+            const where = source ? `from “${source.description}” · ${source.date}` : linked ? 'its repayment entry is missing: link lost' : `cash settlement “${settle.name || 'Settled'}” (undo it in the shared panel)`;
+            const buttons = linked ? `<button type="button" class="quiet-button" data-pl-unlink="u|${escapeHtml(settle.id)}|${escapeHtml(row.sid)}">Unlink</button>${source ? '' : `<button type="button" class="quiet-button" data-pl-relink="r|${escapeHtml(settle.id)}|${escapeHtml(row.sid)}">Link to…</button>`}` : '';
+            return `<div class="pl-line${source || !linked ? '' : ' is-lost'}"><span>${escapeHtml(settle.date)}</span><span class="pl-what"><b>${escapeHtml(exactMoney(amount, row.property))}</b><small>${escapeHtml(where)}</small></span><span class="pl-actions">${buttons}</span></div>`;
+          }).join('') || '<p class="ledger-none">Nothing has paid this yet.</p>';
+          return `<section class="lp-group"><h3>${escapeHtml(row.description)} · ${escapeHtml(row.date)}<small> · ${owed ? `${escapeHtml(exactMoney(owed, row.property))} open` : 'settled'}</small></h3>${lines}</section>`;
+        }).join('');
+        dialog.innerHTML = `<div class="modal-header"><div><p>Payments and links</p><h2>${escapeHtml(rows.length === 1 ? rows[0].description : `${rows.length} shared expenses`)}</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="lp-list">${sections}</div>`;
+      };
+      paymentLinks.rows = rows;
+      paymentLinks.draw = draw;
+      draw();
+      dialog.showModal();
+    }
+    // Takes one item off a payment made from a repayment: the payment keeps its other items, or goes if it had no others.
+    function unlinkPayment(settle, sid) {
+      const keep = (settle.items || []).filter(item => item.to !== sid);
+      if (!keep.length) trackSave(store.removeSettle(settle.id));
+      else {
+        const { year, ...saved } = settle;
+        const total = keep.reduce((sum, item) => sum + Math.abs(Number(item.a) || 0), 0);
+        trackSave(store.saveSettle({ ...saved, items: keep, cash: (settle.cash < 0 ? -1 : 1) * total }));
+      }
+      saveTransactions();
+      renderLedger();
+      showToast('Unlinked. It is open again, and the repayment has that amount free.');
+    }
+    // Links a payment whose entry is missing to one of the person's repayment entries, chosen from a list.
+    function relinkPayment(settle, row, done) {
+      const who = row.shared.with;
+      const type = row.shared.by === 'friend' ? 'expense' : 'income';
+      const need = store.paymentsOn(row.sid).find(item => item.settle.id === settle.id)?.amount || 0;
+      const usable = transactions.filter(item => !item.parentId && !item.eventId && item.property === row.property && item.type === type && store.repayFor(item) === who && !repayPayerProblem([item]))
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      if (!usable.length) return showToast('This person has no repayment entry to link to. Right-click an entry and use it as a repayment first.');
+      openLinkPicker({
+        title: 'Which repayment paid it?', subtitle: `${exactMoney(need, row.property)} · ${row.description}`, confirm: 'Link',
+        groups: [{ head: type === 'expense' ? 'Money I paid' : 'Money I received', options: usable.slice(0, 60).map(item => ({ label: item.description, hint: `${item.date} · ${exactMoney(store.payerStats(item).balance, row.property)} free of ${exactMoney(store.payerStats(item).total, row.property)}`, amount: exactMoney(store.payerStats(item).total, row.property), item })) }],
+        onPick: option => {
+          const { year, ...saved } = settle;
+          trackSave(store.saveSettle({ ...saved, via: store.repaySignature(option.item) }));
+          saveTransactions();
+          renderLedger();
+          showToast(store.payerStats(option.item).used > store.payerStats(option.item).total ? 'Linked, but that entry has paid more than it holds. Check its payments.' : 'Linked.');
+          done?.();
+        }
+      });
+    }
     // The menu lines. Only what fits is offered: a repayment can only pay shared expenses, and a shared one can only be paid by a repayment.
     function repayLinkItems(target) {
       if (isViewer || target.mKey.startsWith('ev:') || !['entry', 'subsection', 'section'].includes(target.kind) || (target.kind === 'section' && !target.section)) return [];
@@ -1818,14 +2067,25 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (sharedHere.length) {
         const open = sharedHere.filter(row => (store.sharedOwed(row)?.owed || 0) > 0);
         const items = [];
+        // Whatever state it is in, the payments on a shared expense can be looked at and unlinked from here.
+        if (sharedHere.some(row => store.paymentsOn(row.sid).length)) items.push({ icon: 'unlink', label: 'Payments and links…', hint: 'see what paid it; unlink or relink a payment', run: () => openPaymentLinks(sharedHere) });
         ['i-owe-friend', 'friend-owes-me'].forEach(direction => {
           const mine = open.filter(row => (row.shared.by === 'friend') === (direction === 'i-owe-friend'));
           if (mine.length) items.push({ icon: 'coin', label: direction === 'i-owe-friend' ? 'Pay it from a repayment…' : 'Collect it with a repayment…', hint: direction === 'i-owe-friend' ? 'link an expense of yours that paid it' : 'link income that paid you back', run: () => repayFromPayer(target, mine, direction) });
         });
+        // What they owe me on expenses I paid can be carried into one of my settlements instead, as money I laid out for them.
+        const theirs = open.filter(row => row.shared.by !== 'friend');
+        const settlements = target.mKey.startsWith('ev:') ? [] : panelScope(target.mKey, target.property).sections().filter(item => item.type === 'net' && !item.closed && ExpenseStore.sectionKind(item) === 'settlement');
+        if (theirs.length && settlements.length) {
+          items.push({ icon: 'transfer-in', label: 'Count their part in a settlement…', hint: 'as money I paid for them; the expense stays as it is',
+            submenu: { title: 'Count their part in…', subtitle: target.label || '', items: settlements.map(section => ({ icon: 'arrows-exchange', label: section.name, hint: 'settlement', run: () => countShareInSettlement(target, theirs, section.name) })) } });
+        }
         return items;
       }
       if (repayPayerProblem(rows)) return [];
-      if (!openSharedFor(rows[0].type, rows[0].property).length) return [];
+      // Offered while anything is open, anything is covered by these, or any payment has lost its entry: otherwise a fully settled
+      // ledger would leave no way in to relink them.
+      if (!openSharedFor(rows[0].type, rows[0].property).length && !store.lostSettles().length && !rows.some(row => store.payerStats(row).used)) return [];
       return [{ icon: 'arrows-exchange', label: 'Use as repayment for a shared expense…', hint: rows[0].type === 'expense' ? 'money I paid, to settle what I owe' : 'money I received, to settle what I am owed', run: () => repayToShared(target) }];
     }
     // The pie on a row: one other end goes straight there; several are listed.
@@ -1850,11 +2110,11 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     }
 
     // ---- The dustbin: the last 25 deleted things, restorable ----
-    function binSubsection(scope, { month, property, type, within, category }, items, adjust = []) {
+    function binSubsection(scope, { month, property, type, within, category }, items, adjust = [], settles = []) {
       const holder = scope.own().find(item => item.type === type && (!within || item.name === within) && item.subsections.includes(category));
       trackSave(store.addTrash({
         kind: 'category', label: category, detail: `${scope.label} · ${property.toUpperCase()}${items.length ? ` · ${items.length} ${items.length === 1 ? 'item' : 'items'}` : ''}`,
-        mKey: month, property, type, within: within || '', category, items, adjust,
+        mKey: month, property, type, within: within || '', category, items, adjust, settles,
         sectionName: holder?.name || '', role: holder?.roles?.[category] || '', about: holder?.subAbout?.[category] || ''
       }));
     }
@@ -1907,6 +2167,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (isViewer) return viewOnly();
       const done = () => {
         (rec.adjust || []).forEach(adjustId => trackSave(store.removeSettle(adjustId)));
+        (rec.settles || []).forEach(settle => trackSave(store.saveSettle(settle)));
         trackSave(store.removeTrash(id));
         updateTrashBadge();
         renderTrashDialog();
@@ -1994,13 +2255,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }[kind];
       const scope = kind === 'note' ? '' : ` (${plural(entries, 'entry')}${notes ? ` and ${plural(notes, 'note')}` : ''})`;
       const where = kind === 'category' ? ` for ${property.toUpperCase()} in ${rowScope.label}` : '';
-      if (!window.confirm(`Delete ${label}${scope}${where}? This cannot be undone.`)) return;
+      // A repayment entry that paid shared expenses takes its payments with it: they would be left settled with nothing behind
+      // them. They are kept in the bin with the entry, so restoring it pays them again.
+      const signatures = new Set([...doomed].filter(item => !item.parentId).map(item => store.repaySignature(item)));
+      const unpaid = store.realSettleList().filter(settle => settle.via && signatures.has(settle.via)).map(({ year, ...saved }) => saved);
+      const unpaidItems = unpaid.reduce((sum, settle) => sum + (settle.items || []).length, 0);
+      const warning = unpaid.length ? ` It paid ${plural(unpaidItems, 'shared expense')}; they become open again (restoring it from the bin pays them again).` : '';
+      if (!window.confirm(`Delete ${label}${scope}${where}?${warning} This cannot be undone.`)) return;
+      unpaid.forEach(settle => trackSave(store.removeSettle(settle.id)));
       // Into the dustbin first (with the adjustments shared payments make), so the delete can be undone.
       const adjust = [];
       [...doomed].forEach(item => releasePayments(item, adjust));
       const snapshot = [...doomed].map(item => JSON.parse(JSON.stringify(item)));
-      if (kind === 'category') binSubsection(rowScope, { month, property, type, within, category }, snapshot, adjust);
-      else trackSave(store.addTrash({ kind, label: rows[0].description, detail: `${rows[0].date} · ${rows[0].property.toUpperCase()}`, mKey: month, property: rows[0].property, type: rows[0].type, items: snapshot, adjust }));
+      if (kind === 'category') binSubsection(rowScope, { month, property, type, within, category }, snapshot, adjust, unpaid);
+      else trackSave(store.addTrash({ kind, settles: unpaid, label: rows[0].description, detail: `${rows[0].date} · ${rows[0].property.toUpperCase()}`, mKey: month, property: rows[0].property, type: rows[0].type, items: snapshot, adjust }));
       if (kind === 'category') {
         rowScope.own().filter(item => item.type === type && (!within || item.name === within)).forEach(item => {
           item.subsections = item.subsections.filter(name => name !== category);
@@ -3800,6 +4068,287 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       return hubFold(`card:${event.id}:links`, 'card-links', `${chevron}<span><i class="ti ti-link" aria-hidden="true"></i> Linked transactions</span><small>${sorted.length} · ${escapeHtml(totalText)}</small>`, `<div class="card-links-body">${body}</div>`);
     }
 
+    // ---- Groups: name a set of entries, subsections and sections from any month or year, and see them together ----------
+    // Right-click anything → "Add to group…" opens a small bar that stays on the page: click rows to put them in (or take them
+    // out), switch months freely, then type a new name or pick an existing group and press Add. A small coloured mark on each
+    // row says which groups it is in; clicking the mark opens the group. The top-bar button lists every group.
+    const GROUP_COLOURS = ['#e0a526', '#3aa6a0', '#6c8cff', '#d8627a', '#8ccf5c', '#b07be0', '#ff8a4c'];
+    const groupColour = id => store.groups[id]?.color || GROUP_COLOURS[0];
+    function groupMarksHtml(ids) {
+      const known = [...new Set(ids)].filter(id => store.groups[id]);
+      if (!known.length) return '';
+      const mark = id => `<span class="group-mark" role="button" tabindex="0" data-group-open="${escapeHtml(id)}" style="--g:${escapeHtml(groupColour(id))}" title="Group “${escapeHtml(store.groups[id].name)}”: click to see everything in it" aria-label="Group ${escapeHtml(store.groups[id].name)}"><i class="ti ti-stack-2" aria-hidden="true"></i></span>`;
+      return known.slice(0, 2).map(mark).join('') + (known.length > 2 ? `<span class="group-more" title="${escapeHtml(known.slice(2).map(id => store.groups[id].name).join(', '))}">+${known.length - 2}</span>` : '');
+    }
+    const grouping = { active: false, staged: new Map(), tray: null, preset: '' };
+    const stageKey = item => (item.kind === 'entry' ? `e|${item.id}` : item.kind === 'note' ? `n|${item.id}` : item.kind === 'subsection' ? `s|${item.mKey}|${item.property}|${item.type}|${item.section || ''}|${item.category}` : `t|${item.mKey}|${item.property}|${item.type}|${item.section}`);
+    function stageable(target) {
+      if (!target || isViewer || target.mKey?.startsWith('ev:')) return null;
+      if (target.kind === 'entry') return { kind: 'entry', id: target.id, mKey: target.mKey, property: target.property, label: target.label };
+      if (target.kind === 'note') return { kind: 'note', id: target.id, mKey: target.mKey, property: target.property, label: target.label };
+      if (target.kind === 'subsection') return { kind: 'subsection', mKey: target.mKey, property: target.property, type: target.type, section: target.section, category: target.category, label: target.label };
+      if (target.kind === 'section' && target.section) return { kind: 'section', mKey: target.mKey, property: target.property, type: target.type, section: target.section, label: target.label };
+      return null;
+    }
+    function paintStaged() {
+      document.querySelectorAll('#ledger .is-staged').forEach(el => el.classList.remove('is-staged'));
+      if (!grouping.active) return;
+      grouping.staged.forEach(item => {
+        const block = document.querySelector(`.month-block[data-month-key="${CSS.escape(item.mKey)}"]`);
+        if (!block) return;
+        let el = null;
+        if (item.kind === 'entry') el = block.querySelector(`[data-toggle-entry][data-entry-id="${CSS.escape(item.id)}"]`)?.closest('.ledger-entry-cell');
+        else if (item.kind === 'note') el = block.querySelector(`[data-note-id="${CSS.escape(item.id)}"]`);
+        else {
+          const panel = block.querySelector(`.ledger-panel[data-property="${CSS.escape(item.property)}"]`);
+          if (item.kind === 'subsection') el = [...(panel?.querySelectorAll('.ledger-cat') || [])].find(cat => catName(cat) === item.category && (cat.dataset.section || '') === (item.section || ''));
+          else el = [...(panel?.querySelectorAll('.ledger-type-section') || [])].find(sec => sec.dataset.section === item.section);
+        }
+        el?.classList.add('is-staged');
+      });
+    }
+    function drawTray() {
+      const tray = grouping.tray;
+      if (!tray) return;
+      const count = grouping.staged.size;
+      tray.querySelector('.gt-count').textContent = count === 1 ? '1 selected' : `${count} selected`;
+      tray.querySelector('[data-gt-add]').disabled = !count;
+    }
+    function startGrouping(target, preset = '') {
+      if (isViewer) return viewOnly();
+      if (!grouping.tray) {
+        const tray = document.createElement('div');
+        tray.id = 'group-tray';
+        tray.className = 'group-tray';
+        tray.setAttribute('role', 'region');
+        tray.setAttribute('aria-label', 'Add to a group');
+        tray.innerHTML = `<i class="ti ti-stack-2" aria-hidden="true"></i><div class="gt-main"><div class="gt-row"><input type="text" class="gt-name" list="group-tray-names" maxlength="40" placeholder="New group name, or choose one" aria-label="Group name" autocomplete="off"><datalist id="group-tray-names"></datalist><span class="gt-count" aria-live="polite"></span></div><small>Click entries, subsections or sections to put them in or take them out. Move between months as you like.</small></div><button type="button" class="primary-button" data-gt-add>Add</button><button type="button" class="quiet-button" data-gt-cancel>Cancel</button>`;
+        document.body.append(tray);
+        grouping.tray = tray;
+      }
+      grouping.active = true;
+      grouping.staged = new Map();
+      grouping.tray.hidden = false;
+      grouping.tray.querySelector('#group-tray-names').innerHTML = store.groupList().map(group => `<option value="${escapeHtml(group.name)}"></option>`).join('');
+      grouping.tray.querySelector('.gt-name').value = preset;
+      const first = stageable(target);
+      if (first) grouping.staged.set(stageKey(first), first);
+      drawTray();
+      paintStaged();
+      closeRowMenu?.();
+      showToast(first ? 'Click more rows to add them, then name the group and press Add.' : 'Click rows to add them, then name the group and press Add.');
+    }
+    function stopGrouping() {
+      grouping.active = false;
+      grouping.staged = new Map();
+      if (grouping.tray) grouping.tray.hidden = true;
+      paintStaged();
+    }
+    function toggleStaged(item) {
+      const key = stageKey(item);
+      if (grouping.staged.has(key)) grouping.staged.delete(key); else grouping.staged.set(key, item);
+      drawTray();
+      paintStaged();
+    }
+    // Puts everything chosen into the group (an existing one with that name, else a new one).
+    function addStagedToGroup() {
+      const typed = grouping.tray.querySelector('.gt-name').value.trim().replace(/\s+/g, ' ');
+      if (!grouping.staged.size) return showToast('Click something to add first.');
+      if (!typed) return grouping.tray.querySelector('.gt-name').focus();
+      const found = store.groupList().find(group => group.name.toLowerCase() === typed.toLowerCase());
+      let id = found?.id;
+      if (!id) {
+        id = newSharedKey('gr');
+        trackSave(store.saveGroup(id, { name: typed, color: GROUP_COLOURS[store.groupList().length % GROUP_COLOURS.length] }));
+      }
+      const touched = new Map();
+      let count = 0;
+      grouping.staged.forEach(item => {
+        if (item.kind === 'entry' || item.kind === 'note') {
+          const row = transactions.find(entry => entry.id === item.id);
+          if (!row) return;
+          row.groups = [...new Set([...(row.groups || []), id])];
+          count += 1;
+          return;
+        }
+        const scope = panelScope(item.mKey, item.property);
+        const own = scope.own();
+        const section = own.find(entry => entry.type === item.type && (item.kind === 'section' ? entry.name === item.section : item.section ? entry.name === item.section : entry.subsections.includes(item.category)));
+        if (!section) return;
+        if (item.kind === 'section') section.groups = [...new Set([...(section.groups || []), id])];
+        else { const key = ExpenseStore.safeKey(item.category); (section.subGroups ||= {})[key] = [...new Set([...(section.subGroups[key] || []), id])]; }
+        touched.set(`${item.mKey}|${item.property}`, scope);
+        count += 1;
+      });
+      touched.forEach(scope => scope.save());
+      saveTransactions();
+      const name = typed;
+      stopGrouping();
+      renderLedger();
+      showToast(`Added ${count} ${count === 1 ? 'thing' : 'things'} to “${name}”.`);
+    }
+    function groupItems(target) {
+      if (isViewer || target.mKey?.startsWith('ev:')) return [];
+      const item = stageable(target);
+      // An unnamed Income or Expenses block has no section to put in a group, but the bar can still start from it.
+      if (!item) return target.kind === 'section' && !grouping.active ? [{ icon: 'stack-2', label: 'Add to group…', hint: 'then click the rows to gather', run: () => startGrouping(null) }] : [];
+      if (grouping.active) {
+        const on = grouping.staged.has(stageKey(item));
+        return [{ icon: on ? 'minus' : 'plus', label: on ? 'Take out of the group selection' : 'Add to the group selection', hint: `${grouping.staged.size} selected`, run: () => toggleStaged(item) }];
+      }
+      return [{ icon: 'stack-2', label: 'Add to group…', hint: 'gather things from any month into a named group', run: () => startGrouping(target) }];
+    }
+
+    // What is in a group: the entries (and the entries of its sections and subsections), by month, with totals.
+    const groupDialogState = { id: null };
+    function groupEntriesOf(at) {
+      return transactions.filter(item => !item.parentId && !item.eventId && item.property === at.property && item.date.startsWith(keyOf(at.year, at.monthIndex)) && item.type === at.type
+        && item.section === at.section && (at.category === undefined || item.category === at.category));
+    }
+    async function openGroupDialog(id = null) {
+      let dialog = document.querySelector('#group-dialog');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'group-dialog';
+        dialog.className = 'modal month-dialog group-dialog';
+        document.body.append(dialog);
+        dialog.addEventListener('click', event => {
+          if (event.target.closest('[data-close-dialog]')) return dialog.close();
+          const open = event.target.closest('[data-group-view]');
+          if (open) return openGroupDialog(open.dataset.groupView);
+          if (event.target.closest('[data-group-index]')) return openGroupDialog(null);
+          const jump = event.target.closest('[data-group-jump]');
+          if (jump) { dialog.close(); return openSearchResult(JSON.parse(jump.dataset.groupJump)); }
+          const gid = groupDialogState.id;
+          if (event.target.closest('[data-group-more]')) { dialog.close(); return startGrouping(null, store.groupName(gid)); }
+          if (event.target.closest('[data-group-rename]')) {
+            const name = window.prompt('Group name', store.groupName(gid));
+            if (name && name.trim()) { trackSave(store.saveGroup(gid, { name: name.trim().replace(/\s+/g, ' ').slice(0, 40) })); renderLedger(); openGroupDialog(gid); }
+            return;
+          }
+          if (event.target.closest('[data-group-delete]')) {
+            if (!window.confirm(`Delete the group “${store.groupName(gid)}”? Nothing in it is deleted; only the grouping goes.`)) return;
+            trackSave(store.deleteGroup(gid));
+            renderLedger();
+            return openGroupDialog(null);
+          }
+          const colour = event.target.closest('[data-group-colour]');
+          if (colour) { trackSave(store.saveGroup(gid, { color: colour.dataset.groupColour })); renderLedger(); return openGroupDialog(gid); }
+          if (event.target.closest('[data-group-create]')) {
+            const input = dialog.querySelector('[name="newgroup"]');
+            const name = input.value.trim().replace(/\s+/g, ' ');
+            if (!name) return input.focus();
+            if (store.groupList().some(group => group.name.toLowerCase() === name.toLowerCase())) return showToast('That group already exists.');
+            const created = newSharedKey('gr');
+            trackSave(store.saveGroup(created, { name, color: GROUP_COLOURS[store.groupList().length % GROUP_COLOURS.length] }));
+            return openGroupDialog(created);
+          }
+          const take = event.target.closest('[data-group-remove]');
+          if (take) {
+            const ref = JSON.parse(take.dataset.groupRemove);
+            if (ref.kind === 'entry' || ref.kind === 'note') {
+              const row = transactions.find(entry => entry.id === ref.id);
+              if (row) { row.groups = (row.groups || []).filter(g => g !== gid); if (!row.groups.length) delete row.groups; saveTransactions(); }
+            } else {
+              const scope = panelScope(keyOf(ref.year, ref.monthIndex), ref.property);
+              const section = scope.own().find(entry => entry.type === ref.type && entry.name === ref.section);
+              if (section && ref.kind === 'section') { section.groups = (section.groups || []).filter(g => g !== gid); if (!section.groups.length) delete section.groups; }
+              if (section && ref.kind === 'subsection') {
+                const key = ExpenseStore.safeKey(ref.category);
+                section.subGroups[key] = (section.subGroups[key] || []).filter(g => g !== gid);
+                if (!section.subGroups[key].length) delete section.subGroups[key];
+                if (!Object.keys(section.subGroups).length) delete section.subGroups;
+              }
+              scope.save();
+            }
+            renderLedger();
+            return openGroupDialog(gid);
+          }
+        });
+        dialog.addEventListener('submit', event => event.preventDefault());
+      }
+      groupDialogState.id = id;
+      dialog.innerHTML = '<div class="modal-header"><div><p>Groups</p><h2>Loading…</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+      if (!dialog.open) dialog.showModal();
+      try { await store.ensureAllYears(); } catch (error) { /* Shows what is loaded. */ }
+      if (groupDialogState.id !== id) return;
+      dialog.innerHTML = id ? groupViewHtml(id) : groupIndexHtml();
+    }
+    function groupIndexHtml() {
+      const rows = store.groupList().map(group => {
+        const members = store.groupMembers(group.id);
+        const count = members.entries.length + members.notes.length + members.sections.length + members.subsections.length;
+        return `<button type="button" class="group-row" data-group-view="${escapeHtml(group.id)}" style="--g:${escapeHtml(group.color || GROUP_COLOURS[0])}"><span class="group-mark"><i class="ti ti-stack-2" aria-hidden="true"></i></span><b>${escapeHtml(group.name)}</b><small>${count} ${count === 1 ? 'thing' : 'things'}</small></button>`;
+      }).join('') || '<p class="ledger-none">No groups yet. Right-click an entry, subsection or section and choose “Add to group…”, or make an empty one here.</p>';
+      return `<div class="modal-header"><div><p>Gather things from any month or year</p><h2>Groups</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="group-list">${rows}</div>${isViewer ? '' : '<div class="group-new"><input name="newgroup" maxlength="40" placeholder="New group name" autocomplete="off" aria-label="New group name"><button type="button" class="quiet-button" data-group-create>Create</button></div>'}`;
+    }
+    function groupViewHtml(id) {
+      const group = store.groups[id];
+      if (!group) return groupIndexHtml();
+      const members = store.groupMembers(id);
+      // Every entry counted once, whichever way it got into the group.
+      const seen = new Map();
+      members.entries.forEach(item => seen.set(item.id, item));
+      [...members.sections, ...members.subsections].forEach(at => groupEntriesOf(at).forEach(item => seen.set(item.id, item)));
+      // A note counts on its own only when its entry is not already counted.
+      const notesAlone = members.notes.filter(note => !seen.has(note.parentId));
+      const typeOf = note => transactions.find(row => row.id === note.parentId)?.type || 'expense';
+      const totals = new Map();
+      notesAlone.forEach(note => {
+        const sum = totals.get(note.property) || { in: 0, out: 0 };
+        if (typeOf(note) === 'income' || (typeOf(note) === 'net' && Number(note.amount) > 0)) sum.in += Math.abs(Number(note.amount)); else sum.out += Math.abs(Number(note.amount));
+        totals.set(note.property, sum);
+      });
+      seen.forEach(item => {
+        const sum = totals.get(item.property) || { in: 0, out: 0 };
+        const amount = store.entryTotal(item.id);
+        if (item.type === 'income' || (item.type === 'net' && amount > 0)) sum.in += Math.abs(amount); else sum.out += Math.abs(amount);
+        totals.set(item.property, sum);
+      });
+      const totalText = [...totals.entries()].map(([property, sum]) => `${regions[property]?.code || property}${sum.out ? ` −${formatMoney(sum.out, property)}` : ''}${sum.in ? ` +${formatMoney(sum.in, property)}` : ''}`).join(' · ');
+      const rows = [];
+      members.entries.forEach(item => rows.push({ when: item.date, html: groupRow({ jump: sharedJump(item), day: item.date.slice(8), what: item.description, hint: `${item.category} · ${regions[item.property]?.code || item.property}`, amount: store.entryTotal(item.id), property: item.property, type: item.type, remove: { kind: 'entry', id: item.id } }) }));
+      members.notes.forEach(note => {
+        const parent = transactions.find(row => row.id === note.parentId);
+        if (!parent) return;
+        rows.push({ when: note.date, html: groupRow({ jump: { ...sharedJump(parent), noteId: note.id }, day: note.date.slice(8), what: note.description, hint: `note on “${parent.description}” · ${parent.category} · ${regions[parent.property]?.code || parent.property}`, amount: Number(note.amount), property: parent.property, type: parent.type, signed: parent.type !== 'income' && parent.type !== 'net' ? false : true, remove: { kind: 'note', id: note.id } }) });
+      });
+      const place = at => ({ year: at.year, mKey: keyOf(at.year, at.monthIndex), property: at.property, type: at.type, entryId: null, noteId: null, category: at.category || '' });
+      const sum = at => groupEntriesOf(at).reduce((total, item) => total + (item.type === 'income' ? 1 : item.type === 'net' ? Math.sign(store.entryTotal(item.id)) || 1 : -1) * Math.abs(store.entryTotal(item.id)), 0);
+      members.sections.forEach(at => rows.push({ when: `${keyOf(at.year, at.monthIndex)}-00`, html: groupRow({ jump: place(at), day: '▤', what: at.section, hint: `section · ${groupEntriesOf(at).length} entries · ${regions[at.property]?.code || at.property}`, amount: sum(at), property: at.property, type: 'net', signed: true, remove: { kind: 'section', ...at } }) }));
+      members.subsections.forEach(at => rows.push({ when: `${keyOf(at.year, at.monthIndex)}-00`, html: groupRow({ jump: place(at), day: '▤', what: `${at.section} › ${at.category}`, hint: `subsection · ${groupEntriesOf(at).length} entries · ${regions[at.property]?.code || at.property}`, amount: sum(at), property: at.property, type: 'net', signed: true, remove: { kind: 'subsection', ...at } }) }));
+      rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
+      const months = new Map();
+      rows.forEach(row => { const key = String(row.when).slice(0, 7); (months.get(key) || months.set(key, []).get(key)).push(row.html); });
+      const body = [...months.entries()].map(([key, list]) => `<div class="card-link-month"><h4>${escapeHtml(monthLabel(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1)))}</h4>${list.join('')}</div>`).join('') || '<p class="ledger-none">Nothing in this group yet. Press “Add more” and click rows in the ledger.</p>';
+      const swatches = GROUP_COLOURS.map(colour => `<button type="button" class="group-swatch${colour === groupColour(id) ? ' is-on' : ''}" data-group-colour="${colour}" style="--g:${colour}" aria-label="Colour ${colour}"></button>`).join('');
+      return `<div class="modal-header"><div><p><button type="button" class="group-back" data-group-index><i class="ti ti-arrow-left" aria-hidden="true"></i> All groups</button></p><h2><span class="group-mark" style="--g:${escapeHtml(groupColour(id))}"><i class="ti ti-stack-2" aria-hidden="true"></i></span> ${escapeHtml(group.name)}</h2><p>${seen.size} ${seen.size === 1 ? 'entry' : 'entries'}${totalText ? ` · ${escapeHtml(totalText)}` : ''}</p></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>${isViewer ? '' : `<div class="group-tools">${swatches}<span></span><button type="button" class="quiet-button" data-group-more>Add more</button><button type="button" class="icon-button" data-group-rename aria-label="Rename group" title="Rename"><i class="ti ti-pencil" aria-hidden="true"></i></button><button type="button" class="icon-button" data-group-delete aria-label="Delete group" title="Delete group (nothing in it is deleted)"><i class="ti ti-trash" aria-hidden="true"></i></button></div>`}<div class="group-body">${body}</div>`;
+    }
+    function groupRow({ jump, day, what, hint, amount, property, type, signed = false, remove }) {
+      const negative = signed ? amount < 0 : type !== 'income' && !(type === 'net' && amount > 0);
+      return `<div class="card-link-row"><button type="button" class="card-link-open" data-group-jump="${escapeHtml(JSON.stringify(jump))}" title="Go to it in its month"><span class="card-link-day">${escapeHtml(day)}</span><span class="card-link-what"><b>${escapeHtml(what)}</b><small>${escapeHtml(hint)}</small></span><span class="card-link-amt ${negative ? 'expense' : 'income'}">${negative ? '−' : '+'}${formatMoney(Math.abs(amount), property)}</span></button><button type="button" class="card-link-unlink" data-group-remove="${escapeHtml(JSON.stringify(remove))}" title="Take it out of this group" aria-label="Take out of group"><i class="ti ti-x" aria-hidden="true"></i></button></div>`;
+    }
+    // One listener for all of it, in the capture phase so it comes before the ledger's own click handling: a mark opens its
+    // group; while the bar is open a click on a row puts it in or takes it out instead of opening it.
+    document.addEventListener('click', event => {
+      const mark = event.target.closest('[data-group-open]');
+      if (mark) { event.preventDefault(); event.stopPropagation(); return openGroupDialog(mark.dataset.groupOpen); }
+      if (event.target.closest('#groups-button')) return openGroupDialog(null);
+      if (event.target.closest('[data-gt-cancel]')) return stopGrouping();
+      if (event.target.closest('[data-gt-add]')) return addStagedToGroup();
+      if (!grouping.active || !event.target.closest('#ledger') || event.target.closest('form, input, a')) return;
+      const item = stageable(menuTargetFor(event.target));
+      if (!item) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleStaged(item);
+    }, true);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && grouping.active) { event.preventDefault(); stopGrouping(); }
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.matches?.('[data-group-open]')) { event.preventDefault(); openGroupDialog(event.target.dataset.groupOpen); }
+      if (event.key === 'Enter' && event.target.matches?.('#group-tray .gt-name')) { event.preventDefault(); addStagedToGroup(); }
+    });
+
     // ---- The day pop-up: a day's settlements (top, 80%) and its hashtags (bottom, 20%) ----------------------
     // The day number is an orb in the ledger; clicking it opens this, for that one entry.
     const dayState = { id: null };
@@ -5230,6 +5779,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       delete copy.moneyId;
       delete copy.moneyRole;
       delete copy.moneyRef;
+      delete copy.groups;
       // What a repayment covered names the
       // subsections of the settlement it was written in, and a copy landing anywhere else would be naming things
       // that are not there — so it arrives saying nothing about what it covers, to be said again where it lands.
@@ -5277,6 +5827,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         delete note.moneyId;
         delete note.moneyRole;
         delete note.moneyRef;
+        delete note.groups;
         if (!scope.isEvent) delete note.eventId;
         notes.push(note);
       };
@@ -5307,6 +5858,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         delete made.moneyId;
         delete made.moneyRole;
         delete made.moneyRef;
+        delete made.groups;
         return made;
       });
       transactions.push(...made);
@@ -5773,6 +6325,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           delete note.moneyId;
           delete note.moneyRole;
           delete note.moneyRef;
+          delete note.groups;
           if (Array.isArray(item.tags)) note.tags = [...item.tags];
           if (!scope.isEvent) delete note.eventId;
           transactions.push(note);
@@ -6020,6 +6573,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
             ? { icon: 'lock-open', label: `Reopen this ${one}`, hint: 'so it takes entries again', run: () => setSectionClosed(mKey, property, target.section, false) }
             : { icon: 'lock', label: `Close this ${one}`, hint: 'keeps its figures, takes no more entries', run: () => setSectionClosed(mKey, property, target.section, true) }] : []),
           ...[aboutAction(target)].filter(Boolean),
+          ...groupItems(target),
           ...cutItems(),
           { icon: 'copy', label: `Copy ${target.section ? 'section' : `all of ${target.label}`}`, hint: 'its name and subsections', run: () => copySections(mKey, property, target.type, target.section) },
           ...pasteAction,
@@ -6048,6 +6602,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           : [];
         return write([
           { icon: 'plus', label: 'Add entry', hint: 'to this subsection', run: add },
+          ...groupItems(target),
           ...group('Share & settle', 'users', 'use as a repayment, set how it counts', [...repayLinkItems(target), ...roleItems, ...setupItems]),
           ...group('Order, move & copy', 'arrows-move', clipboard ? 'something is ready to paste' : 'sort, cut, copy, paste', [...sortItems(), ...cutItems(), { icon: 'copy', label: 'Copy subsection', run: () => copySubsection(mKey, property, target.type, home, target.category) }, ...pasteAction]),
           ...group('Details', 'notes', 'description', [...[aboutAction(target)].filter(Boolean)]),
@@ -6127,6 +6682,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         return write([
           { icon: 'pencil', label: 'Edit', hint: 'name, amount, date', run: edit({ kind: 'entry', id: target.id }) },
           { icon: 'corner-down-right', label: 'Add note', hint: 'a line inside this entry', run: add },
+          ...groupItems(target),
           ...group('Share & settle', 'users', 'split a cost, repay, link to a shared expense', [...sharedAction(target.id), ...repayLinkItems(target), ...splitItems, ...allocItems, ...moneyItems]),
           ...group('Move & copy', 'arrows-move', clipboard ? 'something is ready to paste' : 'move, copy, cut, paste', [...cutItems(), ...moveToItems(), { icon: 'copy', label: 'Copy entry', hint: 'with its notes', run: () => copyEntry(target.id) }, ...pasteAction]),
           ...group('Details', 'notes', 'description, tags, special card', [...[aboutAction(target)].filter(Boolean), { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) }, ...cardLinkAction(target.id)]),
@@ -6135,6 +6691,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       }
       return write([
         { icon: 'pencil', label: 'Edit', run: edit({ kind: 'note', id: target.id }) },
+        ...groupItems(target),
         ...[aboutAction(target)].filter(Boolean),
         { icon: 'hash', label: 'Tags…', run: () => openTagPicker(target.row.querySelector('.ledger-entry-desc') || target.row) },
         ...pasteAction,
