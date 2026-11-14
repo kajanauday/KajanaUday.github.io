@@ -2370,6 +2370,8 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .mp-row small { color: var(--muted); font-size: 10.5px; }
 .mp-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .mp-actions .quiet-button { min-height: 28px; padding: 0 8px; font-size: 12.5px; }
+.ledger-state.is-buffered.is-lendable { border: 0; font: inherit; cursor: pointer; }
+.ledger-state.is-buffered.is-lendable:hover { background: color-mix(in srgb, var(--muted) 30%, transparent); }
 .ledger-state.is-buffered { margin-left: 4px; background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
 
 /* The totals line of a currency: no separator dots between the figures (the spacing stays), and the dot standing for an empty region is twice as big. */
@@ -2413,3 +2415,6 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .legend-pop[hidden] { display: none; }
 .legend-pop .lg-body { padding: 10px 12px 12px; }
 .legend-bar { display: none; }
+.trash-count { display: none !important; }
+.trash-note b { color: var(--ink); }
+.ledger-cat.is-direct > .ledger-entries:empty { display: none; }

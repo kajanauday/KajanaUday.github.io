@@ -521,6 +521,8 @@
     const given = String(names?.[kind] ?? '').trim();
     return given || BLOCK_NAMES[kind] || BLOCK_NAMES.settlement;
   };
+  // The entry lendBuffer writes in a borrowed section to take the lent buffer out of its sum.
+  const isBufferOffset = item => !item.parentId && item.moneyRole === 'borrow' && Number(item.amount) > 0 && String(item.description || '').startsWith('Buffer lent out:');
   const MONEY_OUT_KINDS = ['hold', 'lent', 'borrowed'];
   const sectionKind = section => (SECTION_KINDS.includes(section?.kind) ? section.kind : 'settlement');
   const subsectionRole = (section, name) => {
@@ -1324,6 +1326,11 @@
     }
     // What a loan, hold or lending still has out, taking every month it is linked through: the original amounts (positive) less what came back or
     // was paid (negative), for the entries in the subsections that count that way. { total, positives }: open when total > 0, over-paid when < 0.
+    linkedBufferLent(link, currency) {
+      const sections = new Set(this.linkedSections(link, currency).map(({ year, monthIndex, section }) => `${year}-${String(monthIndex + 1).padStart(2, '0')}|${section.name}`));
+      return this.transactions.filter(item => !item.parentId && !item.eventId && item.property === currency && isBufferOffset(item) && sections.has(`${item.date.slice(0, 7)}|${item.section}`))
+        .reduce((sum, item) => sum + this.entryTotal(item.id), 0);
+    }
     linkedRoleTotals(link, currency, kind) {
       const role = MONEY_ACCOUNT_ROLES[kind];
       if (!link || !role) return { total: 0, positives: 0 };
@@ -2230,7 +2237,13 @@
               const mine = Number(built._meta.settle?.[{ hold: 'held', lent: 'lent', borrowed: 'borrowed' }[built._meta.kind]]) || 0;
               const net = own ? own.total : mine;
               // Paid back (or given back) more than was out: only noted, as "Buffered"; nothing is done with it.
-              built._meta.buffered = net < 0 && (own ? own.positives > 0 : true);
+              const over = net < 0 && (own ? own.positives > 0 : true) ? -net : 0;
+              // What has been lent on it (see lendBuffer) is read from the offsetting entries it left in the section, so deleting one corrects the figure.
+              const lentOn = own ? this.linkedBufferLent(section.link, currency) : items.filter(item => item.section === section.name && isBufferOffset(item)).reduce((sum, item) => sum + this.entryTotal(item.id), 0);
+              // The lent part has been taken out of the section's sum by an offsetting entry, so what is left over is only the rest.
+              built._meta.bufferLent = Math.max(0, lentOn);
+              built._meta.bufferLeft = over;
+              built._meta.buffered = over > 0;
               built._meta.outstanding = Math.max(0, net);
             }
             // The section's own description and each subsection's, kept with the section so they travel with it.

@@ -631,6 +631,76 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       });
       return extras;
     }
+    // Adds an entry straight to a section, with no subsection of the user's making: it goes in the reserved "Direct entries"
+    // subsection, which is drawn without a heading (see CategoryBlock) and made the first time it is needed.
+    function addDirectEntry(mKey, property, type, sectionName) {
+      if (isViewer) return viewOnly();
+      if (hasDraft()) return showToast('Save or cancel the current inline edit first.');
+      const direct = window.LedgerBlueprints.DIRECT_SUBSECTION;
+      const scope = panelScope(mKey, property);
+      const candidates = scope.own().filter(item => item.type === type);
+      const section = candidates.find(item => item.name === sectionName) || candidates.find(item => !item.closed);
+      if (!section) return showToast('Add a section for this month first: right-click the currency header.');
+      if (section.closed) return showToast(`“${section.name}” is closed. Reopen it to add to it.`);
+      if (!section.subsections.includes(direct)) {
+        section.subsections.push(direct);
+        if (type === 'net') (section.roles ||= {})[direct] = ExpenseStore.SECTION_ROLES.fallback[ExpenseStore.sectionKind(section)];
+        scope.save();
+      }
+      entryDraft = { month: mKey, property, section: section.name, type, category: direct };
+      revealKey = catKey(mKey, property, type, direct);
+      renderLedger();
+      showToast(`Add an entry to ${section.name}.`);
+    }
+    // Turns the extra paid back on borrowed money (the "Buffered" amount) into money lent: an entry "Lent from: <section> / <subsection>"
+    // in the month's lent section (made if the month has none). An offsetting "Buffer lent out" entry in the borrowed section records how much was lent, so its
+    // label reads "Lent buffered: …"; anything paid beyond that is buffered again.
+    function lendBuffer(mKey, property, sectionName) {
+      if (isViewer) return viewOnly();
+      if (String(mKey).startsWith('ev:')) return showToast('Lending the buffer is for months, not events.');
+      const [year, monthIndex] = yearMonthOf(mKey);
+      const sections = store.ownSections(year, monthIndex, property);
+      const source = sections.find(item => item.type === 'net' && item.name === sectionName);
+      const built = store.groupIntoSections(store.items(year, property, monthIndex), store.sections(year, monthIndex, property), '9999-12-31', property)[sectionName];
+      const left = built?._meta?.bufferLeft || 0;
+      if (!source || ExpenseStore.sectionKind(source) !== 'borrowed' || left <= 0) return showToast('There is no buffer left to lend here.');
+      if (!source.subsections.some(name => ExpenseStore.subsectionRole(source, name) === 'borrow')) return showToast('This section has no borrowing subsection to take the buffer out of.');
+      // The subsection the extra was paid in: the latest repayment of this section in the month.
+      const repaid = transactions.filter(item => !item.parentId && item.property === property && item.section === sectionName
+        && item.date.startsWith(mKey) && item.moneyRole === 'borrow' && item.amount < 0).sort((a, b) => a.date.localeCompare(b.date)).pop();
+      const from = `Lent from: ${sectionName}${repaid ? ` / ${repaid.category}` : ''}`;
+      let lentSection = sections.find(item => item.type === 'net' && ExpenseStore.sectionKind(item) === 'lent' && !item.closed);
+      if (!lentSection) {
+        const name = sections.some(item => item.name === 'Lent') ? 'Lent out' : 'Lent';
+        if (sections.some(item => item.name === name)) return showToast('This month already has a section called “Lent out”. Rename it first.');
+        sections.push(lentSection = { name, type: 'net', kind: 'lent', block: true, subsections: [], roles: {}, calc: ExpenseStore.defaultCalc('lent') });
+      }
+      let sub = lentSection.subsections.find(name => ExpenseStore.subsectionRole(lentSection, name) === 'lend');
+      if (!sub) {
+        sub = 'From buffer';
+        if (!lentSection.subsections.includes(sub)) lentSection.subsections.push(sub);
+        (lentSection.roles ||= {})[sub] = 'lend';
+      }
+      const today = new Date();
+      const day = keyOf(today.getFullYear(), today.getMonth()) === mKey ? today.getDate()
+        : mKey < keyOf(today.getFullYear(), today.getMonth()) ? new Date(year, monthIndex + 1, 0).getDate() : 1;
+      transactions.push({
+        id: newRowId(), property, date: `${mKey}-${String(day).padStart(2, '0')}`, section: lentSection.name, category: sub,
+        description: from, place: '', amount: left, type: 'net', moneyRole: 'lend'
+      });
+      // The same amount leaves the borrowed section's sum, so its buffer is gone: an entry that cancels the extra paid back.
+      const offsetSub = repaid?.category || source.subsections.find(name => ExpenseStore.subsectionRole(source, name) === 'borrow');
+      if (offsetSub) {
+        transactions.push({
+          id: newRowId(), property, date: `${mKey}-${String(day).padStart(2, '0')}`, section: sectionName, category: offsetSub,
+          description: `Buffer lent out: ${lentSection.name}`, place: '', amount: left, type: 'net', moneyRole: 'borrow'
+        });
+      }
+      trackSave(store.saveMonthSections(year, monthIndex, property, sections));
+      saveTransactions();
+      renderLedger();
+      showToast(`Lent ${formatMoney(left, property)} to “${lentSection.name}”: ${from}.`);
+    }
     // Makes an original ready to be repaid or added to: its section carries a link across months, and it has a key its repayments point at.
     async function prepareMoneySource(source, kind) {
       const role = CLOSE_TEXT[kind].role;
@@ -1792,7 +1862,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const count = store.trashList.length;
       const badge = document.querySelector('#trash-count');
       if (!badge) return;
-      badge.hidden = !count;
+      badge.hidden = true; // the count is shown inside the bin, not on its icon
       badge.textContent = String(count);
       const button = document.querySelector('#trash-button');
       if (button) button.hidden = isViewer;
@@ -1822,7 +1892,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       if (!dialog) return;
       const list = store.trashList;
       dialog.innerHTML = `<div class="modal-header"><div><p>Recently deleted</p><h2>Dustbin</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-        <p class="trash-note">The last 25 deletions, newest first. A new one over 25 pushes out the oldest.</p>
+        <p class="trash-note"><b>${list.length} of 25</b> kept, newest first. A new deletion over 25 pushes out the oldest.</p>
         <ul class="trash-list">${list.map(item => {
           const [icon, word] = TRASH_KIND[item.kind] || ['trash', 'Item'];
           const when = new Date(item.at);
@@ -2302,6 +2372,13 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         if (Date.now() < suppressClickUntil && !event.target.closest('form')) {
           suppressClickUntil = 0;
           return event.preventDefault();
+        }
+        // The "Buffered" label on borrowed money paid back beyond what was owed: records that extra as lent.
+        const lendButton = event.target.closest('[data-lend-buffer]');
+        if (lendButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          return lendBuffer(lendButton.dataset.month, lendButton.dataset.property, lendButton.dataset.section);
         }
         // A subsection's Day or Amount sort button: orders its entries and their notes. It sits in the row's <summary>,
         // so the default (opening or closing the row) is prevented, and it never counts toward a double-click rename.
@@ -5705,6 +5782,20 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         }
         const into = sectionFor(target.type, target.section);
         if (!into) return showToast('Could not paste that entry here.');
+        // Dropped on a section "as an entry": it is copied as it is into the section's own entries (no subsection of its own).
+        if (target.kind === 'section' && target.asEntry) {
+          const direct = window.LedgerBlueprints.DIRECT_SUBSECTION;
+          if (!into.subsections.includes(direct)) {
+            into.subsections.push(direct);
+            if (into.type === 'net') (into.roles ||= {})[direct] = roleArriving(into, item.type);
+            scope.save();
+          }
+          copied += cloneEntry(item, mKey, property, into.name, direct, into.type);
+          saveTransactions();
+          revealKey = catKey(mKey, property, into.type, direct);
+          renderLedger();
+          return showToast(`Pasted “${item.description}” as an entry in ${into.name}.${crossedNote()}`);
+        }
         // Dropped on a section, so it becomes a subsection there and its notes become the entries in it.
         if (target.kind === 'section') {
           const made = openEntryIntoSubsection(item, into, mKey, property);
@@ -5788,6 +5879,10 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           : fits.fold === 'subsection'
             ? { icon: 'arrow-bar-to-up', label: 'Paste entry here as a subsection', hint: 'its notes become the entries in it', paste: fits }
             : { icon: 'clipboard', label: `Paste ${clipboard.kind === 'entry' ? 'entry' : `“${clipboard.label}”`}`, hint: clipboard.kind === 'entry' ? 'a copy, with its notes' : `from ${scopeName(clipboard.mKey, clipboard.property)}`, paste: fits }] : [];
+      // An entry on the clipboard can also land on a section as an entry of its own, beside the subsections.
+      if (fits && clipboard.kind === 'entry' && target.kind === 'section' && !isEvent) {
+        pasteAction.unshift({ icon: 'clipboard', label: `Paste “${clipboard.label}” here as an entry`, hint: 'straight into this section', paste: { entries: true, only: true }, target: { ...target, asEntry: true } });
+      }
       const write = list => (isViewer ? list.filter(item => item.read) : list);
       // A group of related lines under one heading, opened on click: keeps the menu short and says in plain words what is inside.
       const group = (label, icon, hint, items) => {
@@ -5909,6 +6004,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           ? panelScope(mKey, property).sections().find(item => item.type === 'net' && item.name === target.section)
           : null;
         return write([
+          ...(isEvent ? [] : [{ icon: 'plus', label: 'Add entry', hint: 'straight to this section', run: () => addDirectEntry(mKey, property, target.type, target.section) }]),
           { icon: 'plus', label: 'Add subsection', run: add },
           ...group('Share & settle', 'users', 'use as a repayment', repayLinkItems(target)),
           ...(section?.mergedSections?.length > 1

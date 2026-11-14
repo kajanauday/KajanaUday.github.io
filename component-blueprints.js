@@ -160,10 +160,19 @@
   // ---- a settlement's or a pot's lifecycle ------------------------------------------------------
   // Draft → Open → Clear → Settled → Merged. Worked out from what the section holds (see ExpenseStore.sectionState),
   // so it can never disagree with its entries.
-  const StateCapsule = (meta, ctx) => {
+  const StateCapsule = (meta, ctx, where = null) => {
     const state = store()?.sectionState ? store().sectionState(meta) : null;
-    const buffered = meta?.buffered ? '<span class="ledger-state is-buffered" title="Paid more than was out. Only noted; nothing is done with it.">Buffered</span>' : '';
-    return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>${buffered}` : '';
+    // Borrowed money paid back beyond what was owed: the extra is a buffer. Click it to record it as lent (see lendBuffer);
+    // once lent, the label says how much, and what is paid beyond that is buffered again.
+    const canLend = meta?.kind === 'borrowed' && where && meta.bufferLeft > 0;
+    const lent = meta?.kind === 'borrowed' && meta.bufferLent > 0 && where
+      ? `<span class="ledger-state is-buffered is-lent" title="Lent out of the extra you paid back; see the Lent section.">Lent buffered: ${ctx.exact(meta.bufferLent, where.property)}</span>` : '';
+    const buffered = meta?.buffered
+      ? (canLend
+        ? `<button type="button" class="ledger-state is-buffered is-lendable" data-lend-buffer data-month="${ctx.esc(where.mKey)}" data-property="${ctx.esc(where.property)}" data-section="${ctx.esc(where.section)}" title="Paid more than was owed (${ctx.esc(ctx.exact(meta.bufferLeft, where.property))}). Click to record it as lent.">Buffered</button>`
+        : '<span class="ledger-state is-buffered" title="Paid more than was out. Only noted; nothing is done with it.">Buffered</span>')
+      : '';
+    return state ? `<span class="ledger-state is-${state.key}" title="${ctx.esc(state.title)}">${ctx.esc(state.label)}</span>${lent}${buffered}` : '';
   };
 
   // A settlement's heading carries one figure: what it posts to the month, green when it is income and red when it is
@@ -487,6 +496,9 @@
     const mine = owed > 0;
     return `<small class="purpose-mark is-${mine ? 'in' : 'out'}" title="${ctx.esc(`${mine ? 'Still owed to you' : 'You still owe'} on ${purpose.name}`)}">${mine ? '' : '−'}${ctx.fmt(Math.abs(owed), property)} open</small>`;
   };
+  // Entries added straight to a section live in one reserved subsection, drawn with no heading of its own: just its entries,
+  // above the section's other subsections. (Anywhere that does not know about it, it reads as an ordinary subsection.)
+  const DIRECT_SUBSECTION = 'Direct entries';
   const CategoryBlock = (name, category, { mKey, type, property, sectionName, eventId, share = null, about = '', kind = null, purpose = null }, state, ctx) => {
     const key = ctx.catKey(mKey, property, type, eventId ? `${eventId}:${name}` : name);
     const inYear = isYearKey(mKey);
@@ -506,6 +518,10 @@
     // In the year card a subsection is a row per section, so the section must match too.
     if (e?.kind === 'category' && e.month === mKey && e.property === property && e.type === type && e.category === name && (!inYear || e.section === sectionName)) {
       return `<div class="ledger-cat is-editing" data-key="${ctx.esc(ctx.catKey(mKey, property, type, name))}" data-category="${ctx.esc(name)}"><form class="ledger-form cat-rename-form" data-ledger-form="rename-category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}" novalidate><input name="name" value="${ctx.esc(name)}" maxlength="40" aria-label="Subsection name" autocomplete="off"><strong${type === 'net' ? ` class="${toneOf(type, category._meta.total)}"` : ''}>${amountText(type, category._meta.total, property, ctx)}</strong><p class="ledger-form-hint" aria-live="polite">${inYear ? `Renames it in every month of ${mKey.slice(3)}` : ''}</p>${inYear ? '' : `<span class="ledger-entry-actions">${DeleteButton(`data-delete-row="category" data-month="${mKey}" data-property="${property}" data-type="${type}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"`)}</span>`}</form><div class="ledger-entries">${entries}</div></div>`;
+    }
+    if (name === DIRECT_SUBSECTION && !inYear && !eventId) {
+      const direct = entryDraftMatches(state.entryDraft, { mKey, property, sectionName, name });
+      return `<div class="ledger-cat is-direct" data-key="${ctx.esc(key)}" data-section="${ctx.esc(sectionName)}" data-category="${ctx.esc(name)}"><div class="ledger-entries">${direct ? EntryForm({ mKey, property, type, category: name, sectionName }, ctx) : ''}${entries}</div></div>`;
     }
     // A subsection with nothing under it shows no arrow, so the arrow always means there is something to open.
     // An event's subsection shown inside a month is read-only there (data-event-id); it is edited in the event.
@@ -585,7 +601,7 @@
     const sumOf = list => list.reduce((sum, { category }) => sum + category._meta.total, 0);
     // In the year card each subsection shows its share of its section.
     const categoryRows = (list, whole) => [...list]
-      .sort((a, b) => b.category._meta.total - a.category._meta.total)
+      .sort((a, b) => (b.name === DIRECT_SUBSECTION) - (a.name === DIRECT_SUBSECTION) || b.category._meta.total - a.category._meta.total)
       .map(({ name, category, sectionName, eventId, about, kind, purpose }) => CategoryBlock(name, category, { mKey, type, property, sectionName, eventId, about, kind, purpose, share: inYear ? shareOf(category._meta.total, whole) : null }, state, ctx))
       .join('');
     // A year card's Income or Expenses block that holds several sections shows each under its own heading, with its share
@@ -629,7 +645,7 @@
     // keeps the capsule. data-state stays on the element either way: it is what the section's left edge is coloured
     // from, and what anything looking for the state reads.
     const lifeState = meta?.kind && store()?.sectionState ? store().sectionState(meta) : null;
-    const stateBadge = lifeState && lifeState.kind !== 'settlement' ? StateCapsule(meta, ctx) : '';
+    const stateBadge = lifeState && lifeState.kind !== 'settlement' ? StateCapsule(meta, ctx, heading ? { mKey, property, section: heading.section } : null) : '';
     // A settlement shows the status word from its description and nothing else: the dot beside it was a second mark
     // for the same description, on a heading that already carries a name, a status and two figures. The description
     // itself is one press away, on the row's menu (“Description…”). A pot keeps both marks.
@@ -897,5 +913,5 @@
   const MonthGroup = (title, count, blocksHtml, unit = 'months') =>
     `<div class="month-group"><p class="month-group-label"><span>${title}</span>${count > 1 ? `<small>${count} ${unit}</small>` : ''}</p>${blocksHtml}</div>`;
 
-  global.LedgerBlueprints = { SortHint, SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
+  global.LedgerBlueprints = { DIRECT_SUBSECTION, SortHint, SectionRuleFields, SplitMark, AllocMark, PurposeMark, SORT_LABELS, GROUPS, ROLE_CHOICES, StatusCapsule, AboutMark, AboutTags, StateCapsule, SettleTotals, EntryForm, SubEntryForm, EditEntryForm, SubsectionForm, SectionForm, SubEntryRow, EntryRow, CategoryBlock, TypeSection, GroupBlock, CurrencyPanel, YearTabs, MonthSummary, MonthBlock, MonthGroup };
 })(typeof globalThis !== 'undefined' ? globalThis : window);
