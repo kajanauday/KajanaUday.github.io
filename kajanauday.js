@@ -1279,7 +1279,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     function dateFromForm(fields, month) {
       if (fields.date) return /^\d{4}-\d{2}-\d{2}$/.test(fields.date.value) ? fields.date.value : null;
       const day = Number(fields.day.value);
-      return Number.isInteger(day) && day >= 1 && day <= Number(fields.day.max) ? `${month}-${String(day).padStart(2, '0')}` : null;
+      // Any day to 31 is accepted; a day past the end of a shorter month lands on its last day.
+      const last = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate() || 31;
+      return Number.isInteger(day) && day >= 1 && day <= 31 ? `${month}-${String(Math.min(day, last)).padStart(2, '0')}` : null;
     }
     // Adds a subsection to this panel's own list for this currency; other months and events keep theirs.
     function saveDraftSubsection(form) {
@@ -4334,6 +4336,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const mark = event.target.closest('[data-group-open]');
       if (mark) { event.preventDefault(); event.stopPropagation(); return openGroupDialog(mark.dataset.groupOpen); }
       if (event.target.closest('#groups-button')) return openGroupDialog(null);
+      if (event.target.closest('#people-button')) return openPeopleDialog();
       if (event.target.closest('[data-gt-cancel]')) return stopGrouping();
       if (event.target.closest('[data-gt-add]')) return addStagedToGroup();
       if (!grouping.active || !event.target.closest('#ledger') || event.target.closest('form, input, a')) return;
@@ -4474,6 +4477,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
     document.addEventListener('click', event => {
       const undo = event.target.closest('[data-undo-settle]');
       if (undo) { event.preventDefault(); event.stopPropagation(); undoSettlement(undo.dataset.undoSettle); }
+      const record = event.target.closest('[data-record-settle]');
+      if (record) { event.preventDefault(); event.stopPropagation(); recordSettlementAsRepayment(record.dataset.recordSettle); }
     }, true);
     const goSeriesRow = row => {
       document.querySelector('#series-history-dialog').close();
@@ -4758,6 +4763,101 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderSharedPanel();
       document.querySelector('#shared-dialog').showModal();
     }
+    // ---- People: one place to see everyone I share costs with -------------------------------------
+    // Reads the same figures as the settle panel (SharedLedger.pending per person and currency) and only lists them:
+    // who owes whom, what is open and since when. "Settle up" hands over to the settle panel, and coming back from it
+    // returns here, so settling several people is one trip down the list.
+    const peopleState = { open: new Set(), from: false };
+    function peopleRows() {
+      return sharedPeople().map(person => {
+        const { entries, settles, pending } = sharedBundle(person.property, person.name);
+        const open = [...pending.receivable, ...pending.payable].sort((x, y) => String(x.entry.date).localeCompare(String(y.entry.date)));
+        const dates = [...new Set(settles.map(settle => String(settle.date || '')).filter(Boolean))].sort();
+        const last = dates[dates.length - 1] || '';
+        return { ...person, pending, open, last, entries, settles, count: entries.length, range: peopleRange(entries.map(entry => String(entry.date || '')).filter(Boolean).sort(), dates, open.length > 0) };
+      }).sort((x, y) => (Number(y.open.length > 0 || y.pending.overall !== 0) - Number(x.open.length > 0 || x.pending.overall !== 0))
+        || Math.abs(y.pending.overall) - Math.abs(x.pending.overall) || x.name.localeCompare(y.name));
+    }
+    // The stretch of time a person's current account covers, shown beside their name as 10.11.26–21.11.26:
+    //   open:     from the first item after the last settlement (or the oldest open one) to "Present";
+    //   settled:  from the first item after the settlement before it (or the very first item) to the last settlement.
+    // Both ends may be the same day. Dates are YYYY-MM-DD, so they compare as text.
+    function peopleRange(items, settleDates, isOpen) {
+      if (!items.length) return null;
+      const last = settleDates[settleDates.length - 1];
+      if (isOpen) {
+        const start = (last ? items.find(date => date > last) : null) || items[0];
+        return { from: start, to: null };
+      }
+      if (!last) return { from: items[0], to: items[items.length - 1] };
+      const before = settleDates[settleDates.length - 2];
+      const start = items.find(date => (!before || date > before) && date <= last) || items.find(date => date <= last) || last;
+      return { from: start < last ? start : last, to: last };
+    }
+    const peopleDay = date => { const [y, m, d] = String(date).split('-'); return y && m && d ? `${d}.${m}.${y.slice(-2)}` : String(date || ''); };
+    const peopleSpan = range => (range ? `${peopleDay(range.from)}–${range.to ? peopleDay(range.to) : 'Present'}` : '');
+    const peopleInitials = name => (name.trim().split(/\s+/).map(part => [...part][0]).slice(0, 2).join('') || '?').toUpperCase();
+    function peopleItemHtml(row, name, property) {
+      const entry = row.entry;
+      const mine = row.direction === 'friend-owes-me';
+      const who = entry.paidBy === 'friend' ? `${name} paid` : 'I paid';
+      const partly = row.owed < Math.round(Math.abs(entry.amount) * (mine ? entry.hisPct : 100 - entry.hisPct) / 100) ? ' · part paid' : '';
+      return `<li class="people-item"><span class="people-what"><b>${escapeHtml(entry.description)}</b><small>${escapeHtml(entry.date)} · ${escapeHtml(who)} · ${sharedMoney(Math.abs(entry.amount), property)} total${partly}</small></span><em class="${mine ? 'is-in' : 'is-out'}">${mine ? '+' : '−'}${sharedMoney(row.owed, property)}</em></li>`;
+    }
+    function peopleHtml(rows) {
+      if (!rows.length) return '<p class="ledger-none">Nobody yet. Right-click an expense and choose “Mark as shared…”.</p>';
+      const totals = new Map();
+      rows.forEach(person => {
+        const sum = totals.get(person.property) || { owed: 0, owe: 0 };
+        if (person.pending.overall > 0) sum.owed += person.pending.overall; else sum.owe -= person.pending.overall;
+        totals.set(person.property, sum);
+      });
+      const code = property => regions[property]?.code || property;
+      const summary = [...totals].map(([property, sum]) => `<div class="people-total"><small>${escapeHtml(code(property))}</small><span class="is-in">You are owed <b>${sharedMoney(sum.owed, property)}</b></span><span class="is-out">You owe <b>${sharedMoney(sum.owe, property)}</b></span></div>`).join('');
+      const list = rows.map(person => {
+        const { overall, buffer } = person.pending;
+        const square = overall === 0 && !person.open.length;
+        const text = square ? 'settled up' : overall === 0 ? 'all square' : overall > 0 ? `owes you ${sharedMoney(overall, person.property)}` : `you owe ${sharedMoney(overall, person.property)}`;
+        const key = escapeHtml(person.key);
+        const owedItems = person.open.filter(row => row.direction === 'friend-owes-me');
+        const oweItems = person.open.filter(row => row.direction !== 'friend-owes-me');
+        const group = (title, items, cls) => items.length ? `<p class="people-sub ${cls}">${title}</p><ul class="people-items">${items.map(row => peopleItemHtml(row, person.name, person.property)).join('')}</ul>` : '';
+        const note = buffer ? `<p class="people-note">${buffer > 0 ? `${escapeHtml(person.name)} has paid ${sharedMoney(buffer, person.property)} ahead` : `You have paid ${sharedMoney(buffer, person.property)} ahead`}; it is taken off the balance above.</p>` : '';
+        return `<details class="people-row${square ? ' is-square' : ''}" data-people-key="${key}"${peopleState.open.has(person.key) ? ' open' : ''}>
+          <summary><span class="people-avatar" aria-hidden="true">${escapeHtml(peopleInitials(person.name))}</span><span class="people-who"><b>${escapeHtml(person.name)}${person.range ? ` <span class="people-range">${escapeHtml(peopleSpan(person.range))}</span>` : ''}</b><small>${escapeHtml(code(person.property))} · ${person.open.length} open${person.last ? ` · last payment ${escapeHtml(person.last)}` : ''}</small></span><span class="people-net ${overall > 0 ? 'is-in' : overall < 0 ? 'is-out' : ''}">${escapeHtml(text)}</span></summary>
+          <div class="people-body">${group('They owe me', owedItems, 'is-in')}${group('I owe them', oweItems, 'is-out')}${person.open.length ? '' : '<p class="people-note">Nothing open.</p>'}${note}
+            ${person.settles.length ? `<details class="people-history"><summary>Settlements (${person.settles.length})</summary><ul class="shared-history-list">${settlementsHtml(person.settles, person.entries, person.name, person.property, false)}</ul></details>` : ''}
+            <div class="people-actions"><button type="button" class="primary-button" data-people-settle="${key}"><i class="ti ti-cash" aria-hidden="true"></i> ${isViewer ? 'Details' : 'Settle up'}</button></div></div>
+        </details>`;
+      }).join('');
+      return `<div class="people-totals">${summary}</div><div class="people-list">${list}</div>`;
+    }
+    async function openPeopleDialog() {
+      let dialog = document.querySelector('#people-dialog');
+      if (!dialog) {
+        dialog = document.createElement('dialog');
+        dialog.id = 'people-dialog';
+        dialog.className = 'modal month-dialog people-dialog';
+        document.body.append(dialog);
+        dialog.addEventListener('click', event => {
+          if (event.target.closest('[data-close-dialog]')) return dialog.close();
+          const go = event.target.closest('[data-people-settle]');
+          if (go) { peopleState.from = true; dialog.close(); return openSharedPanel(go.dataset.peopleSettle); }
+        });
+        dialog.addEventListener('toggle', event => {
+          const row = event.target.closest?.('[data-people-key]');
+          if (row) peopleState.open[row.open ? 'add' : 'delete'](row.dataset.peopleKey);
+        }, true);
+        // Settling is done in the settle panel; closing it brings the list back, with the new figures.
+        document.addEventListener('close', event => {
+          if (event.target?.id === 'shared-dialog' && peopleState.from) { peopleState.from = false; openPeopleDialog(); }
+        }, true);
+      }
+      const head = '<div class="modal-header"><div><p>Shared costs</p><h2>People</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+      if (!dialog.open) { dialog.innerHTML = `${head}<p class="ledger-none">Loading every year’s shared costs…</p>`; dialog.showModal(); }
+      try { await store.ensureAllYears(); } catch (error) { /* Shows what is loaded. */ }
+      dialog.innerHTML = `${head}${peopleHtml(peopleRows())}`;
+    }
     // The open items, oldest first. They are cleared automatically by the payment; nothing to tick.
     // The open items, oldest first, each with a tick ("include this in the payment") and the amount to clear, starting at what is
     // open. Nothing is settled unless it is ticked here.
@@ -4773,12 +4873,26 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           <span class="shared-open-plan">${useBuffer}<input class="shared-open-amount" type="text" inputmode="decimal" autocomplete="off" data-sid="${escapeHtml(row.id)}" value="${(row.owed / 100).toFixed(2)}" aria-label="Amount to clear for ${escapeHtml(entry.description)}"></span></div>`;
       }).join('') || '<p class="shared-none">Nothing open here.</p>';
     }
+    // Every settlement with one person, newest first: the date, who paid whom and how much, each item it cleared with the
+    // amount applied to it, and what went to or came from the buffer or was let go.
+    function settlementsHtml(settles, entries, name, property, withUndo) {
+      const money = minor => sharedMoney(minor, property);
+      const describe = sid => entries.find(entry => entry.id === sid)?.description || 'an item no longer shared';
+      return settles.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map(settle => {
+        const paid = settle.cash > 0 ? `${escapeHtml(name)} paid you` : settle.cash < 0 ? `You paid ${escapeHtml(name)}` : 'No money moved';
+        const covers = settle.items.map(item => `${escapeHtml(describe(item.to))} (${money(item.a)})`).join(', ');
+        const letGo = settle.forgiven ? ` · ${money(Math.abs(settle.forgiven))} let go (${settle.treatment === 'none' ? 'left out' : settle.treatment === 'expense' ? 'counted as expense' : 'counted as income'})` : '';
+        const buffer = settle.credit ? ` · buffer ${settle.credit > 0 ? '+' : '−'}${money(settle.credit)}` : '';
+        return `<li><span>${escapeHtml(settle.date)}</span> <b class="${settle.cash >= 0 ? 'income' : 'expense'}">${settle.cash >= 0 ? '+' : '−'} ${money(settle.cash)}</b> <em class="shared-hist-who">${paid}</em><small>${covers ? `Cleared ${covers}` : 'Kept in buffer'}${buffer}${letGo}${settle.note ? ` · ${escapeHtml(settle.note)}` : ''}</small>${withUndo && settle.cash && !settle.via && !transactions.some(row => row.cleared?.id === settle.id) ? ` <button type="button" class="shared-undo" data-record-settle="${escapeHtml(settle.id)}" title="This payment is not in the ledger yet: add it to the REPAYMENTS subsection of its month">Add to REPAYMENTS</button>` : ''}${withUndo ? ` <button type="button" class="shared-undo" data-undo-settle="${escapeHtml(settle.id)}" title="Take this settlement back: the items it paid become open again">Undo</button>` : ''}</li>`;
+      }).join('') || '<li class="shared-none">No settlements yet.</li>';
+    }
     function renderSharedPanel() {
       const people = sharedPeople();
       const select = document.querySelector('#shared-who');
       const summary = document.querySelector('#shared-summary');
       const settle = document.querySelector('#shared-settle');
       const form = document.querySelector('#shared-form');
+      form.dataset.manual = '';
       if (!people.length) {
         select.innerHTML = '';
         summary.textContent = 'Nothing shared yet. Right-click an expense and choose “Mark as shared…”.';
@@ -4808,14 +4922,19 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         ? `The buffer came from: ${pending.from.map(item => `${item.kind === 'payment' ? 'payment' : 'reduced entry'} “${item.label}”${item.date ? ` (${item.date})` : ''} ${money(Math.abs(item.amount))}`).join(' · ')}.`
         : 'Paid ahead earlier.';
       document.querySelector('#shared-auto-list').innerHTML = pending.auto.map(row => `<li><span><b>${escapeHtml(row.entry.description)}</b><small>${escapeHtml(row.entry.date)}</small></span><em>${money(row.amount)}</em></li>`).join('');
+      const balance = document.querySelector('#shared-balance');
+      const gap = pending.receivableTotal - pending.payableTotal;
+      balance.innerHTML = pending.receivable.length || pending.payable.length
+        ? `<span class="shared-balance-sum">${money(pending.receivableTotal)} owed to you − ${money(pending.payableTotal)} you owe = <b>${money(gap)}</b></span>
+          <span class="shared-balance-say ${overall > 0 ? 'is-in' : overall < 0 ? 'is-out' : ''}">${overall === 0 ? 'All square.' : overall > 0 ? `${escapeHtml(name)} gives you ${money(overall)}` : `You give ${escapeHtml(name)} ${money(overall)}`}${held ? ` <small>(after the ${money(held)} buffer)</small>` : ''}</span>
+          ${!isViewer ? `<button type="button" class="quiet-button" data-balance-fill="${overall >= 0 ? 'in' : 'out'}" data-balance-amount="${(Math.abs(overall) / 100).toFixed(2)}">${overall === 0 ? 'Mark all settled (they cancel out)' : 'Settle this amount'}</button>` : ''}`
+        : '';
       document.querySelector('#shared-owed-total').textContent = pending.receivable.length ? `${money(pending.receivableTotal)} · ${pending.receivable.length}` : '—';
       document.querySelector('#shared-owe-total').textContent = pending.payable.length ? `${money(pending.payableTotal)} · ${pending.payable.length}` : '—';
-      const describe = sid => entries.find(entry => entry.id === sid)?.description || 'an item';
-      document.querySelector('#shared-history').innerHTML = settles.slice().sort((a, b) => b.date.localeCompare(a.date)).map(settle => {
-        const covers = settle.items.map(item => describe(item.to)).join(', ');
-        const letGo = settle.forgiven ? ` · ${money(Math.abs(settle.forgiven))} let go (${settle.treatment === 'none' ? 'left out' : settle.treatment === 'expense' ? 'counted as expense' : 'counted as income'})` : '';
-        return `<li><span>${escapeHtml(settle.date)}</span> <b class="${settle.cash >= 0 ? 'income' : 'expense'}">${settle.cash >= 0 ? '+' : '−'} ${money(settle.cash)}</b> <small>${covers ? `covers ${escapeHtml(covers)}` : 'kept in buffer'}${settle.credit ? ` · buffer ${settle.credit > 0 ? '+' : '−'}${money(settle.credit)}` : ''}${letGo}${settle.note ? ` · ${escapeHtml(settle.note)}` : ''}</small>${isViewer ? '' : ` <button type="button" class="shared-undo" data-undo-settle="${escapeHtml(settle.id)}" title="Take this settlement back: the items it paid become open again">Undo</button>`}</li>`;
-      }).join('') || '<li class="shared-none">No settlements yet.</li>';
+      document.querySelector('#shared-history').innerHTML = settlementsHtml(settles, entries, name, property, !isViewer);
+      const historyBox = document.querySelector('#shared-history').closest('details');
+      historyBox.open = settles.length > 0;
+      document.querySelector('#shared-history-count').textContent = settles.length ? `${settles.length} · ${money(settles.reduce((sum, row) => sum + Math.abs(row.cash || 0), 0))} moved` : '';
       settle.hidden = isViewer;
       settle.open = true;
       document.querySelector('#shared-repaid').hidden = true;
@@ -4845,6 +4964,42 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           return { to: row.id, a, direction: row.direction };
         });
     }
+    // The other way round: the amount that moved picks the items, unless they were ticked by hand.
+    //   - the money covers the whole balance between us (his items less mine) or more: every open item on both sides is
+    //     included, and what is over is kept as buffer;
+    //   - otherwise it pays the items on the side it is for, BIGGEST FIRST, whole items only: an item is taken when what is
+    //     left covers it, and any item it does not cover stays open. The rest of the money is kept as buffer, and the
+    //     "difference" question below is answered with "keep it as buffer" ready for you.
+    // A buffer already held counts as money in hand, so it is used up before new money is kept.
+    function sharedAutoPick(form) {
+      if (form.dataset.manual === '1' || !sharedState.key) return;
+      const { property, name } = sharedParse(sharedState.key);
+      const { pending } = sharedBundle(property, name);
+      form.querySelectorAll('[name="pick"]').forEach(box => { box.checked = false; });
+      form.querySelectorAll('[name="forgive"]').forEach(radio => { radio.checked = false; });
+      const cash = sharedCash(form);
+      if (cash === null) return;
+      const funds = cash + pending.buffer;
+      const all = [...pending.receivable, ...pending.payable];
+      let picks = [];
+      if (funds && Math.sign(funds) === Math.sign(pending.net) && Math.abs(funds) >= Math.abs(pending.net)) picks = all.map(row => ({ to: row.id, a: row.owed, side: row.direction }));
+      else if (funds) {
+        let left = Math.abs(funds);
+        (funds > 0 ? pending.receivable : pending.payable).slice()
+          .sort((x, y) => y.owed - x.owed || String(x.entry.date).localeCompare(String(y.entry.date)) || String(x.id).localeCompare(String(y.id)))
+          .forEach(row => { if (row.owed <= left) { picks.push({ to: row.id, a: row.owed, side: row.direction }); left -= row.owed; } });
+      }
+      picks.forEach(item => {
+        const box = form.querySelector(`[name="pick"][value="${CSS.escape(item.to)}"]`);
+        const amount = form.querySelector(`input.shared-open-amount[data-sid="${CSS.escape(item.to)}"]`);
+        if (!box || !amount) return;
+        box.checked = true;
+        amount.value = (item.a / 100).toFixed(2);
+        box.closest('details')?.setAttribute('open', '');
+      });
+      const itemsNet = picks.reduce((sum, item) => sum + (item.side === 'friend-owes-me' ? item.a : -item.a), 0);
+      if (cash !== itemsNet) { const keep = form.querySelector('[name="forgive"][value="buffer"]'); if (keep) keep.checked = true; }
+    }
     // The ticked items net to the cash that moves: fill it in, and the direction, so the usual case needs no typing.
     function sharedFillCash(form) {
       const items = sharedPicked(form).filter(item => item.a > 0);
@@ -4858,6 +5013,7 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const form = document.querySelector('#shared-form');
       const { property, name } = sharedParse(sharedState.key);
       const money = minor => sharedMoney(minor, property);
+      const bundleNow = sharedBundle(property, name);
       const items = sharedPicked(form).filter(item => item.a > 0);
       const received = items.filter(item => item.direction === 'friend-owes-me').reduce((sum, item) => sum + item.a, 0);
       const paid = items.filter(item => item.direction === 'i-owe-friend').reduce((sum, item) => sum + item.a, 0);
@@ -4866,16 +5022,18 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const cash = sharedCash(form);
       document.querySelector('#shared-net').textContent = items.length
         ? `Includes ${items.length} item${items.length === 1 ? '' : 's'} · ${money(received + paid)} · ${net >= 0 ? `${name} pays you ${money(net)}` : `you pay ${name} ${money(net)}`}`
-        : 'Tick the items this payment includes.';
+        : 'Type the amount that moved and the items are picked for you (biggest first, whole items only), or tick them yourself.';
       const diff = cash === null || !items.length ? 0 : net - cash;
       document.querySelector('#shared-forgive').hidden = diff === 0;
       if (diff !== 0) {
         // Money beyond the items (same way round) can be kept as buffer; anything else is let go.
-        const extra = Math.abs(cash) > Math.abs(net) && Math.sign(cash) === (Math.sign(net) || Math.sign(cash));
+        const held = bundleNow.pending.buffer;
+        const credit = cash - net;
+        const extra = held ? (held + credit) * Math.sign(held) >= 0 : credit * Math.sign(cash || 1) > 0;
         document.querySelector('#shared-forgive-text').textContent = extra
-          ? `${money(Math.abs(cash) - Math.abs(net))} more than the ticked items.`
+          ? (credit > 0 === cash > 0 ? `${money(Math.abs(credit))} more than the ticked items.` : `${money(Math.abs(credit))} less than the ticked items, taken from the buffer.`)
           : diff > 0 ? `${name} lets go of ${money(diff)} he owes you.` : `You let go of ${money(-diff)} you owe ${name}.`;
-        document.querySelector('#shared-forgive-yes').textContent = extra ? 'Count it as my expense or income (decide below)' : diff > 0 ? 'Count it as my expense (it was money I never got back)' : 'Count it as my income (a debt I no longer owe)';
+        document.querySelector('#shared-forgive-yes').textContent = extra ? 'Count it as my income or expense (decide below)' : diff > 0 ? 'Count it as my expense (it was money I never got back)' : 'Count it as my income (a debt I no longer owe)';
         document.querySelector('#shared-forgive-buffer').hidden = !extra;
       }
     }
@@ -4959,6 +5117,66 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       renderLedger();
       showToast(`Used ${sharedMoney(applied, property)} of the buffer on “${row.entry.description}”.`);
     }
+    // "Just settle" still leaves a trace in the month: the money that moved is written as an entry in the REPAYMENTS subsection
+    // of the month the settlement is dated in, named "from Sairam" (he paid me: Income) or "to Sairam" (I paid him: Expense).
+    // An existing REPAYMENTS subsection of that kind is used; otherwise it is added to the month's first open section of that
+    // kind, and a section is made when there is none. The entry is registered as that person's repayment on its own, so it
+    // carries the REPAYMENT mark and stays out of income and expenses like the other repayments in the block, which may belong
+    // to other people. Checks first and changes nothing when it says no; `apply()` does the work and returns the entry, which
+    // the settlement then names as where its money came from.
+    const REPAYMENT_BLOCK = 'REPAYMENTS';
+    function planRepaymentEntry({ date, property, name, cash }) {
+      const [year, monthIndex] = yearMonthOf(date.slice(0, 7));
+      if (!store.year(year)) return { error: `There is no ${year} in the ledger yet, so the repayment has nowhere to go. Add the year first, or record it as income or expense.` };
+      const type = cash > 0 ? 'income' : 'expense';
+      const same = (a, b) => ExpenseStore.nameKey(a) === ExpenseStore.nameKey(b);
+      const kind = store.sections(year, monthIndex, property).filter(item => item.type === type);
+      const home = kind.find(item => !item.closed && item.subsections?.some(sub => same(sub, REPAYMENT_BLOCK)))
+        || kind.find(item => item.subsections?.some(sub => same(sub, REPAYMENT_BLOCK)))
+        || kind.find(item => !item.closed);
+      const sectionName = home?.name || REPAYMENT_BLOCK;
+      const category = home?.subsections?.find(sub => same(sub, REPAYMENT_BLOCK)) || REPAYMENT_BLOCK;
+      const entry = { id: newRowId(), property, date, section: sectionName, category, description: `${cash > 0 ? 'from' : 'to'} ${name}`, place: '', amount: Math.abs(cash), type };
+      const target = { property, with: name, section: sectionName, category, entry: { date, description: entry.description, amount: Number(entry.amount) } };
+      const holder = store.repayFor(entry);
+      if (holder && holder !== name) return { error: `“${sectionName} › ${category}” is already set as the place ${holder} repays into.` };
+      if (!holder) {
+        transactions.push(entry);
+        const problem = repayProblem(target);
+        transactions.pop();
+        if (problem) return { error: problem };
+      }
+      return {
+        apply() {
+          const sections = store.ownSections(year, monthIndex, property);
+          let section = sections.find(item => item.type === type && item.name === sectionName);
+          if (!section) sections.push(section = { name: sectionName, type, subsections: [] });
+          if (!section.subsections.includes(category)) section.subsections.push(category);
+          trackSave(store.saveMonthSections(year, monthIndex, property, sections));
+          transactions.push(entry);
+          if (!holder) trackSave(store.changeRepay(target));
+          store.syncRepayFlags();
+          return entry;
+        }
+      };
+    }
+    // A settlement made before it was written into the month (or one that was never recorded) gets its REPAYMENTS entry now,
+    // the same way "Just settle" would have made it, and names it as where its money came from.
+    function recordSettlementAsRepayment(id) {
+      if (isViewer) return viewOnly();
+      const settle = store.settleList().find(item => item.id === id);
+      if (!settle) return showToast('That settlement could not be found.');
+      if (!settle.cash) return showToast('No money moved in this one, so there is nothing to record.');
+      if (settle.via || transactions.some(row => row.cleared?.id === id)) return showToast('This settlement is already recorded in the ledger.');
+      const plan = planRepaymentEntry({ date: settle.date, property: settle.property, name: settle.with, cash: settle.cash });
+      if (plan.error) return showToast(plan.error);
+      const entry = plan.apply();
+      saveTransactions();
+      trackSave(store.saveSettle({ ...settle, via: store.repaySignature(entry), name: entry.description }));
+      renderLedger();
+      if (document.querySelector('#shared-dialog')?.open) renderSharedPanel();
+      showToast(`Added “${entry.description}” (${sharedMoney(entry.amount, settle.property)}) to ${entry.section} › ${entry.category} on ${settle.date}.`);
+    }
     function saveSharedSettlement(form) {
       const error = document.querySelector('#shared-error');
       const fail = message => { error.textContent = message; error.hidden = false; };
@@ -4967,8 +5185,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       const bundle = sharedBundle(property, name);
       const cash = sharedCash(form);
       const date = form.elements.date.value;
+      if (!sharedPicked(form).length) sharedAutoPick(form);
       const items = sharedPicked(form).filter(item => item.a > 0);
-      if (!items.length) return fail('Tick the items this payment includes.');
+      if (!items.length) return fail('Enter the amount that moved, or tick the items this payment includes.');
       if (cash === null) return fail('Enter the amount that moved.');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Pick the date.');
       const plain = items.map(({ to, a }) => ({ to, a }));
@@ -5010,6 +5229,14 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         const colour = bundle.entries.find(row => row.id === result.settlement.items[0]?.to)?.item.series?.colour || '#94a3b8';
         recorded = { id: `new-${Date.now()}-r`, property, date, section: section.name, category: section.subsections[0], description: `Settled with ${name}`, place: '', amount: Math.abs(result.settlement.cash), type: recordAs, cleared: { id: settleId, colour }, ...scope.fields };
       }
+      // "Just settle": the money that moved is kept as a repayment entry in the month's REPAYMENTS section (see planRepaymentEntry).
+      let repayEntry = null;
+      const fromRepayment = document.querySelector('#shared-payfrom')?.value;
+      if (recordAs === 'no' && result.settlement.cash && (fromRepayment === '' || fromRepayment === undefined)) {
+        const plan = planRepaymentEntry({ date, property, name, cash: result.settlement.cash });
+        if (plan.error) return fail(plan.error);
+        repayEntry = plan.apply();
+      }
       const record = {
         id: settleId, date, property, with: name, items: result.settlement.items,
         cash: result.settlement.cash, forgiven: result.forgiven, treatment, note: form.elements.note.value.trim()
@@ -5018,8 +5245,9 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
       // Money taken from a repayment entry: remember which, so it shows as used and cannot be used twice.
       const via = document.querySelector('#shared-payfrom')?._rows?.[Number(document.querySelector('#shared-payfrom').value)];
       if (via && document.querySelector('#shared-payfrom').value !== '') { record.via = store.repaySignature(via); record.name = via.description; }
+      if (repayEntry) { record.via = store.repaySignature(repayEntry); record.name = repayEntry.description; }
       [entry, recorded].filter(Boolean).forEach(row => transactions.push(row));
-      if (entry || recorded) saveTransactions();
+      if (entry || recorded || repayEntry) saveTransactions();
       trackSave(store.saveSettle(record));
       form.elements.note.value = '';
       form.querySelector('[name="record"][value="no"]').checked = true;
@@ -5055,7 +5283,8 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
           if (via) { form.elements.amount.value = (Math.abs(store.entryTotal(via.id)) / 100).toFixed(2); form.querySelector(`[name="dir"][value="${via.type === 'income' ? 'in' : 'out'}"]`).checked = true; form.elements.date.value = via.date; }
           return sharedRecalc();
         }
-        if (target.name === 'pick') sharedFillCash(form);
+        if (target.name === 'pick') { form.dataset.manual = '1'; sharedFillCash(form); }
+        if (target.name === 'dir') sharedAutoPick(form);
         if (target.name === 'who') {
           sharedState.key = target.value;
           form.elements.amount.value = '';
@@ -5065,14 +5294,25 @@ const STORAGE_KEY = 'kajanauday-static-demo-v1';
         sharedRecalc();
       });
       form.addEventListener('input', event => {
-        if (event.target.name === 'amount') sharedRecalc();
+        if (event.target.name === 'amount') { sharedAutoPick(form); sharedRecalc(); }
         if (event.target.dataset.sid) {
+          form.dataset.manual = '1';
           // Editing what one item clears changes the cash too, unless the money comes from a chosen repayment entry.
           if (!document.querySelector('#shared-payfrom').value) sharedFillCash(form);
           sharedRecalc();
         }
       });
       form.addEventListener('click', event => {
+        const fill = event.target.closest('[data-balance-fill]');
+        if (fill) {
+          event.preventDefault();
+          form.dataset.manual = '';
+          form.elements.amount.value = fill.dataset.balanceAmount;
+          form.querySelector(`[name="dir"][value="${fill.dataset.balanceFill}"]`).checked = true;
+          sharedAutoPick(form);
+          sharedRecalc();
+          return form.elements.amount.scrollIntoView({ block: 'center' });
+        }
         const use = event.target.closest('[data-use-buffer]');
         if (!use) return;
         event.preventDefault();

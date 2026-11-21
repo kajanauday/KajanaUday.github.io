@@ -38,6 +38,7 @@
     <div class="header-actions">
       <button type="button" class="save-state" id="sync-button" aria-live="polite" data-state="saved" title="All changes saved"><span class="save-dot" aria-hidden="true"></span><span class="sr-only">All changes saved</span></button>
       <button type="button" class="icon-button" id="key-button" aria-label="Key: colours and marks" title="Key: colours, marks, what you can do" aria-expanded="false" aria-controls="legend-pop"><i class="ti ti-info-circle" aria-hidden="true"></i></button>
+      <button type="button" class="icon-button" id="people-button" aria-label="People: shared balances" title="People: who owes whom, and what is open"><i class="ti ti-users" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="groups-button" aria-label="Groups" title="Groups: things gathered from any month or year"><i class="ti ti-stack-2" aria-hidden="true"></i></button>
       <button type="button" class="icon-button" id="trash-button" aria-label="Recently deleted" title="Recently deleted (last 25)"><i class="ti ti-trash" aria-hidden="true"></i><span class="trash-count" id="trash-count" hidden></span></button>
       <button type="button" class="icon-button" id="search-button" aria-label="Search entries" title="Search entries (/)" aria-keyshortcuts="/"><i class="ti ti-search" aria-hidden="true"></i></button>
@@ -127,6 +128,7 @@
         <details class="shared-group is-in"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>They owe me</span><b id="shared-owed-total"></b></summary><div id="shared-owed-list"></div></details>
         <details class="shared-group is-out"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>I owe them</span><b id="shared-owe-total"></b></summary><div id="shared-owe-list"></div></details>
       </div>
+      <div class="shared-balance" id="shared-balance" aria-live="polite"></div>
       <details class="shared-settle" id="shared-settle" open>
         <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span id="shared-settle-title">Settle now</span></summary>
         <label class="shared-payfrom" hidden><span>Money from</span><select id="shared-payfrom" aria-label="Where the money came from"></select></label>
@@ -146,13 +148,13 @@
           <label id="shared-forgive-buffer" hidden><input type="radio" name="forgive" value="buffer"> Keep it as buffer for the next payment</label>
         </div>
         <fieldset class="shared-record"><legend>Record</legend>
-          <label><input type="radio" name="record" value="no" checked> Just settle</label>
+          <label><input type="radio" name="record" value="no" checked> Just settle (added to REPAYMENTS)</label>
           <label><input type="radio" name="record" value="expense"> As expense</label>
           <label><input type="radio" name="record" value="income"> As income</label>
         </fieldset>
         <label class="shared-note"><span>Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="optional"></label>
       </details>
-      <details class="shared-history"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled so far</span></summary><ul id="shared-history"></ul></details>
+      <details class="shared-history"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled so far</span><small id="shared-history-count"></small></summary><ul id="shared-history"></ul></details>
       <p class="settings-error" id="shared-error" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button" id="shared-save">Save settlement</button></div>
     </form>

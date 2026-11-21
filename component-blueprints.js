@@ -18,7 +18,7 @@
     if (isEventKey(mKey)) return `<input name="date" type="date" value="${value || ''}" aria-label="Date"${required ? ' required' : ''}>`;
     const own = isYearKey(mKey) ? String(value).slice(0, 7) : mKey;
     const pointsAway = Boolean(refs && refDate && refDate.slice(0, 7) !== own);
-    return `<span class="date-pick" data-own-month="${own}"${pointsAway ? ` data-picked="${referenceNote(refDate)}"` : ''}><input name="day" enterkeyhint="next" type="number" min="1" max="${daysIn(own)}" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}${refs ? ' data-date-pick title="Type a day. Type a special character such as . to pick the month and year."' : ''}>${refs ? `<input type="hidden" name="refDate" value="${pointsAway ? refDate : ''}">` : ''}</span>`;
+    return `<span class="date-pick" data-own-month="${own}"${pointsAway ? ` data-picked="${referenceNote(refDate)}"` : ''}><input name="day" enterkeyhint="next" type="number" min="1" max="31" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}${refs ? ' data-date-pick title="Type a day. Type a special character such as . to pick the month and year."' : ''}>${refs ? `<input type="hidden" name="refDate" value="${pointsAway ? refDate : ''}">` : ''}</span>`;
   };
   // Day 0 marks a row that stands for a group rather than a day of the month (see the level-shifting paste), so it
   // shows a dash where a date would go.
