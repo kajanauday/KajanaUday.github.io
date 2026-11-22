@@ -334,7 +334,8 @@
     // The paths in a queued update that another device has written since this one last read them.
     clashes(item, remote) {
       return Object.keys(item.update).filter(path => {
-        if (path.startsWith('meta/')) return false;
+        // The stored shared report is worked out from the rest of the ledger, so the newest rebuild may always go out.
+        if (path.startsWith('meta/') || path.startsWith('sharedReport/')) return false;
         const stamp = remote?.[stampKey(path)];
         return stamp && stamp.by !== this.deviceId && Number(stamp.at) > Number(item.seen?.[stampKey(path)] || 0);
       });

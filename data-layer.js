@@ -41,6 +41,9 @@
   // stored amount is never changed by sharing); any other row counts its amount as it is.
   const REPAY_COLOUR = '#0d9488';
   const TRASH_LIMIT = 25;
+  // Kept on this device: a stored report exists (so deleting the last shared entry still updates it), and a rebuild is owed.
+  const REPORT_FLAG = 'kajanauday-shared-report';
+  const REPORT_DIRTY = 'kajanauday-shared-report-dirty';
   // What an entry counts for once its notes are in: with notes, their sum (a shared entry then counts my share of that sum);
   // without, its own figure.
   const entryWith = (item, notes) => {
@@ -1887,6 +1890,101 @@
       }
       return this.seriesIndex.get(item.sid) || null;
     }
+
+    // ---- the stored shared report: sharedReport/<currency>/<person> (see SharedLedger.report) ----
+    // Each person's shared side (entries with what is open on them, totals, buffer, series, settlements) is worked out once and
+    // kept in Firebase, so the People page opens by reading it instead of loading every year and working it all out again.
+    // It is rebuilt, after a short pause, whenever anything it is made of changes: any save of entries, a settlement saved or
+    // taken back, a repayment target changed (see the wrappers after this class). A flag kept on this device says a rebuild
+    // is owed, so one that never finished (the tab was closed) is done the next time the app opens.
+    reportKeyOf(property, name) { return `sharedReport/${property}/${safeKey(name)}`; }
+    sharedDataExists() {
+      return this.transactions.some(row => row.sid && row.shared) || this.realSettleList().length > 0 || this.repayRegistry().length > 0;
+    }
+    markSharedDirty() {
+      if (this.db.readOnly) return;
+      let known = false;
+      try { known = localStorage.getItem(REPORT_FLAG) === '1'; } catch (error) { /* No flag. */ }
+      if (!known && !this.sharedDataExists()) return;
+      try { localStorage.setItem(REPORT_DIRTY, '1'); } catch (error) { /* The pause below still runs. */ }
+      clearTimeout(this.reportTimer);
+      this.reportTimer = setTimeout(() => this.refreshSharedReport().catch(error => console.warn('The shared report could not be updated yet.', error)), 1200);
+    }
+    // A rebuild that was owed when the app last closed.
+    resumeSharedReport() {
+      let owed = false;
+      try { owed = localStorage.getItem(REPORT_DIRTY) === '1'; } catch (error) { /* Nothing owed. */ }
+      if (owed && !this.db.readOnly) this.markSharedDirty();
+    }
+    // Every person's report from the entries and settlements in memory (every year must be loaded). Path → report.
+    buildSharedReports() {
+      const people = new Map();
+      const slot = (property, name) => {
+        const path = this.reportKeyOf(property, name);
+        if (!people.has(path)) people.set(path, { property, with: name, entries: [], settles: [] });
+        return people.get(path);
+      };
+      this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId).forEach(row => slot(row.property, row.shared.with).entries.push({
+        id: row.sid, amount: this.fullAmount(row), paidBy: row.shared.by, hisPct: row.shared.his, shared: true, date: row.date,
+        description: row.description, series: row.series, property: row.property, with: row.shared.with
+      }));
+      this.settleList().forEach(settle => { const { year, ...plain } = settle; slot(settle.property, settle.with).settles.push(plain); });
+      return new Map([...people].map(([path, person]) => [path, { property: person.property, with: person.with, ...global.SharedLedger.report(person.entries, person.settles) }]));
+    }
+    // Firebase keeps no empty list and no timestamp matters here, so two reports are the same when these agree.
+    reportSig(node) { return JSON.stringify(node, (key, value) => (key === 'updated' ? undefined : Array.isArray(value) && !value.length ? undefined : value)); }
+    // Rebuilds every report and writes only the ones that changed (and takes away those with nothing left). One run at a time; a
+    // request that comes in during a run makes it go round once more, so the last change is always in.
+    refreshSharedReport() {
+      if (this.reportRun) { this.reportAgain = true; return this.reportRun; }
+      const run = async () => {
+        do {
+          this.reportAgain = false;
+          await this.ensureAllYears();
+          const built = this.buildSharedReports();
+          const have = this.sharedReports || (this.sharedReports = new Map());
+          const update = {};
+          built.forEach((node, path) => {
+            if (have.has(path) && this.reportSig(have.get(path)) === this.reportSig(node)) return;
+            update[path] = { ...node, updated: new Date().toISOString() };
+          });
+          have.forEach((node, path) => { if (!built.has(path)) update[path] = null; });
+          if (Object.keys(update).length) await this.queue(() => this.db.patch(update));
+          this.sharedReports = built;
+        } while (this.reportAgain);
+        try { localStorage.setItem(REPORT_FLAG, '1'); localStorage.removeItem(REPORT_DIRTY); } catch (error) { /* Kept for this visit only. */ }
+      };
+      this.reportRun = run().finally(() => { this.reportRun = null; });
+      return this.reportRun;
+    }
+    // The stored reports, read once (and kept) instead of worked out. Built first when none exist yet, when one is from an older
+    // layout, or when a rebuild is owed; if Firebase cannot be read they are worked out from the ledger, as they used to be.
+    async loadSharedReport() {
+      let owed = false;
+      try { owed = localStorage.getItem(REPORT_DIRTY) === '1'; } catch (error) { /* Nothing owed. */ }
+      if (this.reportRun) await this.reportRun;
+      if (this.sharedReports && !owed) return this.sharedReports;
+      let raw;
+      try { raw = await this.db.get('sharedReport'); } catch (error) { raw = undefined; }
+      const found = new Map();
+      let stale = raw === undefined;
+      Object.entries(raw || {}).forEach(([property, people]) => Object.entries(people || {}).forEach(([key, node]) => {
+        if (!node || node.v !== global.SharedLedger.REPORT_VERSION) stale = true;
+        else found.set(`sharedReport/${property}/${key}`, node);
+      }));
+      let known = false;
+      try { known = localStorage.getItem(REPORT_FLAG) === '1'; } catch (error) { /* No flag. */ }
+      if (raw === null && !known) stale = true;
+      this.sharedReports = found;
+      if (stale || owed) await this.refreshSharedReport();
+      return this.sharedReports;
+    }
+    // The people with a stored report, for drawing: [{ property, name, node }] by name.
+    sharedReportPeople() {
+      return [...(this.sharedReports || new Map()).values()].map(node => ({ property: node.property, name: node.with, node }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.property.localeCompare(b.property));
+    }
+
     // Pending settlements need every month of every year that exists, so they are all loaded before they are worked out.
     ensureAllYears() { return Promise.all(this.yearIds().map(year => this.ensureYear(year))); }
 
@@ -2406,5 +2504,15 @@
 
   Object.assign(ExpenseStore, { sectionCalc, ensureCalc, runCalc, blockCalc, runBlockCalc, defaultBlockCalc, linkedMoneyBalance, CALC_NAMES, SECTION_ROLES, sectionKind, subsectionRole, defaultCalc, netSectionSummary, readStatus, statusless, sectionState, SECTION_STATES, BLOCK_NAMES, MONTH_NAMES, monthIdOf, iconFor, flattenMonth, monthDoc, readAmount, nameKey, safeKey, SPLIT_MODES, SPLIT_ROLE, splitShare, splitLabel,
     ALLOC_ROLE, normalizeAlloc, allocFor, allocTotal, SETTLE_MODES, SETTLE_MODE_LABELS, SETTLE_PRESETS, settleMode, settlePreset });
+  // Anything the stored shared report is made of changing asks for a rebuild of it (after a pause), whichever part of the
+  // app made the change.
+  ['saveTransactions', 'saveSettle', 'removeSettle', 'changeRepay'].forEach(name => {
+    const original = ExpenseStore.prototype[name];
+    ExpenseStore.prototype[name] = function (...args) {
+      const result = original.apply(this, args);
+      this.markSharedDirty();
+      return result;
+    };
+  });
   global.ExpenseStore = ExpenseStore;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

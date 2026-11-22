@@ -24,7 +24,6 @@
   <script src="../firebase-auth.js?v=20261103a" defer></script>
   <script src="../offline-store.js?v=20261110c" defer></script>
   <script src="../shared-ledger.js?v=20261114f" defer></script>
-  <script src="../here-and-there.js?v=20261114f" defer></script>
   <script src="../data-layer.js?v=20261114f" defer></script>
   <script src="../ledger-search.js?v=20261101b" defer></script>
   <script src="../component-blueprints.js?v=20261114f" defer></script>
@@ -105,60 +104,48 @@
       <p class="series-pop-footer" id="series-pop-footer"></p>
     </div>
   </dialog>
-  <dialog class="modal month-dialog shared-dialog" id="shared-dialog" aria-labelledby="shared-dialog-title">
-    <form id="shared-form" novalidate>
-      <div class="modal-header"><div><p>Shared costs</p><h2 id="shared-dialog-title">Settle with someone</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <div class="shared-top">
-        <label class="shared-who"><select id="shared-who" name="who" aria-label="Person and currency"></select></label>
-        <p class="shared-summary" id="shared-summary" aria-live="polite"></p>
-      </div>
-      <p class="shared-repaid" id="shared-repaid" hidden></p>
-      <details class="shared-auto" id="shared-auto" hidden>
-        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled automatically from the buffer</span><small id="shared-auto-count"></small></summary>
-        <div class="shared-auto-body"><p class="shared-hint" id="shared-auto-from"></p><ul class="shared-auto-list" id="shared-auto-list"></ul></div>
-      </details>
-      <details class="shared-repay" id="shared-repay">
-        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Repayment blocks</span><small id="shared-repay-state"></small></summary>
-        <div class="shared-repay-body">
-          <p class="shared-hint">These blocks and entries pay this person. To add one, right-click an expense or income entry (or a subsection) and choose “Use as repayment for a shared expense…”. Take one off here with ×.</p>
-          <ul class="shared-repay-list" id="shared-repay-list"></ul>
+  <main class="people-page" id="people-page" hidden>
+    <h1 class="sr-only">People: shared costs</h1>
+    <div class="pp-head">
+      <button type="button" class="quiet-button pp-back" id="people-back"><i class="ti ti-arrow-left" aria-hidden="true"></i> Ledger</button>
+      <div class="pp-title"><p>Shared costs</p><h2>Settle up</h2></div>
+      <div class="pp-controls">
+        <div class="pp-seg" role="group" aria-label="Order of the entries">
+          <button type="button" data-pp-order="date" aria-pressed="true" title="Mine and theirs together, oldest first">By date</button>
+          <button type="button" data-pp-order="split" aria-pressed="false" title="All of mine first, then theirs">Mine first</button>
         </div>
-      </details>
-      <div class="shared-lists">
-        <details class="shared-group is-in"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>They owe me</span><b id="shared-owed-total"></b></summary><div id="shared-owed-list"></div></details>
-        <details class="shared-group is-out"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>I owe them</span><b id="shared-owe-total"></b></summary><div id="shared-owe-list"></div></details>
+        <label class="pp-check"><input type="checkbox" id="pp-hide-settled"> Hide settled</label>
       </div>
-      <div class="shared-balance" id="shared-balance" aria-live="polite"></div>
-      <details class="shared-settle" id="shared-settle" open>
-        <summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span id="shared-settle-title">Settle now</span></summary>
-        <label class="shared-payfrom" hidden><span>Money from</span><select id="shared-payfrom" aria-label="Where the money came from"></select></label>
-        <div class="shared-cash-row">
+    </div>
+    <p class="pp-empty" id="pp-empty" hidden>Nothing shared yet. Right-click an expense and choose “Mark as shared…”.</p>
+    <section class="pp-settle" id="pp-settle" aria-labelledby="pp-settle-title" hidden>
+      <form id="pp-settle-form" novalidate>
+        <div class="pp-settle-top">
+          <h3 id="pp-settle-title"><i class="ti ti-cash" aria-hidden="true"></i> Settle a payment</h3>
+          <label class="pp-who"><span>With</span><select name="who" aria-label="Person and currency"></select></label>
+          <div class="pp-settle-say" id="pp-settle-say" aria-live="polite"></div>
+        </div>
+        <div class="pp-pay-row">
+          <label><span>Amount</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
           <label><span>Date</span><input type="date" name="date" required></label>
-          <label><span>Amount that moved</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
+          <label><span>Who paid</span><select name="dir"><option value="in">They paid me</option><option value="out">I paid them</option></select></label>
+          <label><span>Record as</span><select name="record"><option value="no">Settle only</option><option value="income">Also as income</option><option value="expense">Also as expense</option></select></label>
+          <button type="submit" class="primary-button"><i class="ti ti-cash" aria-hidden="true"></i> Pay</button>
         </div>
-        <div class="shared-dir" role="group" aria-label="Which way the money moved">
-          <label><input type="radio" name="dir" value="in" checked> He paid me</label>
-          <label><input type="radio" name="dir" value="out"> I paid him</label>
-        </div>
-        <p class="shared-net" id="shared-net" aria-live="polite"></p>
-        <div class="shared-forgive" id="shared-forgive" hidden>
-          <p id="shared-forgive-text"></p>
-          <label><input type="radio" name="forgive" value="yes"> <span id="shared-forgive-yes"></span></label>
-          <label><input type="radio" name="forgive" value="no"> Leave it out</label>
-          <label id="shared-forgive-buffer" hidden><input type="radio" name="forgive" value="buffer"> Keep it as buffer for the next payment</label>
-        </div>
-        <fieldset class="shared-record"><legend>Record</legend>
-          <label><input type="radio" name="record" value="no" checked> Just settle (added to REPAYMENTS)</label>
-          <label><input type="radio" name="record" value="expense"> As expense</label>
-          <label><input type="radio" name="record" value="income"> As income</label>
-        </fieldset>
-        <label class="shared-note"><span>Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="optional"></label>
-      </details>
-      <details class="shared-history"><summary><i class="ti ti-chevron-right" aria-hidden="true"></i><span>Settled so far</span><small id="shared-history-count"></small></summary><ul id="shared-history"></ul></details>
-      <p class="settings-error" id="shared-error" role="alert" hidden></p>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Close</button><button type="submit" class="primary-button" id="shared-save">Save settlement</button></div>
-    </form>
-  </dialog>
+        <label class="pp-note"><span class="sr-only">Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="Note (optional)"></label>
+        <p class="pp-preview" aria-live="polite"></p>
+        <p class="settings-error" role="alert" hidden></p>
+      </form>
+    </section>
+    <div class="ledger-panels pp-boxes" id="pp-boxes"></div>
+    <section class="pp-settled" id="pp-settled" aria-labelledby="pp-settled-title" hidden>
+      <hr class="pp-rule">
+      <h3 id="pp-settled-title">Settled <small id="pp-settled-count"></small></h3>
+      <div class="pp-caps" id="pp-settled-body" role="list"></div>
+      <div class="pp-cap-open" id="pp-settled-detail" aria-live="polite"></div>
+    </section>
+  </main>
+
   <dialog class="modal month-dialog close-dialog" id="close-dialog" aria-labelledby="close-title">
     <form id="close-form" novalidate>
       <div class="modal-header"><div><p id="close-where"></p><h2 id="close-title">Money came back</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
@@ -178,19 +165,6 @@
     <p class="shared-hint" id="money-picker-hint"></p>
     <div class="money-picker-list" id="money-picker-list"></div>
     <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button></div>
-  </dialog>
-  <dialog class="modal month-dialog date-pick-dialog" id="date-pick-dialog" aria-labelledby="date-pick-title">
-    <form id="date-pick-form" novalidate>
-      <div class="modal-header"><div><p id="date-pick-where"></p><h2 id="date-pick-title">Pick a date</h2></div><button type="button" class="icon-button" data-close-dialog aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></button></div>
-      <div class="date-pick-grid">
-        <label class="date-pick-field"><span>Day</span><input name="pday" type="number" inputmode="numeric" step="1" min="1" max="31" autocomplete="off" required></label>
-        <label class="date-pick-field"><span>Month</span><select name="pmonth" aria-label="Month"></select></label>
-        <div class="date-pick-field"><span>Year</span><div class="year-spin" data-year-spin tabindex="0" role="spinbutton" aria-label="Year. Swipe up for the next year, down for the one before."><button type="button" class="year-step" data-year-step="1" aria-label="Next year"><i class="ti ti-chevron-up" aria-hidden="true"></i></button><output id="date-pick-year" aria-live="polite"></output><button type="button" class="year-step" data-year-step="-1" aria-label="Previous year"><i class="ti ti-chevron-down" aria-hidden="true"></i></button></div></div>
-      </div>
-      <p class="shared-hint">Another month: the entry stays in this one, and that month lists it under “Here and there”.</p>
-      <p class="settings-error" id="date-pick-error" role="alert" hidden></p>
-      <div class="modal-actions"><button type="button" class="quiet-button" data-close-dialog>Cancel</button><button type="submit" class="primary-button">Set date</button></div>
-    </form>
   </dialog>
   <dialog class="modal month-dialog settle-item-dialog" id="settle-item-dialog" aria-labelledby="settle-item-title">
     <form id="settle-item-form" novalidate>

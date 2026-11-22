@@ -9,16 +9,12 @@
   const isEventKey = mKey => String(mKey).startsWith('ev:');
   // The year card uses "yr:<year>": it shows every month's entries, each still in (and edited within) its own month.
   const isYearKey = mKey => String(mKey).startsWith('yr:');
-  // The day of an entry, typed as a day of its own month. A special character typed into it (such as .) opens the picker
-  // (day, month, year), which can point the entry at another month: the entry stays in this one, and that month gets a
-  // marker (see here-and-there.js).
-  const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const referenceNote = refDate => `${Number(refDate.slice(8, 10))} ${SHORT_MONTHS[Number(refDate.slice(5, 7)) - 1]} ${refDate.slice(0, 4)}`;
-  const dateField = (mKey, value, { required = true, label = 'Day of month', refs = true, refDate = '' } = {}) => {
+  // The day of an entry, typed as a day of its own month.
+  const dateField = (mKey, value, { required = true, label = 'Day of month' } = {}) => {
     if (isEventKey(mKey)) return `<input name="date" type="date" value="${value || ''}" aria-label="Date"${required ? ' required' : ''}>`;
     const own = isYearKey(mKey) ? String(value).slice(0, 7) : mKey;
-    const pointsAway = Boolean(refs && refDate && refDate.slice(0, 7) !== own);
-    return `<span class="date-pick" data-own-month="${own}"${pointsAway ? ` data-picked="${referenceNote(refDate)}"` : ''}><input name="day" enterkeyhint="next" type="number" min="1" max="31" step="1" inputmode="numeric" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}${refs ? ' data-date-pick title="Type a day. Type a special character such as . to pick the month and year."' : ''}>${refs ? `<input type="hidden" name="refDate" value="${pointsAway ? refDate : ''}">` : ''}</span>`;
+    const last = /^\d{4}-\d{2}$/.test(own) ? daysIn(own) : 31;
+    return `<input name="day" enterkeyhint="next" type="text" pattern="[0-9]*" maxlength="2" min="0" max="${last}" data-day-input inputmode="numeric" autocomplete="off" ${value ? `value="${Number(value.slice(8, 10))}"` : 'placeholder="DD" '} aria-label="${label}"${required ? ' required' : ''}>`;
   };
   // Day 0 marks a row that stands for a group rather than a day of the month (see the level-shifting paste), so it
   // shows a dash where a date would go.
@@ -207,11 +203,11 @@
     `<form class="ledger-entry ledger-entry-form" data-ledger-form="entry" data-month="${mKey}" data-property="${property}" data-section="${ctx.esc(sectionName)}" data-type="${type}" data-category="${ctx.esc(category)}" novalidate>${dateField(mKey, isEventKey(mKey) ? ctx.today() : '')}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount" required>${FormActions('data-cancel-entry')}</form>`;
 
   const SubEntryForm = ({ mKey, parentId }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate>${dateField(mKey, '', { required: false, refs: false })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount">${FormActions('data-cancel-sub-entry')}</form>`;
+    `<form class="ledger-entry ledger-entry-form" data-ledger-form="sub-entry" data-parent-id="${ctx.esc(parentId)}" novalidate>${dateField(mKey, '', { required: false })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" placeholder="Description"  aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" placeholder="Comment"  aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Amount or =formula"  aria-label="Amount">${FormActions('data-cancel-sub-entry')}</form>`;
 
   // Double-click edit: the entry's or note's own fields, prefilled, in the same columns as the row it replaces.
   const EditEntryForm = ({ mKey, item, kind }, ctx) =>
-    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date, { refs: kind !== 'note', refDate: item.refDate || '' })}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.sharedTotal ?? item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
+    `<form class="ledger-entry ledger-entry-form is-edit" data-ledger-form="${kind === 'note' ? 'edit-note' : 'edit-entry'}" data-entry-id="${ctx.esc(item.id)}" novalidate>${dateField(mKey, item.date, {})}<input class="ledger-entry-desc" name="description" enterkeyhint="next" maxlength="80" value="${ctx.esc(item.description)}" placeholder="Description" aria-label="Description" autocomplete="off" required><input class="ledger-entry-place" name="place" enterkeyhint="next" maxlength="60" value="${ctx.esc(item.place || '')}" placeholder="Comment" aria-label="Comment" autocomplete="off"><input name="amount" enterkeyhint="done" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" value="${ctx.esc(item.formula || String(Number(item.sharedTotal ?? item.amount) / 100))}" placeholder="Amount or =formula" aria-label="Amount" required>${FormActions('data-cancel-edit', `data-delete-row="${kind === 'note' ? 'note' : 'entry'}" data-entry-id="${ctx.esc(item.id)}"`)}</form>`;
 
   // Inside a settlement or a pot a subsection has to say what it stands for, because that is what decides whether its
   // amounts are money that moved or only a note about the split. Everywhere else the picker is left out.
@@ -246,16 +242,20 @@
   // direction, clicking the other switches to it. The mode is null for the default (day, newest first: entries as
   // before, notes as entered), else 'date-asc' | 'amount-desc' | 'amount-asc'.
   const SORT_LABELS = { 'date-desc': 'day, newest first', 'date-asc': 'day, oldest first', 'amount-desc': 'amount, largest first', 'amount-asc': 'amount, smallest first' };
-  const byEntries = {
+  // Day 0 is no date: those rows come first, above the dated ones, whatever the order.
+  const isUndated = row => String(row.date).slice(8, 10) === '00';
+  const undatedFirst = compare => (a, b) => (isUndated(b) - isUndated(a)) || compare(a, b);
+  const byDateDesc = (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+  const byEntries = Object.fromEntries(Object.entries({
     'date-asc': (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
     'amount-desc': (a, b) => b._meta.total - a._meta.total || b.date.localeCompare(a.date),
     'amount-asc': (a, b) => a._meta.total - b._meta.total || b.date.localeCompare(a.date)
-  };
-  const byNotes = {
+  }).map(([key, compare]) => [key, undatedFirst(compare)]));
+  const byNotes = Object.fromEntries(Object.entries({
     'date-asc': (a, b) => a.date.localeCompare(b.date),
     'amount-desc': (a, b) => b.amount - a.amount,
     'amount-asc': (a, b) => a.amount - b.amount
-  };
+  }).map(([key, compare]) => [key, undatedFirst(compare)]));
   // The sort buttons are gone from the heading (they cluttered the table). Sorting is on the subsection's menu and by swiping
   // across its heading; only a faint note shows while a subsection is ordered other than newest-first.
   const SortHint = (mode, ctx) => {
@@ -435,7 +435,7 @@
     const isExpanded = state.expandedEntries.has(entry.id);
     // In a month, a note dated in another month is not drawn here; an event shows all of an entry's notes.
     const shown = entry.subEntries.filter(sub => notesShownIn(mKey, sub));
-    const subItems = byNotes[order] ? [...shown].sort(byNotes[order]) : shown;
+    const subItems = [...shown].sort(byNotes[order] || undatedFirst(() => 0));
     const hasSubItems = subItems.length > 0;
     const showingSubEntryForm = state.subEntryDraftParentId === entry.id;
     const subEntriesHtml = subItems.map(sub => SubEntryRow(sub, { mKey, type, property }, state, ctx)).join('');
@@ -448,7 +448,7 @@
     if (state.editDraft?.kind === 'entry' && state.editDraft.id === entry.id) {
       return `<div class="ledger-entry-cell">${EditEntryForm({ mKey, item: entry, kind: 'entry' }, ctx)}${notes}</div>`;
     }
-    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${MoneyTag(entry, moneyKind, moneyRole, ctx)}${GroupMark(entry.groups, ctx)}${CardMark(entry, ctx)}${SettleStatusMark(entry, ctx)}${isRepay(entry) ? PayerPie([entry], entry.property, ctx) : ''}${AutoMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), entry.markerOf ? '–' : amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
+    return `<div class="ledger-entry-cell"${isRepay(entry) ? ' data-repay' : ''}${tagLine(entry, ctx)}><div class="ledger-entry-line${hasSubItems ? ' has-notes' : ''}"><button type="button" class="ledger-entry ledger-entry-toggle" data-toggle-entry data-entry-id="${ctx.esc(entry.id)}" aria-expanded="${isExpanded}" title="${ctx.esc(ctx.dayLabel(entry.date))} · ${ctx.esc(entry.description)}${entry.place ? ` · ${ctx.esc(entry.place)}` : ''}${hasSubItems ? ` · ${subItems.length} ${subItems.length === 1 ? 'note' : 'notes'}` : ''}"><time datetime="${entry.date}">${DayOrb(entry, dateText(mKey, entry.date, ctx), ctx)}</time>${descAndComment(entry.description, entry.place, ctx, `${ClearedMark(entry)}${SplitMark(entry.split, ctx)}${AllocMark(entry.alloc, entry._meta.total, property, ctx)}${AboutTags(entry.about, { kind: 'entry', id: entry.id }, ctx)}`, `${MoneyTag(entry, moneyKind, moneyRole, ctx)}${GroupMark(entry.groups, ctx)}${CardMark(entry, ctx)}${SettleStatusMark(entry, ctx)}${isRepay(entry) ? PayerPie([entry], entry.property, ctx) : ''}${AutoMark(entry, ctx)}`)}${amountTag(toneOf(type, entry._meta.total), entry.sharedTotal !== undefined ? `Actual amount ${amountText(type, entry.sharedTotal, property, ctx)}` : (entry._meta.children ? null : entry.formula), amountText(type, entry._meta.total, property, ctx), ctx)}</button></div>${moneyLink}${notes}</div>`;
   };
 
   // Level 4: category (collapsible) -------------------------------------------------------------
@@ -463,7 +463,7 @@
     const editing = state.editDraft && ['entry', 'note'].includes(state.editDraft.kind) ? state.editDraft.id : null;
     const byMonth = [...category._meta.months].sort((a, b) => b.month - a.month);
     return byMonth.map(({ month, total, entries: count }) => {
-      const own = category.entries.filter(entry => entry.month === month).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+      const own = category.entries.filter(entry => entry.month === month).sort(undatedFirst(byDateDesc));
       const monthName = global.ExpenseStore.MONTH_NAMES[month];
       const open = Boolean(editing) && own.some(entry => entry.id === editing || entry.subEntries.some(sub => sub.id === editing));
       const jump = `<button type="button" class="ledger-month-jump" data-year-jump="${year}-${String(month + 1).padStart(2, '0')}" data-property="${property}" data-category="${ctx.esc(name)}" title="Open ${ctx.esc(monthName)} ${year} at ${ctx.esc(name)}"><i class="ti ti-external-link" aria-hidden="true"></i>Open ${ctx.esc(monthName)} ${year}</button>`;
@@ -509,7 +509,7 @@
     // Every entry shared: the subsection wears the label. Only some: those entries wear it, and the subsection does not.
     const allShared = category.entries.length > 0 && category.entries.every(isShared);
     const entries = inYear ? YearEntries(key, name, category, { mKey, type, property }, state, ctx) : [...category.entries]
-      .sort(byEntries[order] || ((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)))
+      .sort(byEntries[order] || undatedFirst(byDateDesc))
       .map(entry => EntryRow(entry, { mKey, type, property, order, showShared: !allShared, moneyKind: MONEY_KINDS.includes(kind) ? kind : null, moneyRole: purpose?.role || '' }, state, ctx))
       .join('');
     // The sort buttons sit on the subsection's own line, straight after its name (and its event's section name). They
