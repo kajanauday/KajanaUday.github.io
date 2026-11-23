@@ -224,43 +224,71 @@
 
   // ---- the stored report: one person's shared side, worked out once and kept (sharedReport/<currency>/<person>) ----
   // Everything the People page draws, so opening it reads this and works nothing out: each shared entry with what is still
-  // open on it, the totals and the buffer, each series (see runSeries) with whether it is settled, what its payments came to
-  // and when, and the settlements. It is rebuilt from the entries and settlements whenever either changes, and is a pure
-  // function of them: the same entries and settlements always give the same report. `entries` and `settlements` must
-  // already be one person in one currency. Returns plain data, safe to save.
-  const REPORT_VERSION = 1;
+  // open on it, the totals and the buffer, the settlements, and `closed`: one group per settlement that finished entries. An
+  // entry belongs to the settlement that paid off the last of it (`closedBy`); everything that settlement closed is one settled
+  // box, and the entries still open stay in the running box. So a settlement, whether made with the Settle button or an entry made
+  // a settlement for several expenses, gathers everything it paid off into one box. A pure function of the entries and
+  // settlements; they must already be one person in one currency. Returns plain data, safe to save.
+  const REPORT_VERSION = 4;
   function report(entries, settlements) {
     const shared = (entries || []).filter(entry => entry.shared);
-    const open = pending(shared, settlements);
+    const real = (settlements || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id).localeCompare(String(b.id)));
+    const open = pending(shared, real);
     const owedBy = new Map([...open.receivable, ...open.payable].map(row => [row.id, row.owed]));
+    const lastOn = new Map();
+    real.forEach(settlement => (settlement.items || []).forEach(item => lastOn.set(item.to, settlement.id)));
+    const closedBy = entry => (owedBy.has(entry.id) ? '' : lastOn.get(entry.id) || '');
     const groups = new Map();
     shared.forEach(entry => {
-      const id = entry.series?.id || entry.item?.series?.id || 'legacy';
-      if (!groups.has(id)) groups.set(id, { id, colour: entry.series?.colour || entry.item?.series?.colour || '', list: [] });
-      groups.get(id).list.push(entry);
+      const id = closedBy(entry);
+      if (!id) return;
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(entry);
     });
-    const series = [...groups.values()].map(group => {
-      const ids = new Set(group.list.map(entry => entry.id));
-      const byId = new Map(group.list.map(entry => [entry.id, entry]));
-      const paid = (settlements || []).filter(settlement => (settlement.items || []).some(item => ids.has(item.to)));
-      const moved = paid.reduce((sum, settlement) => sum + (settlement.items || []).filter(item => ids.has(item.to))
+    const closed = [...groups].map(([id, list]) => {
+      const ids = new Set(list.map(entry => entry.id));
+      const byId = new Map(list.map(entry => [entry.id, entry]));
+      const touching = real.filter(settlement => (settlement.items || []).some(item => ids.has(item.to)));
+      const moved = touching.reduce((sum, settlement) => sum + (settlement.items || []).filter(item => ids.has(item.to))
         .reduce((inner, item) => inner + (byId.get(item.to).paidBy === 'friend' ? -1 : 1) * Math.abs(whole(item.a)), 0), 0);
-      const dates = group.list.map(entry => String(entry.date || '')).sort();
-      const last = paid.map(settlement => String(settlement.date || '')).sort().pop() || '';
-      return { id: group.id, colour: group.colour, from: dates[0] || '', to: dates[dates.length - 1] || '', last, moved, count: group.list.length,
-        settled: paid.length > 0 && group.list.every(entry => !owedBy.has(entry.id)) };
+      const dates = list.map(entry => String(entry.date || '')).sort();
+      const last = String(real.find(settlement => settlement.id === id)?.date || '');
+      return { id, last, moved, from: dates[0] || '', to: dates[dates.length - 1] || '', count: list.length };
     });
     return {
       v: REPORT_VERSION,
       buffer: open.buffer, net: open.net, overall: open.overall, receivableTotal: open.receivableTotal, payableTotal: open.payableTotal,
       entries: shared.map(entry => ({
         id: entry.id, date: String(entry.date || ''), description: String(entry.description || ''), amount: Math.abs(whole(entry.amount)),
-        paidBy: entry.paidBy === 'friend' ? 'friend' : 'me', hisPct: Number(entry.hisPct ?? DEFAULT_HIS_PCT), series: entry.series?.id || entry.item?.series?.id || '',
-        owed: owedBy.get(entry.id) || 0
+        paidBy: entry.paidBy === 'friend' ? 'friend' : 'me', hisPct: Number(entry.hisPct ?? DEFAULT_HIS_PCT),
+        owed: owedBy.get(entry.id) || 0, closedBy: closedBy(entry),
+        place: String(entry.place || ''), about: String(entry.about || ''), notes: (entry.notes || []).map(note => ({ id: String(note.id), date: String(note.date || ''), description: String(note.description || ''), place: String(note.place || ''), amount: Math.abs(whole(note.amount)) }))
       })),
-      series,
-      settles: (settlements || []).map(settlement => JSON.parse(JSON.stringify(settlement)))
+      closed,
+      settles: real.map(settlement => JSON.parse(JSON.stringify(settlement)))
     };
+  }
+
+  // One payment against shared expenses, with some of what is owed the other way counted in it. `balance` is the money in the
+  // payment; `targets` are the shared ids it pays, oldest first, each with what is still open on it (`open`: Map id → owed);
+  // `counted` are expenses owed the other way that were chosen to be counted ({ id, owed }): they are cleared in full and added to
+  // the money, so only the difference leaves the pocket. Nothing is counted that was not chosen, and nothing is netted by itself.
+  // Returns { ok, items (what the money pays, to clear), counted (the same, for the other way), total, net, error }.
+  function planCounted({ balance, targets, open, counted }) {
+    const countedList = (counted || []).filter(row => row.owed > 0).map(row => ({ to: row.id, a: row.owed }));
+    const countedTotal = countedList.reduce((sum, row) => sum + row.a, 0);
+    let available = Math.max(0, whole(balance)) + countedTotal;
+    const items = [];
+    (targets || []).forEach(id => {
+      const owed = open.get(id) || 0;
+      if (available <= 0 || owed <= 0) return;
+      const a = Math.min(available, owed);
+      items.push({ to: id, a });
+      available -= a;
+    });
+    const total = items.reduce((sum, row) => sum + row.a, 0);
+    if (countedTotal && total < countedTotal) return { ok: false, error: 'counted-exceeds', items, counted: countedList, total, net: total - countedTotal, countedTotal };
+    return { ok: true, items, counted: countedList, total, net: total - countedTotal, countedTotal };
   }
 
   // What the two of us do to my own income and expenses from the shared side. My share of each entry is an expense
@@ -353,7 +381,7 @@
     return SERIES_COLOURS[hash % SERIES_COLOURS.length];
   }
 
-  const api = { resolve, buffer, allocate, planPayment, report, REPORT_VERSION, fixedColour, DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
+  const api = { resolve, buffer, allocate, planPayment, planCounted, report, REPORT_VERSION, fixedColour, DEFAULT_HIS_PCT, split, outstanding, pending, settle, profitEffect, byFriend, SERIES_COLOURS, runSeries, joinSeries, colourAt };
   if (typeof module === 'object' && module.exports) module.exports = api;
   global.SharedLedger = api;
 })(typeof window !== 'undefined' ? window : globalThis);

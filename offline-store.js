@@ -390,6 +390,36 @@
             await this.raw.patch(this.stamped(payload));
             await this.vault.release(item.id);
           } catch (error) {
+            // A refused save (HTTP 400) with several paths in it: send them one by one, so everything Firebase accepts goes out and the
+            // one it refuses is named (in the Sync panel), instead of one bad path holding the whole save back.
+            const parts = Object.entries(payload).filter(([path]) => !path.startsWith('meta/'));
+            if (error?.status === 400 && parts.length > 1) {
+              const refused = [];
+              let broke = false;
+              for (const [path, value] of parts) {
+                try { await this.raw.patch(this.stamped({ [path]: value })); } catch (inner) {
+                  if (inner?.status === 400) refused.push({ path, message: inner.message });
+                  else { this.offline = isOffline(inner); this.lastError = this.offline ? null : (inner?.message || String(inner)); broke = true; break; }
+                }
+              }
+              if (broke) return this.report(this.offline ? 'offline' : 'error');
+              const real = refused.filter(row => !row.path.startsWith('sharedReport/'));
+              if (!real.length) {
+                if (refused.length) console.warn('Firebase refused the shared report; it is skipped and will be rebuilt.', refused.map(row => row.path));
+                await this.vault.release(item.id);
+                continue;
+              }
+              this.lastError = `Firebase refuses ${real.map(row => row.path).join(', ')} — ${real[0].message}`;
+              console.error('Firebase refused these paths:', real);
+              return this.report('error');
+            }
+            // The stored shared report is worked out from the rest of the ledger and rebuilt whenever it changes, so one that Firebase
+            // refuses must never hold up the saves behind it: it is dropped, said once, and the next rebuild writes it afresh.
+            if (!isOffline(error) && Object.keys(item.update).every(path => path.startsWith('sharedReport/') || path.startsWith('meta/'))) {
+              console.warn('Firebase refused the shared report; it is skipped and will be rebuilt.', error?.message || error, error?.paths || '');
+              await this.vault.release(item.id);
+              continue;
+            }
             this.offline = isOffline(error);
             // Why it failed, kept where the Sync panel can show it: a send that fails silently looks exactly like one
             // that never happened, and leaves nothing to act on.

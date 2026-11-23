@@ -72,3 +72,34 @@ test('a part payment on a series goes to the side it is for, oldest first, insid
   const { plan } = pay(entries, [], 1500);
   assert.deepEqual(plan.items, [{ to: 'a', a: 1000 }, { to: 'b', a: 500 }]);
 });
+
+test('counting what is owed the other way adds to the money, and only the difference is paid', () => {
+  // I owe them 30 (one expense); they owe me 20 (another). I pay 10 and count the 20: the 30 is cleared and the 20 too.
+  const result = SL.planCounted({ balance: 1000, targets: ['theirs'], open: new Map([['theirs', 3000]]), counted: [{ id: 'mine', owed: 2000 }] });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.items, [{ to: 'theirs', a: 3000 }]);
+  assert.deepEqual(result.counted, [{ to: 'mine', a: 2000 }]);
+  assert.equal(result.net, 1000);               // the money that moves: 30 - 20
+});
+
+test('nothing is netted unless it is counted', () => {
+  const result = SL.planCounted({ balance: 3000, targets: ['theirs'], open: new Map([['theirs', 3000]]), counted: [] });
+  assert.deepEqual(result.items, [{ to: 'theirs', a: 3000 }]);
+  assert.equal(result.net, 3000);               // pays the full 30; their 20 stays open
+  assert.equal(result.counted.length, 0);
+});
+
+test('counting more than the payment pays off is refused', () => {
+  const result = SL.planCounted({ balance: 0, targets: ['theirs'], open: new Map([['theirs', 1000]]), counted: [{ id: 'mine', owed: 2000 }] });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'counted-exceeds');
+});
+
+test('a payment with counted items settles to the right net in the ledger', () => {
+  const entries = [{ id: 'theirs', date: '2026-10-02', amount: 6000, paidBy: 'friend', hisPct: 50, shared: true }, { id: 'mine', date: '2026-10-05', amount: 4000, paidBy: 'me', hisPct: 50, shared: true }];
+  const plan = SL.planCounted({ balance: 1000, targets: ['theirs'], open: new Map([['theirs', 3000]]), counted: [{ id: 'mine', owed: 2000 }] });
+  const cash = -plan.net;                       // I pay 10
+  const result = SL.settle({ entries, settlements: [], items: [...plan.items, ...plan.counted], cash, treatment: 'none' });
+  assert.equal(result.ok, true);
+  assert.equal(result.forgiven, 0);
+});

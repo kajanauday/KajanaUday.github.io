@@ -2712,3 +2712,190 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
   .pp-box .pp-totals span { font-size: 12.5px; }
   .pp-box .pp-totals span + span::before { padding: 0 6px; }
 }
+
+/* Box header, one line: name and currency, the balance right beside it, then what I paid and what they paid, then Settle. */
+.pp-box .ledger-panel-head { flex-wrap: wrap; justify-content: flex-start; gap: 2px 10px; }
+.pp-box .pp-bal { font: 700 13px var(--display); white-space: nowrap; }
+.pp-box .pp-bal.is-in { color: var(--income); }
+.pp-box .pp-bal.is-out { color: var(--expense); }
+.pp-box .pp-totals { margin-left: auto; }
+.pp-box .pp-settle-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; font-size: 12px; }
+.pp-settle-close { margin-left: auto; }
+.pp-settle-top { align-items: center; }
+
+/* Header order: name, Settle beside it, then what I paid and what they paid, then the balance at the end. */
+.pp-box .pp-totals { margin-left: auto; }
+.pp-box .pp-bal { margin-left: 2px; }
+
+/* Settle panel: the open expenses to tick, settled together as one group. */
+.pp-picks { display: grid; border: 1px solid var(--line-soft); border-radius: 8px; max-height: 34vh; overflow: auto; }
+.pp-pick-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: var(--surface-soft); color: var(--muted); font-size: 12px; position: sticky; top: 0; }
+.pp-pick-all { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.pp-pick { display: grid; grid-template-columns: 18px 58px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line-soft); border-left: 3px solid transparent; font-size: 13px; cursor: pointer; }
+.pp-pick.is-mine { border-left-color: var(--income); }
+.pp-pick.is-theirs { border-left-color: var(--expense); }
+.pp-pick:has(input:checked) { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.pp-pick time { color: var(--muted); font: 500 11px var(--mono); }
+.pp-pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.pp-pick b { font: 700 13px var(--mono); }
+.pp-pick.is-mine b { color: var(--income); }
+.pp-pick.is-theirs b { color: var(--expense); }
+.pp-picks input { width: 16px; height: 16px; accent-color: var(--brand); }
+
+/* Month rows, phone widths: the hairline between the figure groups (In | Out | set aside | Balance) stays a 1px line. A narrower-screen
+   rule gives every separator side padding, and this line's background filled it in, drawing a dark block between the numbers. */
+.month-tag.ms-cur .ms-kv.is-gap::before,
+.month-block .month-tag.ms-cur .ms-kv + .ms-kv.is-gap::before {
+  box-sizing: content-box; width: 1px; height: 12px; padding: 0; border: 0; margin: 0 6px 0 4px; background: var(--line-strong); opacity: .6; align-self: center;
+}
+@media (max-width: 700px) {
+  .month-tag.ms-cur .ms-kv.is-gap::before, .month-block .month-tag.ms-cur .ms-kv + .ms-kv.is-gap::before { margin: 0 4px 0 3px; }
+}
+
+/* The "+" on a box and its compact add-expense pane: three looping wheels, an I | THEY toggle, and thin rows. */
+.pp-box .pp-add-btn { flex: none; width: 26px; height: 26px; padding: 0; display: inline-grid; place-items: center; font-size: 14px; }
+.pp-box .pp-add-btn[aria-expanded="true"] { background: var(--brand-soft); color: var(--brand); border-color: var(--brand); }
+.pp-add { display: grid; gap: 4px; padding: 5px 0 6px; border-bottom: 1px solid var(--line-soft); }
+.pp-add-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pp-add-row[hidden] { display: none; }
+.pp-add select, .pp-add input:not([type="hidden"]) { height: 28px; min-width: 0; box-sizing: border-box; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 12.5px; }
+.pp-add select:focus, .pp-add input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.pp-where { flex: 1 1 130px; min-width: 0; display: flex; align-items: center; gap: 3px; }
+.pp-where > select, .pp-where > input { flex: 1 1 auto; min-width: 0; width: 100%; }
+.pp-where > [hidden] { display: none; }
+.pp-where-x { flex: none; width: 24px; height: 28px; padding: 0; display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: 6px; }
+.pp-where-x:hover { color: var(--ink); background: var(--hover); }
+.pp-add input[name="description"] { flex: 3 1 110px; }
+.pp-add input[name="amount"] { flex: 1 1 72px; text-align: right; }
+.pp-add .pp-add-go { flex: none; width: 30px; height: 28px; padding: 0; display: inline-grid; place-items: center; }
+.pp-add .icon-button { flex: none; width: 28px; height: 28px; padding: 0; }
+.pp-add .settings-error { margin: 0; font-size: 12px; }
+.pp-add-top { gap: 6px; flex-wrap: nowrap; }
+.pp-add-top .pp-toggle button { height: 26px; padding: 0 9px; }
+@media (max-width: 430px) { .pp-add-top { flex-wrap: wrap; } }
+/* The wheels: one number shows; scrolling it up or down steps the value, and it loops. */
+.pp-wheel { position: relative; flex: none; width: 38px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); overflow: hidden; }
+.pp-wheel.is-year { width: 52px; }
+.pp-wheel[hidden] { display: none; }
+.pp-wheel:focus-within { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+.pp-wheel-track { height: 28px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-y; outline: 0; cursor: ns-resize; }
+.pp-wheel-track::-webkit-scrollbar { display: none; }
+.pp-wheel-item { height: 28px; display: grid; place-items: center; scroll-snap-align: start; font: 600 13px var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); user-select: none; -webkit-user-select: none; }
+.pp-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface-soft); }
+.pp-toggle button { height: 30px; padding: 0 12px; border: 0; background: transparent; color: var(--muted); font: 700 12px var(--mono); letter-spacing: .04em; cursor: pointer; }
+.pp-toggle button + button { border-left: 1px solid var(--line); }
+.pp-toggle button[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand); }
+.pp-his { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: 12px; }
+.pp-his input { width: 46px; text-align: right; }
+
+/* The page's "+" opens one add pane at the top, with a currency list and a person field. */
+.pp-new:empty { display: none; }
+.pp-newbox { max-width: 640px; }
+.pp-add-who select { flex: 0 0 76px; }
+.pp-add-who input { flex: 1 1 140px; }
+
+/* Running settlements: one opens by default; several are wrapped into capsules to pick from. An open box wraps back with its chevron. */
+.pp-run-caps { display: flex; flex-wrap: wrap; gap: 8px; }
+.pp-run-caps:empty { display: none; }
+.pp-run-cap { display: inline-flex; align-items: center; gap: 7px; height: 34px; min-width: 0; max-width: 100%; padding: 0 12px 0 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent, var(--india)); border-radius: 99px; background: var(--surface); color: var(--ink); font: 500 13px var(--sans, inherit); cursor: pointer; }
+.pp-run-cap.japan { --accent: var(--japan); }
+.pp-run-cap.india { --accent: var(--india); }
+.pp-run-cap:hover { background: var(--hover); border-color: var(--brand); }
+.pp-run-cap b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.pp-run-cap small { color: var(--muted); font: 500 10px var(--mono); }
+.pp-run-cap span { font: 700 13px var(--display); white-space: nowrap; }
+.pp-run-cap span.is-in { color: var(--income); }
+.pp-run-cap span.is-out { color: var(--expense); }
+.pp-run-cap em { min-width: 18px; padding: 0 6px; border-radius: 99px; background: var(--hover); color: var(--muted); font: 600 11px/18px var(--mono); font-style: normal; text-align: center; }
+.pp-run-cap i { font-size: 13px; color: var(--muted); }
+.pp-box .pp-wrap-btn { flex: none; width: 24px; height: 24px; padding: 0; display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--muted); font-size: 14px; }
+.pp-box .pp-wrap-btn i { transition: transform .15s; transform: rotate(180deg); }
+.pp-box .pp-wrap-btn:hover { color: var(--ink); background: var(--hover); }
+
+/* Inline editing of a shared entry: a pencil at the end of the row (or double-click), and a one-row form in its place. */
+.pp-box .pp-row.has-pen { grid-template-columns: 60px minmax(0, 1fr) auto 22px; }
+.pp-row-pen { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.pp-row:hover .pp-row-pen, .pp-row-pen:focus-visible { opacity: 1; }
+.pp-row-pen:hover { color: var(--ink); background: var(--hover); }
+@media (hover: none) { .pp-row-pen { opacity: .7; } }
+.pp-row-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 8px 6px 10px; border-bottom: 1px solid var(--line-soft); border-left: 3px solid var(--brand); background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.pp-row-form.is-mine { border-left-color: var(--income); }
+.pp-row-form.is-theirs { border-left-color: var(--expense); }
+.pp-row-form input:not([type="hidden"]) { height: 28px; min-width: 0; box-sizing: border-box; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 12.5px; }
+.pp-row-form input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.pp-row-form input[name="day"] { flex: 0 0 38px; text-align: center; }
+.pp-row-form input[name="description"] { flex: 3 1 110px; }
+.pp-row-form input[name="amount"] { flex: 1 1 78px; text-align: right; }
+.pp-row-form .pp-toggle button { height: 26px; padding: 0 9px; }
+.pp-row-form .pp-his input { width: 46px; text-align: right; }
+.pp-row-form .pp-add-go { flex: none; width: 30px; height: 28px; padding: 0; display: inline-grid; place-items: center; }
+.pp-row-form .icon-button { flex: none; width: 28px; height: 28px; padding: 0; }
+.pp-row-form .settings-error { flex: 1 1 100%; margin: 0; font-size: 12px; }
+
+/* Settled capsules look like the running ones (name, currency, amount, items), muted, with no dates; the date is inside when opened. */
+.pp-run-cap.is-settled { background: var(--surface); filter: saturate(.55); color: var(--muted); }
+.pp-run-cap.is-settled b { opacity: .85; }
+.pp-run-cap[aria-pressed="true"] { border-color: var(--brand); background: var(--surface-soft); box-shadow: 0 0 0 2px var(--brand-soft); filter: none; }
+.pp-run-cap[aria-pressed="true"] i { transform: rotate(180deg); }
+.pp-settled-on { color: var(--muted); font: 500 11px var(--mono); white-space: nowrap; }
+
+/* Shared entries like the month's: a comment after the description, an info/notes button, and, opened, the long description and notes. */
+.pp-box .pp-what .pp-comment { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; font-style: normal; opacity: .75; }
+.pp-notes-btn { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 4px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: 600 10.5px var(--mono); cursor: pointer; opacity: 0; transition: opacity .12s; }
+.pp-notes-btn.has-some, .pp-notes-btn[aria-expanded="true"] { opacity: .85; }
+.pp-row:hover .pp-notes-btn, .pp-notes-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .pp-notes-btn { opacity: .7; } }
+.pp-notes-btn:hover { color: var(--ink); background: var(--hover); }
+.pp-notes-btn i { font-size: 12px; }
+.pp-row-detail { display: grid; gap: 2px; padding: 4px 8px 6px 70px; border-bottom: 1px solid var(--line-soft); background: color-mix(in srgb, var(--surface-soft) 60%, transparent); }
+.pp-about { margin: 0 0 2px; color: var(--muted); font-size: 12px; font-style: italic; line-height: 1.35; overflow-wrap: anywhere; }
+.pp-note-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; font-size: 12.5px; color: var(--note, var(--ink)); }
+.pp-note-row time { color: var(--muted); font: 500 11px var(--mono); }
+.pp-note-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-note-row em { color: var(--muted); font-style: normal; font-size: 11.5px; opacity: .75; }
+.pp-note-row b { font: 600 12.5px var(--mono); text-align: right; }
+.pp-note-row .pp-row-pen { opacity: .6; }
+.pp-note-row:hover .pp-row-pen { opacity: 1; }
+.pp-note-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pp-note-form input { height: 26px; min-width: 0; box-sizing: border-box; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 12px; }
+.pp-note-form input:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.pp-note-form input[name="day"] { flex: 0 0 36px; text-align: center; }
+.pp-note-form input[name="description"] { flex: 3 1 100px; }
+.pp-note-form input[name="amount"] { flex: 1 1 70px; text-align: right; }
+.pp-note-form .pp-add-go { flex: none; width: 28px; height: 26px; padding: 0; display: inline-grid; place-items: center; }
+.pp-note-form .icon-button { flex: none; width: 26px; height: 26px; padding: 0; }
+.pp-note-form .settings-error { flex: 1 1 100%; margin: 0; font-size: 12px; }
+.pp-row-form input.pp-wide { flex: 1 1 45%; }
+.pp-row-form .pp-danger:hover { color: var(--expense); border-color: var(--expense); }
+@media (max-width: 520px) { .pp-row-detail { padding-left: 14px; } }
+.pp-box .pp-what .pp-comment { flex: 0 20 auto; }
+@container (max-width: 380px) { .pp-box .pp-what .pp-comment { display: none; } }
+
+/* One left edge for every description in a box: the entry rows, their notes, the long description, and the edit/add forms all use the
+   same date column (--pp-date) and the same left padding, so descriptions start at the same indent. */
+.pp-list { --pp-date: 60px; --pp-lead: 11px; --pp-gap: 6px; }
+@container (max-width: 340px) { .pp-box .pp-list { --pp-date: 46px; } }
+.pp-box .pp-row, .pp-box .pp-row.has-pen { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto; gap: var(--pp-gap); padding-left: 8px; }
+.pp-box .pp-row.has-pen { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto 22px; }
+.pp-box .pp-row .pp-date { grid-column: auto; }
+.pp-box .pp-row-detail { padding: 4px 8px 6px var(--pp-lead); }
+.pp-box .pp-note-row { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto auto auto; gap: var(--pp-gap); }
+.pp-box .pp-about { margin-left: calc(var(--pp-date) + var(--pp-gap)); }
+.pp-box .pp-note-form { display: grid; grid-template-columns: var(--pp-date) minmax(0, 1fr) minmax(64px, 92px) auto auto; gap: var(--pp-gap); align-items: center; }
+.pp-box .pp-note-form input[name="day"] { width: 100%; flex: none; }
+.pp-box .pp-note-form .settings-error { grid-column: 1 / -1; }
+.pp-box .pp-row-form { padding: 6px 8px 6px 8px; gap: 4px var(--pp-gap); }
+.pp-box .pp-row-form input[name="day"] { flex: 0 0 var(--pp-date); width: var(--pp-date); }
+.pp-box .pp-group { padding-left: var(--pp-lead); }
+@media (max-width: 520px) { .pp-box .pp-row-detail { padding-left: var(--pp-lead); } }
+
+/* The row an entry's circle led to: marked for a moment. */
+@keyframes ppPing { 0%, 60% { background: color-mix(in srgb, var(--brand) 28%, transparent); } 100% { background: transparent; } }
+.pp-row.is-pinged-row { animation: ppPing 2.2s ease-out; }
+
+/* The settle panel's two lists: what I owe them, and what they owe me, ticked separately. */
+.pp-pick-hint { margin: 0; padding: 6px 10px; color: var(--muted); font-size: 12px; }
+.pp-pick-head > span { display: grid; gap: 1px; }
+.pp-pick-head small { color: var(--muted); font-size: 11px; opacity: .8; }
+.pp-pick-head.is-mine b { color: var(--income); }
+.pp-pick-head.is-theirs b { color: var(--expense); }

@@ -111,10 +111,10 @@
       <div class="pp-title"><p>Shared costs</p><h2>Settle up</h2></div>
       <div class="pp-controls">
         <div class="pp-seg" role="group" aria-label="Order of the entries">
-          <button type="button" data-pp-order="date" aria-pressed="true" title="Mine and theirs together, oldest first">By date</button>
+          <button type="button" data-pp-order="date" aria-pressed="true" title="Mine and theirs together, newest first">By date</button>
           <button type="button" data-pp-order="split" aria-pressed="false" title="All of mine first, then theirs">Mine first</button>
         </div>
-        <label class="pp-check"><input type="checkbox" id="pp-hide-settled"> Hide settled</label>
+        <button type="button" class="icon-button" id="pp-new-btn" data-add-open="__new__" aria-expanded="false" aria-label="Add a shared expense with anyone, in any currency" title="Add a shared expense: any person, any currency"><i class="ti ti-plus" aria-hidden="true"></i></button>
       </div>
     </div>
     <p class="pp-empty" id="pp-empty" hidden>Nothing shared yet. Right-click an expense and choose “Mark as shared…”.</p>
@@ -124,7 +124,9 @@
           <h3 id="pp-settle-title"><i class="ti ti-cash" aria-hidden="true"></i> Settle a payment</h3>
           <label class="pp-who"><span>With</span><select name="who" aria-label="Person and currency"></select></label>
           <div class="pp-settle-say" id="pp-settle-say" aria-live="polite"></div>
+          <button type="button" class="icon-button pp-settle-close" id="pp-settle-close" aria-label="Close" title="Close"><i class="ti ti-x" aria-hidden="true"></i></button>
         </div>
+        <div class="pp-picks" id="pp-settle-items"></div>
         <div class="pp-pay-row">
           <label><span>Amount</span><input type="text" name="amount" inputmode="decimal" autocomplete="off" placeholder="0.00"></label>
           <label><span>Date</span><input type="date" name="date" required></label>
@@ -137,11 +139,13 @@
         <p class="settings-error" role="alert" hidden></p>
       </form>
     </section>
+    <div class="pp-new" id="pp-new"></div>
+    <div class="pp-run-caps" id="pp-run-caps" role="list"></div>
     <div class="ledger-panels pp-boxes" id="pp-boxes"></div>
     <section class="pp-settled" id="pp-settled" aria-labelledby="pp-settled-title" hidden>
       <hr class="pp-rule">
       <h3 id="pp-settled-title">Settled <small id="pp-settled-count"></small></h3>
-      <div class="pp-caps" id="pp-settled-body" role="list"></div>
+      <div class="pp-run-caps" id="pp-settled-body" role="list"></div>
       <div class="pp-cap-open" id="pp-settled-detail" aria-live="polite"></div>
     </section>
   </main>

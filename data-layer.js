@@ -140,7 +140,15 @@
     async request(path, options) {
       const token = this.auth ? await this.auth() : null;
       const response = await fetch(`${this.base}${path ? `/${path}` : ''}.json${token ? `?auth=${encodeURIComponent(token)}` : ''}`, options);
-      if (!response.ok) throw new Error(`Firebase ${options?.method || 'GET'} ${path || '/'} failed: HTTP ${response.status}`);
+      if (!response.ok) {
+        // Firebase says why in the body ({"error": "…"}); keep it, so a refusal can be read instead of guessed at.
+        let why = '';
+        try { why = (await response.text()).slice(0, 300); } catch (error) { /* No body. */ }
+        const error = new Error(`Firebase ${options?.method || 'GET'} ${path || '/'} failed: HTTP ${response.status}${why ? ` — ${why}` : ''}`);
+        error.status = response.status;
+        if (response.status === 400 && options?.body) { try { error.paths = Object.keys(JSON.parse(options.body)).slice(0, 12); } catch (parseError) { /* Not JSON. */ } }
+        throw error;
+      }
       return response.json();
     }
     get(path) { return this.request(path); }
@@ -1926,8 +1934,11 @@
       };
       this.transactions.filter(row => row.sid && row.shared && !row.parentId && !row.eventId).forEach(row => slot(row.property, row.shared.with).entries.push({
         id: row.sid, amount: this.fullAmount(row), paidBy: row.shared.by, hisPct: row.shared.his, shared: true, date: row.date,
-        description: row.description, series: row.series, property: row.property, with: row.shared.with
+        description: row.description, series: row.series, property: row.property, with: row.shared.with, place: row.place, about: row.about,
+        notes: this.transactions.filter(note => note.parentId === row.id).map(note => ({ id: note.id, date: note.date, description: note.description, place: note.place, amount: Number(note.amount) }))
       }));
+      // Every settlement: those made with the Settle button, and those from an entry made a settlement (an entry in a place set as
+      // someone's repayments, see repayFor). An ordinary entry is neither, so it settles nothing.
       this.settleList().forEach(settle => { const { year, ...plain } = settle; slot(settle.property, settle.with).settles.push(plain); });
       return new Map([...people].map(([path, person]) => [path, { property: person.property, with: person.with, ...global.SharedLedger.report(person.entries, person.settles) }]));
     }
@@ -1953,6 +1964,7 @@
           this.sharedReports = built;
         } while (this.reportAgain);
         try { localStorage.setItem(REPORT_FLAG, '1'); localStorage.removeItem(REPORT_DIRTY); } catch (error) { /* Kept for this visit only. */ }
+        try { this.onSharedReport?.(); } catch (error) { console.warn('The shared report could not be redrawn.', error); }
       };
       this.reportRun = run().finally(() => { this.reportRun = null; });
       return this.reportRun;
