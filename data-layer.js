@@ -284,7 +284,7 @@
           }
         } : {})
       });
-      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note), ...groupsOf(note) }));
+      const notes = (childrenOf.get(item.id) || []).map(note => ({ ...when(note), description: note.description, place: note.place || '', amount: Number(note.amount), ...(note.formula && { formula: note.formula }), ...tagsOf(note), ...aboutOf(note), ...groupsOf(note), ...(note.counted?.sid ? { counted: { sid: String(note.counted.sid) } } : {}) }));
       const entry = { ...when(item), description: item.description, place: item.place || '', amount: Number(item.amount), ...tagsOf(item), ...aboutOf(item), ...splitOf(item), ...allocOf(item), ...sharedOf(item), ...clearedOf(item), ...cardOf(item), ...refOf(item), ...groupsOf(item), ...moneyLinkOf(item) };
       if (item.formula) entry.formula = item.formula;
       if (item.section) entry.section = item.section;
@@ -1849,6 +1849,8 @@
       const node = this.year(at);
       if (!node) return Promise.reject(new Error(`No year ${at} to keep the settlement in.`));
       const settles = node.settles ||= {};
+      // A settlement made now says whether it closes (see SharedLedger.report); one saved again (to link it to an entry, say) keeps what it had.
+      if (settle.closes === undefined && !settles[settle.id]) settle.closes = false;
       settles[settle.id] = settle;
       this.resetShared();
       return this.queue(() => this.db.patch({ [`years/${at}/settles/${settle.id}`]: settle }));
@@ -1899,6 +1901,30 @@
       return this.seriesIndex.get(item.sid) || null;
     }
 
+    // Changes the name of the person shared expenses are made with, everywhere it is kept: every shared entry, every settlement, and the
+    // places set as that person's repayments. (Every year must be loaded.) If the new name already has shared expenses, the two are
+    // simply one person from now on. The caller saves the entries (saveTransactions); the settlements and repayment places are queued here.
+    renamePerson(from, to) {
+      const update = {};
+      let entries = 0;
+      let settles = 0;
+      this.transactions.forEach(row => { if (row.shared?.with === from) { row.shared = { ...row.shared, with: to }; entries += 1; } });
+      Object.entries(this.years).forEach(([year, node]) => {
+        Object.entries(node.settles || {}).forEach(([id, settle]) => {
+          if (settle.with !== from) return;
+          settle.with = to;
+          update[`years/${year}/settles/${id}/with`] = to;
+          settles += 1;
+        });
+        if (Array.isArray(node.repay) && node.repay.some(target => target.with === from)) {
+          node.repay = node.repay.map(target => (target.with === from ? { ...target, with: to } : target));
+          update[`years/${year}/repay`] = node.repay;
+        }
+      });
+      this.resetShared();
+      if (Object.keys(update).length) this.queue(() => this.db.patch(update)).catch(error => console.error('Could not save the new name.', error));
+      return { entries, settles };
+    }
     // ---- the stored shared report: sharedReport/<currency>/<person> (see SharedLedger.report) ----
     // Each person's shared side (entries with what is open on them, totals, buffer, series, settlements) is worked out once and
     // kept in Firebase, so the People page opens by reading it instead of loading every year and working it all out again.
@@ -1939,7 +1965,13 @@
       }));
       // Every settlement: those made with the Settle button, and those from an entry made a settlement (an entry in a place set as
       // someone's repayments, see repayFor). An ordinary entry is neither, so it settles nothing.
-      this.settleList().forEach(settle => { const { year, ...plain } = settle; slot(settle.property, settle.with).settles.push(plain); });
+      // A settlement paid with a ledger entry (a repayment) carries that entry's name, so the People page can show what it was paid with.
+      const entryOf = settle => {
+        if (!settle.via) return null;
+        const row = this.transactions.find(item => !item.parentId && !item.eventId && this.repaySignature(item) === settle.via);
+        return row ? { description: String(row.description || ''), date: String(row.date || '') } : null;
+      };
+      this.settleList().forEach(settle => { const { year, ...plain } = settle; const entry = entryOf(settle); slot(settle.property, settle.with).settles.push(entry ? { ...plain, entry } : plain); });
       return new Map([...people].map(([path, person]) => [path, { property: person.property, with: person.with, ...global.SharedLedger.report(person.entries, person.settles) }]));
     }
     // Firebase keeps no empty list and no timestamp matters here, so two reports are the same when these agree.
@@ -2509,7 +2541,7 @@
         } : {}),
         section: item.section, category: item.category, type: item.type, property: item.property, eventId: item.eventId || null,
         _meta: { total: this.entryTotal(item.id), children: subEntries.length },
-        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '', groups: sub.groups || [] }))
+        subEntries: subEntries.map(sub => ({ id: sub.id, date: sub.date, description: sub.description, place: sub.place || '', amount: Number(sub.amount), formula: sub.formula || null, tags: sub.tags || [], flow: sub.flow || null, about: sub.about || '', groups: sub.groups || [], counted: sub.counted || null }))
       };
     }
   }

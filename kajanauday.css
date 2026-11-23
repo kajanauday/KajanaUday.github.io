@@ -2813,7 +2813,6 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .pp-box .pp-wrap-btn:hover { color: var(--ink); background: var(--hover); }
 
 /* Inline editing of a shared entry: a pencil at the end of the row (or double-click), and a one-row form in its place. */
-.pp-box .pp-row.has-pen { grid-template-columns: 60px minmax(0, 1fr) auto 22px; }
 .pp-row-pen { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .pp-row:hover .pp-row-pen, .pp-row-pen:focus-visible { opacity: 1; }
 .pp-row-pen:hover { color: var(--ink); background: var(--hover); }
@@ -2875,8 +2874,7 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
    same date column (--pp-date) and the same left padding, so descriptions start at the same indent. */
 .pp-list { --pp-date: 60px; --pp-lead: 11px; --pp-gap: 6px; }
 @container (max-width: 340px) { .pp-box .pp-list { --pp-date: 46px; } }
-.pp-box .pp-row, .pp-box .pp-row.has-pen { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto; gap: var(--pp-gap); padding-left: 8px; }
-.pp-box .pp-row.has-pen { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto 22px; }
+.pp-box .pp-row, .pp-box .pp-row.is-editable { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto; gap: var(--pp-gap); padding-left: 8px; }
 .pp-box .pp-row .pp-date { grid-column: auto; }
 .pp-box .pp-row-detail { padding: 4px 8px 6px var(--pp-lead); }
 .pp-box .pp-note-row { grid-template-columns: var(--pp-date) minmax(0, 1fr) auto auto auto; gap: var(--pp-gap); }
@@ -2899,3 +2897,73 @@ details.shared-settle[open] > summary i { transform: rotate(90deg); }
 .pp-pick-head small { color: var(--muted); font-size: 11px; opacity: .8; }
 .pp-pick-head.is-mine b { color: var(--income); }
 .pp-pick-head.is-theirs b { color: var(--expense); }
+
+/* The total of what is ticked in a list, beside its heading. */
+.pp-pick-sum, .lp-sum { margin-left: auto; padding-right: 10px; color: var(--ink); font: 700 12px var(--mono); font-style: normal; white-space: nowrap; }
+.pp-pick-sum:empty, .lp-sum:empty { display: none; }
+.pp-pick-head.is-mine .pp-pick-sum { color: var(--income); }
+.pp-pick-head.is-theirs .pp-pick-sum { color: var(--expense); }
+.lp-group > h3 { display: flex; align-items: center; }
+
+/* A note counted in by a settlement (owed the other way): added by the app, so drawn a little differently and kept on top. */
+.ledger-sub-entry.is-counted { font-style: italic; border-left: 2px solid var(--brand); background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.ledger-sub-entry.is-counted .ledger-entry-desc::after, .ledger-sub-entry.is-counted .ledger-entry-desc.is-wide::after { content: " · counted"; color: var(--muted); font-size: .85em; }
+
+/* A payment in a settled box is a row like the entries (and opens to its parts like an entry with notes): a gold bar, its total in the
+   colour of the way the money went. */
+.pp-box .pp-row.is-pay { border-left-color: var(--brand); }
+.pp-box .pp-row.is-pay .pp-what b { color: var(--ink); }
+.pp-box .pp-row.is-pay .pp-due b { color: var(--muted); }
+.pp-box .pp-row.is-pay.is-out .pp-due b { color: var(--expense); }
+.pp-box .pp-row.is-pay.is-in .pp-due b { color: var(--income); }
+.pp-note-row.is-counted { font-style: italic; }
+.pp-note-row.is-counted em { margin-left: 4px; color: var(--brand); font-size: .85em; font-style: normal; opacity: .85; }
+
+/* Changing a person's name: a pencil by the name, and, while editing, the name as an input in the header. */
+.pp-name-pen { margin-left: 4px; width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; vertical-align: middle; opacity: 0; transition: opacity .12s; }
+.pp-box .ledger-panel-head:hover .pp-name-pen, .pp-name-pen:focus-visible { opacity: 1; }
+@media (hover: none) { .pp-name-pen { opacity: .6; } }
+.pp-name-pen:hover { color: var(--ink); background: var(--hover); }
+.pp-rename { display: flex; align-items: center; gap: 4px; flex: 1 1 200px; min-width: 0; }
+.pp-rename input { flex: 1 1 auto; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--brand); border-radius: 6px; background: var(--surface-soft); color: var(--ink); font: 700 14px var(--display); box-shadow: 0 0 0 2px var(--brand-soft); outline: 0; }
+.pp-rename .pp-add-go { flex: none; width: 30px; height: 28px; padding: 0; display: inline-grid; place-items: center; }
+.pp-rename .icon-button { flex: none; width: 28px; height: 28px; padding: 0; }
+
+/* Parts of a payment: coloured by the way the money went (paid or owed one colour, got back the other), and a counted expense shows its
+   amount only there; its own row says so. */
+.pp-note-row.pp-part.is-out b { color: var(--expense); }
+.pp-note-row.pp-part.is-in b { color: var(--income); }
+.pp-note-row.pp-part.is-counted em { color: var(--brand); }
+.pp-counted-mark { color: var(--muted); font: italic 500 11px var(--sans, inherit); white-space: nowrap; opacity: .85; }
+
+/* A box with nothing open, kept only because money is held ahead: what it is, where it came from, and a way to clear it. */
+.pp-held { display: grid; gap: 6px; padding: 10px 12px; }
+.pp-held p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.pp-held p b { color: var(--ink); }
+.pp-held ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.pp-held li { display: grid; grid-template-columns: var(--pp-date, 60px) minmax(0, 1fr) auto; gap: var(--pp-gap, 6px); font-size: 12.5px; }
+.pp-held li time { color: var(--muted); font: 500 11px var(--mono); }
+.pp-held li span { min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+.pp-held li b { font: 600 12.5px var(--mono); }
+.pp-held .quiet-button { justify-self: start; }
+
+/* Marks inside a block's heading are plain elements (see plainInSummaries): still clickable. */
+summary .link-chip, summary .group-mark, summary .link-pie { cursor: pointer; }
+
+/* "26,556 paid of 55,250" sits before the amount still to settle. */
+.pp-box .pp-due .pp-left { order: -1; white-space: nowrap; }
+
+/* Paid items stay in the running list, marked paid; closing is a choice. */
+.pp-box .pp-row.is-settled { opacity: .72; }
+.pp-box .pp-row.is-settled .pp-due b { text-decoration: none; color: var(--muted); }
+.pp-closes { display: flex; align-items: center; gap: 7px; margin: 2px 0; color: var(--ink); font-size: 12.5px; cursor: pointer; }
+.pp-closes input { width: 16px; height: 16px; flex: none; accent-color: var(--brand); }
+.pp-closes small { color: var(--muted); font-size: 11.5px; }
+.pp-box .pp-close-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; font-size: 12px; }
+
+.pp-box .pp-reopen-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; font-size: 12px; }
+
+/* One line under the header that adds up what each of us put in. */
+.pp-summary { margin: 0; padding: 4px 11px 5px; color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.pp-summary b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+.pp-summary em { font-style: normal; opacity: .85; }

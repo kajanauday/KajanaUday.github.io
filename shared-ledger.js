@@ -223,21 +223,30 @@
   }
 
   // ---- the stored report: one person's shared side, worked out once and kept (sharedReport/<currency>/<person>) ----
-  // Everything the People page draws, so opening it reads this and works nothing out: each shared entry with what is still
-  // open on it, the totals and the buffer, the settlements, and `closed`: one group per settlement that finished entries. An
-  // entry belongs to the settlement that paid off the last of it (`closedBy`); everything that settlement closed is one settled
-  // box, and the entries still open stay in the running box. So a settlement, whether made with the Settle button or an entry made
-  // a settlement for several expenses, gathers everything it paid off into one box. A pure function of the entries and
-  // settlements; they must already be one person in one currency. Returns plain data, safe to save.
-  const REPORT_VERSION = 4;
+  // Everything the People page draws, so opening it reads this and works nothing out: each shared entry with what is still open on it and
+  // what has been paid on it, the totals and the buffer, the settlements, and `closed`: the settled capsules.
+  // A capsule is made only when a settlement says so (`closes: true`: "close permanently"). It takes every entry that is fully paid by then
+  // (`closedBy`); entries paid in full but not closed stay in the running list, marked paid. Settlements made before this choice existed
+  // (no `closes` at all) closed what they finished, as they always did; every new settlement says `closes` either way. A settlement is
+  // placed after another by its id, which carries the time it was made (the date on it can be any day).
+  // A pure function of the entries and settlements; they must already be one person in one currency. Returns plain data, safe to save.
+  const REPORT_VERSION = 9;
   function report(entries, settlements) {
     const shared = (entries || []).filter(entry => entry.shared);
     const real = (settlements || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id).localeCompare(String(b.id)));
     const open = pending(shared, real);
     const owedBy = new Map([...open.receivable, ...open.payable].map(row => [row.id, row.owed]));
-    const lastOn = new Map();
-    real.forEach(settlement => (settlement.items || []).forEach(item => lastOn.set(item.to, settlement.id)));
-    const closedBy = entry => (owedBy.has(entry.id) ? '' : lastOn.get(entry.id) || '');
+    const paidBy = appliedTo(real);
+    const created = real.slice().sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
+    const lastTouch = new Map();
+    created.forEach(settlement => (settlement.items || []).forEach(item => lastTouch.set(item.to, String(settlement.id))));
+    const closers = created.filter(settlement => settlement.closes === true || (settlement.closes === undefined && (settlement.items || []).length > 0));
+    const closedBy = entry => {
+      if (owedBy.has(entry.id) || !lastTouch.has(entry.id)) return '';
+      const last = lastTouch.get(entry.id);
+      const closer = closers.find(settlement => String(settlement.id) >= last);
+      return closer ? String(closer.id) : '';
+    };
     const groups = new Map();
     shared.forEach(entry => {
       const id = closedBy(entry);
@@ -252,7 +261,7 @@
       const moved = touching.reduce((sum, settlement) => sum + (settlement.items || []).filter(item => ids.has(item.to))
         .reduce((inner, item) => inner + (byId.get(item.to).paidBy === 'friend' ? -1 : 1) * Math.abs(whole(item.a)), 0), 0);
       const dates = list.map(entry => String(entry.date || '')).sort();
-      const last = String(real.find(settlement => settlement.id === id)?.date || '');
+      const last = String(real.find(settlement => String(settlement.id) === id)?.date || '');
       return { id, last, moved, from: dates[0] || '', to: dates[dates.length - 1] || '', count: list.length };
     });
     return {
@@ -261,7 +270,7 @@
       entries: shared.map(entry => ({
         id: entry.id, date: String(entry.date || ''), description: String(entry.description || ''), amount: Math.abs(whole(entry.amount)),
         paidBy: entry.paidBy === 'friend' ? 'friend' : 'me', hisPct: Number(entry.hisPct ?? DEFAULT_HIS_PCT),
-        owed: owedBy.get(entry.id) || 0, closedBy: closedBy(entry),
+        owed: owedBy.get(entry.id) || 0, paid: paidBy.get(entry.id) || 0, closedBy: closedBy(entry),
         place: String(entry.place || ''), about: String(entry.about || ''), notes: (entry.notes || []).map(note => ({ id: String(note.id), date: String(note.date || ''), description: String(note.description || ''), place: String(note.place || ''), amount: Math.abs(whole(note.amount)) }))
       })),
       closed,

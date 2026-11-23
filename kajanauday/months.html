@@ -113,6 +113,8 @@
         <div class="pp-seg" role="group" aria-label="Order of the entries">
           <button type="button" data-pp-order="date" aria-pressed="true" title="Mine and theirs together, newest first">By date</button>
           <button type="button" data-pp-order="split" aria-pressed="false" title="All of mine first, then theirs">Mine first</button>
+          <button type="button" data-pp-order="amount-desc" aria-pressed="false" title="Largest amount first">Amount ↓</button>
+          <button type="button" data-pp-order="amount-asc" aria-pressed="false" title="Smallest amount first">Amount ↑</button>
         </div>
         <button type="button" class="icon-button" id="pp-new-btn" data-add-open="__new__" aria-expanded="false" aria-label="Add a shared expense with anyone, in any currency" title="Add a shared expense: any person, any currency"><i class="ti ti-plus" aria-hidden="true"></i></button>
       </div>
@@ -134,6 +136,7 @@
           <label><span>Record as</span><select name="record"><option value="no">Settle only</option><option value="income">Also as income</option><option value="expense">Also as expense</option></select></label>
           <button type="submit" class="primary-button"><i class="ti ti-cash" aria-hidden="true"></i> Pay</button>
         </div>
+        <label class="pp-closes" title="Moves everything paid in full by now into a settled capsule. Nothing is closed unless you tick this."><input type="checkbox" name="closes"> Close permanently <small>(makes a settled capsule of everything paid in full)</small></label>
         <label class="pp-note"><span class="sr-only">Note</span><input name="note" maxlength="80" autocomplete="off" placeholder="Note (optional)"></label>
         <p class="pp-preview" aria-live="polite"></p>
         <p class="settings-error" role="alert" hidden></p>
